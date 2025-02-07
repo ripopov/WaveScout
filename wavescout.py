@@ -926,10 +926,12 @@ class VCDViewer(QMainWindow):
 
     def rebuild_tree(self) -> None:
         pattern = self.filter_entry.text().strip() if hasattr(self, "filter_entry") else ""
-        self.tree.clear()
-        self.tree.signal_map.clear()
+        # Clear the tree widget from design_explorer
+        self.design_explorer.tree.clear()
+        self.design_explorer.tree.signal_map.clear()
         self.tree_signal_map.clear()
-        self._build_filtered_tree(None, self.model.hierarchy, pattern)
+        # Pass the existing tree widget as the parent item
+        self._build_filtered_tree(self.design_explorer.tree, self.model.hierarchy, pattern)
 
     def _build_filtered_tree(self, parent_item, tree_dict: Dict[str, Any], pattern: str) -> None:
         for key, subtree in tree_dict.items():
@@ -938,12 +940,13 @@ class VCDViewer(QMainWindow):
             if set(subtree.keys()) == {"_signal"}:
                 signal = subtree["_signal"]
                 if not pattern or fnmatch.fnmatch(signal.name, f"*{pattern}*"):
-                    leaf = QTreeWidgetItem(parent_item if parent_item else self.tree, [signal.name])
-                    self.tree.signal_map[leaf] = signal
+                    leaf = QTreeWidgetItem(parent_item, [signal.name])
+                    # Access the tree's signal_map via design_explorer
+                    self.design_explorer.tree.signal_map[leaf] = signal
                     self.tree_signal_map[leaf] = signal
                     leaf.setForeground(0, QColor("red" if self._is_dynamic(signal) else "gray"))
             else:
-                node = QTreeWidgetItem(parent_item if parent_item else self.tree, [key])
+                node = QTreeWidgetItem(parent_item, [key])
                 node.setExpanded(True)
                 self._build_filtered_tree(node, subtree, pattern)
 
