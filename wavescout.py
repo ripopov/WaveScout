@@ -919,18 +919,22 @@ class VCDViewer(QMainWindow):
             self.timescale = self.model.timescale
             self.timescale_unit = ''.join(c for c in self.timescale if not c.isdigit()).strip()
             self.tree_signal_map.clear()
+            # Update the design explorer with the new hierarchy!
+            self.design_explorer.set_hierarchy(self.model.hierarchy)
             self.rebuild_tree()
             self.wave_panel.wave_view.clear()
             self.wave_panel.signals = []
             self.wave_panel.redraw()
 
     def rebuild_tree(self) -> None:
-        pattern = self.filter_entry.text().strip() if hasattr(self, "filter_entry") else ""
+        # Use the design_explorer's filter_entry (if available) for filtering
+        pattern = (self.design_explorer.filter_entry.text().strip()
+                   if hasattr(self.design_explorer, "filter_entry") else "")
         # Clear the tree widget from design_explorer
         self.design_explorer.tree.clear()
         self.design_explorer.tree.signal_map.clear()
         self.tree_signal_map.clear()
-        # Pass the existing tree widget as the parent item
+        # Pass the new model's hierarchy to build the tree
         self._build_filtered_tree(self.design_explorer.tree, self.model.hierarchy, pattern)
 
     def _build_filtered_tree(self, parent_item, tree_dict: Dict[str, Any], pattern: str) -> None:
