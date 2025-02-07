@@ -45,9 +45,9 @@
         },
         {
             "fullname": "tb.u0.J_state [3:0]",
-            "rep_mode": "hex",
-            "height_factor": 1,
-            "analog_render": false
+            "rep_mode": "bin",
+            "height_factor": 4,
+            "analog_render": true
         },
         {
             "fullname": "tb.u0.J_state_ascii [111:0]",
@@ -111,8 +111,8 @@
         }
     ],
     "zoom": {
-        "start_time": 136.55238095238096,
-        "end_time": 507.9238095238095
+        "start_time": 183.84004986193293,
+        "end_time": 316.99494595660747
     },
     "cursor_time": 292.41704904659935,
     "marker_A": 36.48734037894411,
