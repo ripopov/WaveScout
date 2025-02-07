@@ -4,23 +4,17 @@
         {
             "fullname": "tb.jtagState [3:0]",
             "rep_mode": "hex",
-            "height_factor": 3,
-            "analog_render": true
+            "height_factor": 1,
+            "analog_render": false
         },
         {
             "fullname": "tb.seed [31:0]",
             "rep_mode": "hex",
             "height_factor": 1,
-            "analog_render": false
+            "analog_render": true
         },
         {
             "fullname": "tb.tck",
-            "rep_mode": "hex",
-            "height_factor": 1,
-            "analog_render": false
-        },
-        {
-            "fullname": "tb.tms",
             "rep_mode": "hex",
             "height_factor": 1,
             "analog_render": false
@@ -32,7 +26,73 @@
             "analog_render": false
         },
         {
-            "fullname": "tb.u0.outState [3:0]",
+            "fullname": "tb.tms",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_captureDR_exit1DR",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_captureDR_onEntry",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_captureDR_onSelf",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_captureIR_exit1IR",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_captureIR_onEntry",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_captureIR_onExit",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_captureIR_shiftIR",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_exit1DR_onEntry",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_exit1DR_onExit",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_state_ascii [111:0]",
+            "rep_mode": "hex",
+            "height_factor": 4,
+            "analog_render": true
+        },
+        {
+            "fullname": "tb.u0.J_state [3:0]",
             "rep_mode": "hex",
             "height_factor": 1,
             "analog_render": false
@@ -42,79 +102,13 @@
             "rep_mode": "hex",
             "height_factor": 1,
             "analog_render": false
-        },
-        {
-            "fullname": "tb.u0.J_state [3:0]",
-            "rep_mode": "bin",
-            "height_factor": 4,
-            "analog_render": true
-        },
-        {
-            "fullname": "tb.u0.J_state_ascii [111:0]",
-            "rep_mode": "hex",
-            "height_factor": 1,
-            "analog_render": false
-        },
-        {
-            "fullname": "tb.u0.J_updateIR_selectIR",
-            "rep_mode": "hex",
-            "height_factor": 1,
-            "analog_render": false
-        },
-        {
-            "fullname": "tb.u0.J_updateIR_runTest",
-            "rep_mode": "hex",
-            "height_factor": 1,
-            "analog_render": false
-        },
-        {
-            "fullname": "tb.u0.J_updateIR_onExit",
-            "rep_mode": "hex",
-            "height_factor": 1,
-            "analog_render": false
-        },
-        {
-            "fullname": "tb.u0.J_updateIR_onEntry",
-            "rep_mode": "hex",
-            "height_factor": 1,
-            "analog_render": false
-        },
-        {
-            "fullname": "tb.u0.J_updateDR_selectDR",
-            "rep_mode": "hex",
-            "height_factor": 1,
-            "analog_render": false
-        },
-        {
-            "fullname": "tb.u0.J_updateDR_onExit",
-            "rep_mode": "hex",
-            "height_factor": 1,
-            "analog_render": false
-        },
-        {
-            "fullname": "tb.u0.J_updateDR_onEntry",
-            "rep_mode": "hex",
-            "height_factor": 1,
-            "analog_render": false
-        },
-        {
-            "fullname": "tb.u0.J_testLogicReset_runTest",
-            "rep_mode": "hex",
-            "height_factor": 1,
-            "analog_render": false
-        },
-        {
-            "fullname": "tb.u0.J_testLogicReset_onExit",
-            "rep_mode": "hex",
-            "height_factor": 1,
-            "analog_render": false
         }
     ],
     "zoom": {
-        "start_time": 183.84004986193293,
-        "end_time": 316.99494595660747
+        "start_time": 140.0,
+        "end_time": 296.3000944007158
     },
-    "cursor_time": 292.41704904659935,
-    "marker_A": 36.48734037894411,
-    "marker_B": 456.30393996247653
+    "cursor_time": 231.5362706196688,
+    "marker_A": 181.30606083673078,
+    "marker_B": 265.4480366152564
 }
