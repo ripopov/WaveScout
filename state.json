@@ -1,0 +1,120 @@
+{
+    "vcd_filename": "jtag.vcd",
+    "signals": [
+        {
+            "fullname": "tb.jtagState [3:0]",
+            "rep_mode": "hex",
+            "height_factor": 3,
+            "analog_render": true
+        },
+        {
+            "fullname": "tb.seed [31:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.tck",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.tms",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.treset",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.outState [3:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_next [3:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_state [3:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_state_ascii [111:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_updateIR_selectIR",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_updateIR_runTest",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_updateIR_onExit",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_updateIR_onEntry",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_updateDR_selectDR",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_updateDR_onExit",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_updateDR_onEntry",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_testLogicReset_runTest",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "tb.u0.J_testLogicReset_onExit",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        }
+    ],
+    "zoom": {
+        "start_time": 136.55238095238096,
+        "end_time": 507.9238095238095
+    },
+    "cursor_time": 292.41704904659935,
+    "marker_A": 36.48734037894411,
+    "marker_B": 456.30393996247653
+}
