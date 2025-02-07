@@ -13,11 +13,7 @@ Modules:
 """
 
 import sys
-import re
 import fnmatch
-import json
-from math import ceil
-from datetime import datetime  # For timestamping dumped files
 from vcd_parser import VCDParser, VCDSignal, dump_signals, numeric_value, convert_vector
 
 from PySide6.QtCore import Qt, QRectF, QPoint, QEvent, Signal, QObject
@@ -28,7 +24,6 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QTreeWidget, QTreeWidgetItem, QFileDialog, QScrollArea)
 
 from search_window import SearchWindow
-from design_tree import DesignTree
 from state_manager import StateManager
 
 
@@ -1169,28 +1164,21 @@ class VCDViewer(QMainWindow):
         filemenu.addAction(exit_action)
 
     def _create_main_ui(self):
-        """
-        Build the main UI by arranging the design tree on the left and the waveform panel on the right.
-        """
         main_splitter = QSplitter(Qt.Horizontal, self)
         self.setCentralWidget(main_splitter)
-        left_frame = QWidget()
-        left_layout = QVBoxLayout(left_frame)
-        label = QLabel("DesignTree")
-        label.setFont(QFont("Arial", 12, QFont.Bold))
-        left_layout.addWidget(label)
-        filter_layout = QHBoxLayout()
-        filter_layout.addWidget(QLabel("Signal Filter:"))
-        self.filter_entry = QLineEdit()
-        filter_layout.addWidget(self.filter_entry)
-        self.filter_entry.textChanged.connect(self.rebuild_tree)
-        left_layout.addLayout(filter_layout)
-        self.tree = DesignTree()
-        left_layout.addWidget(self.tree)
-        self.tree.signalsToAdd.connect(self.add_signals_from_tree)
-        self.tree.itemDoubleClicked.connect(self.on_tree_double_click)
-        self.rebuild_tree()
-        main_splitter.addWidget(left_frame)
+
+        # Left side: use the new DesignExplorer widget.
+        from design_explorer import DesignExplorer
+        self.design_explorer = DesignExplorer(self)
+        # Set the hierarchy from the model so that the tree can be built.
+        self.design_explorer.set_hierarchy(self.model.hierarchy)
+        # Connect the DesignExplorer’s signalsToAdd to the handler that adds signals.
+        self.design_explorer.signalsToAdd.connect(self.add_signals_from_tree)
+        # Forward double-click events from the tree if desired.
+        self.design_explorer.tree.itemDoubleClicked.connect(self.on_tree_double_click)
+        main_splitter.addWidget(self.design_explorer)
+
+        # Right side remains unchanged.
         right_frame = QWidget()
         right_layout = QVBoxLayout(right_frame)
         self.wave_panel = WaveformPanel(name_panel_width=150, value_panel_width=100, avg_panel_width=100)
@@ -1207,7 +1195,7 @@ class VCDViewer(QMainWindow):
         btn_zoom_in.clicked.connect(lambda: self.wave_panel.wave_view.zoom(1.5))
         ctrl_layout.addWidget(btn_zoom_in)
         btn_zoom_out = QPushButton("Zoom Out")
-        btn_zoom_out.clicked.connect(lambda: self.wave_panel.wave_view.zoom(1/1.5))
+        btn_zoom_out.clicked.connect(lambda: self.wave_panel.wave_view.zoom(1 / 1.5))
         ctrl_layout.addWidget(btn_zoom_out)
         btn_zoom_fit = QPushButton("Zoom to Fit")
         btn_zoom_fit.clicked.connect(self.wave_panel.wave_view.zoom_to_fit)
@@ -1320,8 +1308,8 @@ class VCDViewer(QMainWindow):
         """
         if item.childCount() > 0:
             return
-        if item in self.tree.signal_map:
-            signal = self.tree.signal_map[item]
+        if item in self.design_explorer.tree.signal_map:
+            signal = self.design_explorer.tree.signal_map[item]
             self.wave_panel.add_signal(signal)
         else:
             full_name = item.text(0)
@@ -1333,6 +1321,7 @@ class VCDViewer(QMainWindow):
                 if sig.fullname == full_name:
                     self.wave_panel.add_signal(sig)
                     return
+
 
     def keyPressEvent(self, event):
         """
