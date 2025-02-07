@@ -27,36 +27,9 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QPushButton, QLabel, QLineEdit, QSplitter, QMenu, QAbstractItemView,
                                QTreeWidget, QTreeWidgetItem, QFileDialog, QScrollArea)
 
-# Import SearchWindow from the new module
 from search_window import SearchWindow
-
-
-# =============================================================================
-# STATE MANAGEMENT
-# =============================================================================
-class StateManager(QObject):
-    """
-    Handles saving and loading of the application state to and from a JSON file.
-    """
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-    def save_state(self, state, filename):
-        """Save the given state dictionary as a JSON file."""
-        try:
-            with open(filename, "w") as f:
-                json.dump(state, f, indent=4)
-        except Exception as e:
-            print("Error saving state:", e)
-
-    def load_state(self, filename):
-        """Load and return the application state from a JSON file."""
-        try:
-            with open(filename, "r") as f:
-                return json.load(f)
-        except Exception as e:
-            print("Error loading state:", e)
-            return None
+from design_tree import DesignTree
+from state_manager import StateManager
 
 
 # =============================================================================
@@ -74,38 +47,6 @@ class WaveformModel(QObject):
         self.timescale = timescale if timescale else "unknown"
         self.signals = list(self.vcd_parser.signals.values())
         self.hierarchy = self.vcd_parser.hierarchy
-
-
-# =============================================================================
-# DESIGN TREE (VIEW)
-# =============================================================================
-class DesignTree(QTreeWidget):
-    """
-    A custom tree widget that displays the signal hierarchy.
-    Supports multi-selection and emits a signal to add selected signals when the 'i' key is pressed.
-    """
-    signalsToAdd = Signal(list)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.signal_map = {}  # Map tree items to their corresponding signals
-
-    def keyPressEvent(self, event):
-        """
-        Intercept key presses: if the 'i' key is pressed, emit the selected signals.
-        Otherwise, proceed with default behavior.
-        """
-        if event.text().lower() == "i":
-            selected = self.selectedItems()
-            sigs = []
-            for item in selected:
-                if item in self.signal_map:
-                    sigs.append(self.signal_map[item])
-            if sigs:
-                self.signalsToAdd.emit(sigs)
-        else:
-            super().keyPressEvent(event)
 
 
 # =============================================================================
