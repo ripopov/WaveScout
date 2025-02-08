@@ -1,0 +1,162 @@
+{
+    "vcd_filename": "C:/Users/ripop/PycharmProjects/WaveScout/swerv1.vcd",
+    "signals": [
+        {
+            "fullname": "TOP.core_clk",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.ic_b_rden",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.ic_b_sb_wren [15:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.ic_bank_read [3:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.ic_bank_read_ff [3:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.ic_bank_way_clk [15:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.ic_bank_way_clken [15:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.ic_debug_way [3:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.ic_premux_data [127:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.ic_premux_data_ext [135:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.ic_rd_data [135:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.ic_rd_en",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.ic_rd_hit [3:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.ic_rd_hit_q [3:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.ic_rw_addr [11:2]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.ic_rw_addr_ff [5:4]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.ic_rw_addr_q [11:4]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.ic_sb_wr_data [135:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.ic_sel_premux_data",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.ic_wr_data [67:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.ic_wr_en [3:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.core_rst_l",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.wb_dout_way [543:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.wb_dout [543:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        },
+        {
+            "fullname": "TOP.tb_top.rvtop.mem.icm.ic_data_inst.wb_dout_way_with_premux [543:0]",
+            "rep_mode": "hex",
+            "height_factor": 1,
+            "analog_render": false
+        }
+    ],
+    "zoom": {
+        "start_time": 12598.267747571554,
+        "end_time": 13848.231478655018
+    },
+    "cursor_time": 13625.411857027104,
+    "marker_A": null,
+    "marker_B": null
+}
