@@ -231,6 +231,9 @@ class WaveformView(QWidget):
         last_val = next((v for t, v in transitions if t < self.start_time), "0")
         last_disp = convert_vector(last_val, signal.width, signal.rep_mode)
         segment_start = 0
+        # Save painter state before modifying the font
+        painter.save()
+        painter.setFont(self.text_font)
         fm = QFontMetrics(self.text_font)
         char_width = fm.horizontalAdvance("0")
         for t, val in transitions:
@@ -264,6 +267,8 @@ class WaveformView(QWidget):
                     else last_disp[:max(1, int(block_width / char_width))])
             painter.drawText(QRectF(segment_start, y_top, block_width, effective_height - 10),
                              Qt.AlignmentFlag.AlignCenter, text)
+        # Restore painter state to avoid affecting subsequent drawings
+        painter.restore()
 
     def _draw_analog_step(self, painter: QPainter, signal: VCDSignal, base_y: float,
                            effective_height: float, drawing_width: float,
@@ -290,6 +295,8 @@ class WaveformView(QWidget):
         except Exception:
             last_num = 0
         last_disp = convert_vector(last_val, signal.width, signal.rep_mode)
+        # Save painter state before setting the font
+        painter.save()
         painter.setFont(self.text_font)
         for t, v in signal.transitions:
             if not (self.start_time <= t <= self.end_time):
@@ -319,6 +326,8 @@ class WaveformView(QWidget):
                            drawing_width - segment_start, base_y + effective_height - y_value)
         painter.setPen(QPen(Qt.GlobalColor.white, 1))
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, last_disp)
+        # Restore painter state so later drawings are not affected
+        painter.restore()
 
     # --- Mouse & Wheel event handling ---
     def mousePressEvent(self, event) -> None:
