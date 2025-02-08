@@ -167,12 +167,12 @@ class WaveformView(QWidget):
     def _draw_global_boundaries(self, painter: QPainter, width: float,
                                 height: float, pixels_per_time: float) -> None:
         global_min, global_max = self._get_global_range()
-        if global_min is not None and self.start_time >= global_min:
+        if global_min is not None and self.start_time <= global_min <= self.end_time:
             x = 0 if self.start_time == global_min else (global_min - self.start_time) * pixels_per_time
             pen_width = 3 if self.start_time == global_min else 1
             painter.setPen(QPen(Qt.GlobalColor.red, pen_width))
             painter.drawLine(x, self.top_margin, x, height)
-        if global_max is not None and self.end_time <= global_max:
+        if global_max is not None and self.start_time <= global_max <= self.end_time:
             x = width if self.end_time == global_max else (global_max - self.start_time) * pixels_per_time
             pen_width = 3 if self.end_time == global_max else 1
             painter.setPen(QPen(Qt.GlobalColor.red, pen_width))
