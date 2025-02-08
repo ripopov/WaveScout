@@ -198,7 +198,7 @@ class WaveformView(QWidget):
         if not transitions:
             return
 
-        # Use reversed() and a generator expression to get the last value with t <= start_time.
+        # Use reversed() to get the last value with t <= start_time.
         last_val = next((v for t, v in reversed(transitions) if t <= self.start_time),
                         transitions[0][1])
         prev_x = 0
@@ -237,7 +237,9 @@ class WaveformView(QWidget):
             return
         y_top, y_bottom = base_y + 5, base_y + effective_height - 5
         delta = 2
-        last_val = next((v for t, v in transitions if t < self.start_time), "0")
+        # Use reversed order and <= to get the last value at or before start_time.
+        last_val = next((v for t, v in reversed(transitions) if t <= self.start_time),
+                        transitions[0][1])
         last_disp = convert_vector(last_val, signal.width, signal.rep_mode)
         segment_start = 0
         # Save painter state before modifying the font
@@ -264,7 +266,9 @@ class WaveformView(QWidget):
                                  Qt.AlignmentFlag.AlignCenter, text)
             painter.drawLine(x - delta, y_top, x + delta, y_bottom)
             painter.drawLine(x - delta, y_bottom, x + delta, y_top)
-            segment_start, last_val, last_disp = x + delta, val, convert_vector(val, signal.width, signal.rep_mode)
+            segment_start = x + delta
+            last_val = val
+            last_disp = convert_vector(val, signal.width, signal.rep_mode)
         rect_end = drawing_width
         painter.setPen(QPen(QColor("cyan"), 1))
         painter.drawLine(segment_start, y_top, rect_end, y_top)
@@ -297,8 +301,9 @@ class WaveformView(QWidget):
             norm = (num - min_val) / (max_val - min_val)
             return base_y + effective_height - norm * effective_height
 
-        # Get the last value before the current view start:
-        last_val = next((v for t, v in signal.transitions if t < self.start_time), "0")
+        # Get the last value at or before the current view start.
+        last_val = next((v for t, v in reversed(signal.transitions) if t <= self.start_time),
+                        signal.transitions[0][1] if signal.transitions else "0")
         try:
             last_num = int(last_val, 2)
         except Exception:
@@ -368,6 +373,8 @@ class WaveformView(QWidget):
         elif event.button() == Qt.MouseButton.LeftButton:
             self.selection_start_x = self.selection_end_x = event.position().x()
             self.update()
+        else:
+            super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
         if self.selection_start_x is not None:
