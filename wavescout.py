@@ -536,12 +536,13 @@ class WaveformPanel(QWidget):
         self.avg_panel = WaveformAverages(self)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        # Add widgets in the order: Names, Values, Waveform, Averages
         for widget, size in ((self.name_panel, name_panel_width),
-                             (self.wave_view, 600),
                              (self.value_panel, value_panel_width),
+                             (self.wave_view, 600),
                              (self.avg_panel, avg_panel_width)):
             self.splitter.addWidget(widget)
-        self.splitter.setSizes([name_panel_width, 600, value_panel_width, avg_panel_width])
+        self.splitter.setSizes([name_panel_width, value_panel_width, 600, avg_panel_width])
 
         self.content_widget = QWidget()
         clayout = QVBoxLayout(self.content_widget)
@@ -554,6 +555,7 @@ class WaveformPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.scroll_area)
 
+        # (The rest of the __init__ method remains unchanged)
         self.wave_header_overlay = WaveformHeaderOverlay(self.scroll_area.viewport(), self.wave_view)
         self.avg_header_overlay = AveragesHeaderOverlay(self.scroll_area.viewport(), self.avg_panel)
         self.scroll_area.viewport().installEventFilter(self)
@@ -569,6 +571,7 @@ class WaveformPanel(QWidget):
         self.wave_view.timeWindowChanged.connect(lambda s, e: self.update_values())
         self.wave_view.markersChanged.connect(self.update_averages)
         self.name_panel.representationChanged.connect(self.redraw)
+
 
     def eventFilter(self, obj, event) -> bool:
         if obj == self.scroll_area.viewport() and event.type() in (QEvent.Type.Resize, QEvent.Type.Paint):
