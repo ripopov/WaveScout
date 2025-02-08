@@ -133,7 +133,6 @@ class WaveformView(QWidget):
         self.top_margin: int = DEFAULT_TOP_MARGIN
         self.text_font: QFont = DEFAULT_TEXT_FONT
         self.cursor_time: Optional[float] = None
-        self.highlighted_signal: Optional[VCDSignal] = None
         self.marker_A: Optional[float] = None
         self.marker_B: Optional[float] = None
         self.selection_start_x: Optional[float] = None
@@ -163,9 +162,6 @@ class WaveformView(QWidget):
         y = self.top_margin + 20
         for signal in self.signals:
             effective_height = self.signal_height * signal.height_factor
-            if self.highlighted_signal == signal:
-                painter.setPen(QPen(QColor("darkblue"), 1))
-                painter.drawRect(0, y, drawing_width, effective_height)
             if signal.width > 1:
                 if signal.analog_render:
                     self._draw_analog_step(painter, signal, y, effective_height, drawing_width, pixels_per_time)
@@ -559,7 +555,6 @@ class WaveformPanel(QWidget):
         self.signals: List[VCDSignal] = []
         self.top_margin: int = DEFAULT_TOP_MARGIN
         self.signal_height: int = DEFAULT_SIGNAL_HEIGHT
-        self.highlighted_signal: Optional[VCDSignal] = None
 
         self.wave_view.cursorChanged.connect(self.update_values)
         self.wave_view.timeWindowChanged.connect(lambda s, e: self.update_values())
@@ -646,9 +641,8 @@ class WaveformPanel(QWidget):
 
     def redraw(self) -> None:
         self.wave_view.top_margin = DEFAULT_TOP_MARGIN
-        self.wave_view.highlighted_signal = self.highlighted_signal
         self.wave_view.update()
-        self.name_panel.set_signals(self.signals, DEFAULT_TOP_MARGIN, DEFAULT_SIGNAL_HEIGHT, self.highlighted_signal)
+        self.name_panel.set_signals(self.signals, DEFAULT_TOP_MARGIN, DEFAULT_SIGNAL_HEIGHT)
         self.update_values()
         self.update_averages()
         total_height = self.wave_view.top_margin + 20 + sum(DEFAULT_SIGNAL_HEIGHT * s.height_factor for s in self.signals)
@@ -675,7 +669,7 @@ class WaveformNames(QWidget):
         self.last_clicked_index: Optional[int] = None
 
     def set_signals(self, signals: List[VCDSignal], top_margin: int,
-                    signal_height: int, highlighted_signal: Optional[VCDSignal] = None) -> None:
+                    signal_height: int) -> None:
         self.signals = signals
         self.top_margin, self.signal_height = top_margin, signal_height
         self.selected_signals.clear()
@@ -962,11 +956,6 @@ class VCDViewer(QMainWindow):
                     if sig in self.wave_panel.signals:
                         self.wave_panel.remove_signal(sig)
                 self.wave_panel.name_panel.selected_signals.clear()
-                self.wave_panel.highlighted_signal = None
-                self.wave_panel.redraw()
-            elif self.wave_panel.highlighted_signal in self.wave_panel.signals:
-                self.wave_panel.remove_signal(self.wave_panel.highlighted_signal)
-                self.wave_panel.highlighted_signal = None
                 self.wave_panel.redraw()
         else:
             super().keyPressEvent(event)
