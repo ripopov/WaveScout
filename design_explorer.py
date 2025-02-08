@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
 """
 design_explorer.py
-
 Compound widget that groups the design tree and signal filter controls.
 Provides an isolated signal–slot interface for design tree exploration.
 """
-
 import fnmatch
-
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTreeWidgetItem
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QTreeWidgetItem, QTreeWidget, QAbstractItemView
 )
 from PySide6.QtGui import QFont, QColor
-from PySide6.QtWidgets import QTreeWidget, QAbstractItemView
 from PySide6.QtCore import Signal
 
 
@@ -26,17 +22,14 @@ class DesignTree(QTreeWidget):
 
     def keyPressEvent(self, event):
         """
-        Intercept key presses: if the 'i' key is pressed, emit the selected signals.
+        Intercepts key presses: if the 'i' key is pressed, emit the selected signals.
         Otherwise, proceed with default behavior.
         """
         if event.text().lower() == "i":
             selected = self.selectedItems()
-            sigs = []
-            for item in selected:
-                if item in self.signal_map:
-                    sigs.append(self.signal_map[item])
-            if sigs:
-                self.signalsToAdd.emit(sigs)
+            signals = [self.signal_map[item] for item in selected if item in self.signal_map]
+            if signals:
+                self.signalsToAdd.emit(signals)
         else:
             super().keyPressEvent(event)
 
@@ -46,7 +39,6 @@ class DesignExplorer(QWidget):
     DesignExplorer groups the signal filter and design tree into a single widget.
     It exposes a signalsToAdd signal (forwarded from its DesignTree) so that when
     the user selects (or double-clicks) signals, the parent can add them to the waveform panel.
-
     All selection (including shift/ctrl-click and double-click) remains handled
     by the DesignTree.
     """
@@ -59,7 +51,6 @@ class DesignExplorer(QWidget):
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-
         # Top label
         label = QLabel("DesignTree")
         label.setFont(QFont("Arial", 12, QFont.Bold))
@@ -96,46 +87,44 @@ class DesignExplorer(QWidget):
         """
         if self.hierarchy is None:
             return
+
         pattern = self.filter_entry.text().strip()
         self.tree.clear()
         if hasattr(self.tree, 'signal_map'):
             self.tree.signal_map.clear()
         self._build_filtered_tree(None, self.hierarchy, pattern)
 
+    def _create_tree_item(self, parent_item, text):
+        """
+        Helper method to create a QTreeWidgetItem given a parent item.
+        """
+        parent = self.tree if parent_item is None else parent_item
+        return QTreeWidgetItem(parent, [text])
+
     def _build_filtered_tree(self, parent_item, tree_dict, pattern):
         """
         Recursively build the design tree.
-        (This code is largely adapted from your original _build_filtered_tree method.)
         """
         for key, subtree in tree_dict.items():
             if key == "_signal":
                 continue
-
             # Leaf node: a node with only a '_signal' key.
             if set(subtree.keys()) == {"_signal"}:
                 signal = subtree["_signal"]
                 if not pattern or fnmatch.fnmatch(signal.name, f"*{pattern}*"):
-                    if parent_item is None:
-                        leaf = QTreeWidgetItem(self.tree, [signal.name])
-                    else:
-                        leaf = QTreeWidgetItem(parent_item, [signal.name])
+                    leaf = self._create_tree_item(parent_item, signal.name)
                     if hasattr(self.tree, 'signal_map'):
                         self.tree.signal_map[leaf] = signal
-                    # Colorize based on dynamic behavior
-                    if self._is_dynamic(signal):
-                        leaf.setForeground(0, QColor("red"))
-                    else:
-                        leaf.setForeground(0, QColor("gray"))
+                    # Colorize based on dynamic behavior.
+                    color = "red" if self._is_signal_dynamic(signal) else "gray"
+                    leaf.setForeground(0, QColor(color))
             else:
                 # Internal node: create a branch.
-                if parent_item is None:
-                    node = QTreeWidgetItem(self.tree, [key])
-                else:
-                    node = QTreeWidgetItem(parent_item, [key])
+                node = self._create_tree_item(parent_item, key)
                 node.setExpanded(True)
                 self._build_filtered_tree(node, subtree, pattern)
 
-    def _is_dynamic(self, signal):
+    def _is_signal_dynamic(self, signal):
         """
         Returns True if the signal has multiple transition values.
         """
