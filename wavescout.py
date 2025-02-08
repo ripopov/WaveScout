@@ -192,24 +192,40 @@ class WaveformView(QWidget):
         return base_y + 5 if val in ("1", "b1", "true") else base_y + effective_height - 5
 
     def _draw_digital_signal(self, painter: QPainter, signal: VCDSignal, base_y: float,
-                               effective_height: float, drawing_width: float,
-                               pixels_per_time: float) -> None:
+                             effective_height: float, drawing_width: float,
+                             pixels_per_time: float) -> None:
         transitions = signal.transitions
         if not transitions:
             return
-        last_val = next((v for t, v in transitions if t < self.start_time), "0")
+
+        # Use reversed() and a generator expression to get the last value with t <= start_time.
+        last_val = next((v for t, v in reversed(transitions) if t <= self.start_time),
+                        transitions[0][1])
         prev_x = 0
         prev_y = self._value_to_y(last_val, base_y, effective_height)
+        high_brush = QBrush(QColor(0, 100, 0, 128))
+
         for t, val in transitions:
             if not (self.start_time <= t <= self.end_time):
                 continue
             x = (t - self.start_time) * pixels_per_time
+            if last_val in ("1", "b1", "true"):
+                rect = QRectF(prev_x, base_y + 5, x - prev_x, effective_height - 10)
+                painter.fillRect(rect, high_brush)
+
             painter.setPen(QPen(QColor("cyan") if last_val == "1" else QColor("lime"), 1))
             painter.drawLine(prev_x, prev_y, x, prev_y)
+
             new_y = self._value_to_y(val, base_y, effective_height)
             painter.setPen(QPen(QColor("lime"), 1))
             painter.drawLine(x, prev_y, x, new_y)
+
             prev_x, prev_y, last_val = x, new_y, val
+
+        if last_val in ("1", "b1", "true"):
+            rect = QRectF(prev_x, base_y + 5, drawing_width - prev_x, effective_height - 10)
+            painter.fillRect(rect, high_brush)
+
         painter.setPen(QPen(QColor("cyan") if last_val == "1" else QColor("lime"), 1))
         painter.drawLine(prev_x, prev_y, drawing_width, prev_y)
 
