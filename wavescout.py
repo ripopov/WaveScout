@@ -40,7 +40,6 @@ VALUE_PANEL_WIDTH = 100
 AVG_PANEL_WIDTH = 100
 DEFAULT_WAVE_VIEW_WIDTH = 600
 
-
 # ---------------------------------------------------------------------
 # A context manager for QPainter to simplify cleanup.
 @contextmanager
@@ -50,7 +49,6 @@ def qpainter(widget: QWidget) -> QPainter:
         yield painter
     finally:
         painter.end()
-
 
 # ---------------------------------------------------------------------
 # Helper drawing functions (now using constants rather than passed parameters)
@@ -63,7 +61,6 @@ def draw_timeline_header(painter: QPainter, start_time: float, end_time: float, 
     fm = QFontMetrics(DEFAULT_TEXT_FONT)
     painter.drawText(width - fm.horizontalAdvance(end_str) - 5, DEFAULT_TOP_MARGIN - 5, end_str)
 
-
 def draw_marker(painter: QPainter, marker: Optional[float], label: str,
                 start_time: float, end_time: float, width: float) -> None:
     if marker is None or not (start_time <= marker <= end_time):
@@ -75,7 +72,6 @@ def draw_marker(painter: QPainter, marker: Optional[float], label: str,
     painter.drawLine(x, DEFAULT_TOP_MARGIN, x, painter.viewport().height())
     painter.drawText(QRectF(x - 15, 0, 30, DEFAULT_TOP_MARGIN), Qt.AlignmentFlag.AlignCenter, label)
 
-
 def draw_cursor(painter: QPainter, cursor_time: Optional[float],
                 start_time: float, end_time: float, height: float, width: float) -> None:
     if cursor_time is None:
@@ -86,14 +82,12 @@ def draw_cursor(painter: QPainter, cursor_time: Optional[float],
     painter.setPen(QPen(Qt.GlobalColor.red, 1, Qt.PenStyle.DashLine))
     painter.drawLine(x, DEFAULT_TOP_MARGIN, x, height)
 
-
 def draw_selection_rect(painter: QPainter, sel_start: Optional[float],
                         sel_end: Optional[float], width: float, height: float) -> None:
     if sel_start is not None and sel_end is not None:
         x1, x2 = min(sel_start, sel_end), max(sel_start, sel_end)
         painter.fillRect(QRectF(x1, DEFAULT_TOP_MARGIN, x2 - x1, height - DEFAULT_TOP_MARGIN),
                          QBrush(QColor(0, 0, 255, 100)))
-
 
 # =============================================================================
 # WAVEFORM MODEL
@@ -107,7 +101,6 @@ class WaveformModel(QObject):
         self.timescale: str = self.vcd_parser.parse() or "unknown"
         self.signals: List[VCDSignal] = list(self.vcd_parser.signals.values())
         self.hierarchy: Dict[str, Any] = self.vcd_parser.hierarchy
-
 
 # =============================================================================
 # WAVEFORM VIEW (VIEW)
@@ -288,45 +281,66 @@ class WaveformView(QWidget):
             norm = (num - min_val) / (max_val - min_val)
             return base_y + effective_height - norm * effective_height
 
-        segment_start = 0
+        # Get the last value before the current view start:
         last_val = next((v for t, v in signal.transitions if t < self.start_time), "0")
         try:
             last_num = int(last_val, 2)
         except Exception:
             last_num = 0
         last_disp = convert_vector(last_val, signal.width, signal.rep_mode)
-        # Save painter state before setting the font
+        segment_start = 0
+        y_old = map_value(last_num)
+
+        # A small epsilon (overlap) to cover any potential 1-pixel gap due to rounding or antialiasing.
+        epsilon = 1.0
+
         painter.save()
         painter.setFont(self.text_font)
         for t, v in signal.transitions:
             if not (self.start_time <= t <= self.end_time):
                 continue
             x = (t - self.start_time) * pixels_per_time
-            y_value = map_value(last_num)
+
+            # Fill the rectangle for the current segment with an extra epsilon in width.
             norm = (last_num - min_val) / (max_val - min_val)
             heat_color = QColor(int(norm * 255), 0, int((1 - norm) * 255))
             rect = QRectF(segment_start, base_y + effective_height,
-                          x - segment_start, - (base_y + effective_height - y_value))
+                          x - segment_start + epsilon, - (base_y + effective_height - y_old))
             painter.fillRect(rect, heat_color)
+
+            # Draw horizontal line for the current segment
             painter.setPen(QPen(Qt.GlobalColor.yellow, 1))
-            painter.drawLine(segment_start, y_value, x, y_value)
-            segment_start = x + 1
-            last_val = v
+            painter.drawLine(segment_start, y_old, x, y_old)
+
+            # Calculate new y coordinate from the new value
             try:
-                last_num = int(last_val, 2)
+                new_num = int(v, 2)
             except Exception:
-                last_num = 0
-            last_disp = convert_vector(last_val, signal.width, signal.rep_mode)
-        y_value = map_value(last_num)
-        rect = QRectF(segment_start, base_y + effective_height,
-                      drawing_width - segment_start, - (base_y + effective_height - y_value))
+                new_num = 0
+            y_new = map_value(new_num)
+
+            # Draw vertical line at the transition (stair-step) to connect previous and new levels
+            painter.drawLine(x, y_old, x, y_new)
+
+            # Update segment_start to the current x (next rectangle will start here)
+            segment_start = x
+            last_num = new_num
+            last_disp = convert_vector(v, signal.width, signal.rep_mode)
+            y_old = y_new
+
+        # Draw the final segment after the last transition (with epsilon overlap)
         norm = (last_num - min_val) / (max_val - min_val)
-        painter.fillRect(rect, QColor(int(norm * 255), 0, int((1 - norm) * 255)))
-        text_rect = QRectF(segment_start, y_value,
-                           drawing_width - segment_start, base_y + effective_height - y_value)
+        heat_color = QColor(int(norm * 255), 0, int((1 - norm) * 255))
+        rect = QRectF(segment_start, base_y + effective_height,
+                      drawing_width - segment_start + epsilon, - (base_y + effective_height - y_old))
+        painter.fillRect(rect, heat_color)
+        painter.drawLine(segment_start, y_old, drawing_width, y_old)
+
+        # Optionally, draw the final value text over the last segment
+        text_rect = QRectF(segment_start, y_old,
+                           drawing_width - segment_start, base_y + effective_height - y_old)
         painter.setPen(QPen(Qt.GlobalColor.white, 1))
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, last_disp)
-        # Restore painter state so later drawings are not affected
         painter.restore()
 
     # --- Mouse & Wheel event handling ---
@@ -435,7 +449,6 @@ class WaveformView(QWidget):
                 break
         return convert_vector(val, signal.width, signal.rep_mode) if signal.width > 1 else val
 
-
 # =============================================================================
 # WAVEFORM AVERAGES (VIEW)
 # =============================================================================
@@ -464,7 +477,6 @@ class WaveformAverages(QWidget):
             for (y, avg_str) in self.avg_data:
                 painter.drawText(self.width() - fm.horizontalAdvance(avg_str) - 5,
                                  y + fm.ascent() / 2, avg_str)
-
 
 # =============================================================================
 # OVERLAY HEADERS (VIEW)
@@ -499,7 +511,6 @@ class WaveformHeaderOverlay(QWidget):
                         self.waveform_view.end_time,
                         self.width())
 
-
 class AveragesHeaderOverlay(QWidget):
     """Fixed overlay that draws a header over the averages panel."""
     def __init__(self, parent: QWidget, avg_panel: WaveformAverages) -> None:
@@ -516,7 +527,6 @@ class AveragesHeaderOverlay(QWidget):
             fm = QFontMetrics(painter.font())
             painter.setPen(QColor("yellow"))
             painter.drawText(5, fm.ascent() + 2, self.avg_panel.header)
-
 
 # =============================================================================
 # WAVEFORM PANEL (CONTROLLER/VIEW CONTAINER)
@@ -658,7 +668,6 @@ class WaveformPanel(QWidget):
         self.content_widget.setMinimumHeight(total_height)
         self.update_overlays()
 
-
 # =============================================================================
 # WAVEFORM NAMES (VIEW)
 # =============================================================================
@@ -787,7 +796,6 @@ class WaveformNames(QWidget):
         if hasattr(main_window, "dump_signals"):
             main_window.dump_signals(list(targets))
 
-
 # =============================================================================
 # WAVEFORM VALUES (VIEW)
 # =============================================================================
@@ -813,7 +821,6 @@ class WaveformValues(QWidget):
             for (y, text) in self.values:
                 painter.setPen(QColor("yellow"))
                 painter.drawText(self.width() - fm.horizontalAdvance(text) - 5, y + fm.ascent() / 2, text)
-
 
 # =============================================================================
 # VCD VIEWER (MAIN CONTROLLER)
@@ -1021,7 +1028,6 @@ class VCDViewer(QMainWindow):
 
     def dump_signals(self, signals: List[VCDSignal]) -> None:
         dump_signals(signals, self.timescale)
-
 
 if __name__ == "__main__":
     vcd_filename = "jtag.vcd"
