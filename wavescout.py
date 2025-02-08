@@ -659,27 +659,48 @@ class WaveformPanel(QWidget):
         header = f"A: {A:.2f} B: {B:.2f}"
         avg_data: List[Tuple[float, str]] = []
         for signal, y, effective_height in self.get_signal_positions():
-            avg_val = self.compute_average(signal, A, B)
-            avg_data.append((y + effective_height / 2, f"{avg_val:.2f}"))
+            avg, min_val, max_val = self.compute_stats(signal, A, B)
+            # Format the string to display average, min, and max (e.g. "Avg: 2.00 Min: 1.00 Max: 10.00")
+            avg_str = f"Avg: {avg:.2f} Min: {min_val:.2f} Max: {max_val:.2f}"
+            avg_data.append((y + effective_height / 2, avg_str))
         self.avg_panel.set_data(header, avg_data)
 
-    def compute_average(self, signal: VCDSignal, A: float, B: float) -> float:
+    def compute_stats(self, signal: VCDSignal, A: float, B: float) -> Tuple[float, float, float]:
+        """
+        Compute the time-weighted average, and the minimum and maximum numeric values
+        of the given signal over the interval [A, B].
+        """
         total, duration = 0.0, B - A
         if duration <= 0:
-            return 0.0
+            return 0.0, 0.0, 0.0
         transitions = signal.transitions
+        # Get the last value at or before A (default to "0" if no such transition exists)
         current_val = next((v for t, v in transitions if t <= A), "0")
         current_time = A
+        current_num = numeric_value(current_val)
+        min_val = current_num
+        max_val = current_num
+
         for t, v in transitions:
             if t < A:
                 continue
             if t > B:
                 break
-            total += (t - current_time) * numeric_value(current_val)
-            current_time, current_val = t, v
+            dt = t - current_time
+            total += dt * numeric_value(current_val)
+            current_time = t
+            current_val = v
+            current_num = numeric_value(current_val)
+            min_val = min(min_val, current_num)
+            max_val = max(max_val, current_num)
         if current_time < B:
-            total += (B - current_time) * numeric_value(current_val)
-        return total / duration
+            dt = B - current_time
+            total += dt * numeric_value(current_val)
+            current_num = numeric_value(current_val)
+            min_val = min(min_val, current_num)
+            max_val = max(max_val, current_num)
+        avg = total / duration
+        return avg, min_val, max_val
 
     def redraw(self) -> None:
         self.wave_view.top_margin = DEFAULT_TOP_MARGIN
