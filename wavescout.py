@@ -46,7 +46,7 @@ def qpainter(widget: QWidget) -> QPainter:
 # ---------------------------------------------------------------------
 def draw_timeline_header(painter: QPainter, start_time: float, end_time: float,
                          top_margin: int, text_font: QFont, width: float) -> None:
-    painter.setPen(Qt.white)
+    painter.setPen(Qt.GlobalColor.white)
     painter.drawLine(0, top_margin, width, top_margin)
     start_str, end_str = f"{start_time:.2f}", f"{end_time:.2f}"
     painter.drawText(5, top_margin - 5, start_str)
@@ -61,9 +61,9 @@ def draw_marker(painter: QPainter, marker: Optional[float], label: str,
     time_span = end_time - start_time
     pixels_per_time = width / time_span if time_span else 1
     x = (marker - start_time) * pixels_per_time
-    painter.setPen(QPen(Qt.yellow, 1))
+    painter.setPen(QPen(Qt.GlobalColor.yellow, 1))
     painter.drawLine(x, top_margin, x, painter.viewport().height())
-    painter.drawText(QRectF(x - 15, 0, 30, top_margin), Qt.AlignCenter, label)
+    painter.drawText(QRectF(x - 15, 0, 30, top_margin), Qt.AlignmentFlag.AlignCenter, label)
 
 
 def draw_cursor(painter: QPainter, cursor_time: Optional[float],
@@ -74,7 +74,7 @@ def draw_cursor(painter: QPainter, cursor_time: Optional[float],
     time_span = end_time - start_time
     pixels_per_time = width / time_span if time_span else 1
     x = (cursor_time - start_time) * pixels_per_time
-    painter.setPen(QPen(Qt.red, 1, Qt.DashLine))
+    painter.setPen(QPen(Qt.GlobalColor.red, 1, Qt.PenStyle.DashLine))
     painter.drawLine(x, top_margin, x, height)
 
 
@@ -116,7 +116,7 @@ class WaveformView(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setMouseTracking(True)
-        self.setFocusPolicy(Qt.StrongFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.signals: List[VCDSignal] = []
         self.start_time: float = 0
         self.end_time: float = 200
@@ -126,7 +126,7 @@ class WaveformView(QWidget):
         self.left_margin: int = 0
         self.top_margin: int = 30
         self.text_font: QFont = QFont("Courier", 10)
-        self.value_font: QFont = QFont("Courier", 10, QFont.Bold)
+        self.value_font: QFont = QFont("Courier", 10, QFont.Weight.Bold)
         self.cursor_time: Optional[float] = None
         self.highlighted_signal: Optional[VCDSignal] = None
         self.marker_A: Optional[float] = None
@@ -137,8 +137,8 @@ class WaveformView(QWidget):
 
     def paintEvent(self, event) -> None:
         with qpainter(self) as painter:
-            painter.setRenderHint(QPainter.Antialiasing)
-            painter.setRenderHint(QPainter.TextAntialiasing)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
             painter.fillRect(self.rect(), QColor("black"))
             drawing_width, drawing_height = self.width(), self.height()
             time_span = self.end_time - self.start_time
@@ -181,12 +181,12 @@ class WaveformView(QWidget):
         if global_min is not None and self.start_time >= global_min:
             x = 0 if self.start_time == global_min else (global_min - self.start_time) * pixels_per_time
             pen_width = 3 if self.start_time == global_min else 1
-            painter.setPen(QPen(Qt.red, pen_width))
+            painter.setPen(QPen(Qt.GlobalColor.red, pen_width))
             painter.drawLine(x, self.top_margin, x, height)
         if global_max is not None and self.end_time <= global_max:
             x = width if self.end_time == global_max else (global_max - self.start_time) * pixels_per_time
             pen_width = 3 if self.end_time == global_max else 1
-            painter.setPen(QPen(Qt.red, pen_width))
+            painter.setPen(QPen(Qt.GlobalColor.red, pen_width))
             painter.drawLine(x, self.top_margin, x, height)
 
     def _get_global_range(self) -> Tuple[Optional[float], Optional[float]]:
@@ -215,13 +215,13 @@ class WaveformView(QWidget):
             if not (self.start_time <= t <= self.end_time):
                 continue
             x = (t - self.start_time) * pixels_per_time
-            painter.setPen(QPen(QColor("cyan" if last_val == "1" else "lime"), 1))
+            painter.setPen(QPen(QColor("cyan") if last_val == "1" else QColor("lime"), 1))
             painter.drawLine(prev_x, prev_y, x, prev_y)
             new_y = self._value_to_y(val, base_y, effective_height)
             painter.setPen(QPen(QColor("lime"), 1))
             painter.drawLine(x, prev_y, x, new_y)
             prev_x, prev_y, last_val = x, new_y, val
-        painter.setPen(QPen(QColor("cyan" if last_val == "1" else "lime"), 1))
+        painter.setPen(QPen(QColor("cyan") if last_val == "1" else QColor("lime"), 1))
         painter.drawLine(prev_x, prev_y, drawing_width, prev_y)
 
     def _draw_vector_signal(self, painter: QPainter, signal: VCDSignal, base_y: float,
@@ -253,7 +253,7 @@ class WaveformView(QWidget):
                 text = (last_disp if fm.horizontalAdvance(last_disp) <= block_width
                         else last_disp[:max(1, int(block_width / char_width))])
                 painter.drawText(QRectF(segment_start, y_top, block_width, effective_height - 10),
-                                 Qt.AlignCenter, text)
+                                 Qt.AlignmentFlag.AlignCenter, text)
             painter.drawLine(x - delta, y_top, x + delta, y_bottom)
             painter.drawLine(x - delta, y_bottom, x + delta, y_top)
             segment_start, last_val, last_disp = x + delta, val, convert_vector(val, signal.width, signal.rep_mode)
@@ -267,7 +267,7 @@ class WaveformView(QWidget):
             text = (last_disp if fm.horizontalAdvance(last_disp) <= block_width
                     else last_disp[:max(1, int(block_width / char_width))])
             painter.drawText(QRectF(segment_start, y_top, block_width, effective_height - 10),
-                             Qt.AlignCenter, text)
+                             Qt.AlignmentFlag.AlignCenter, text)
 
     def _draw_analog_step(self, painter: QPainter, signal: VCDSignal, base_y: float,
                            effective_height: float, drawing_width: float,
@@ -305,7 +305,7 @@ class WaveformView(QWidget):
             rect = QRectF(segment_start, base_y + effective_height,
                           x - segment_start, - (base_y + effective_height - y_value))
             painter.fillRect(rect, heat_color)
-            painter.setPen(QPen(Qt.yellow, 1))
+            painter.setPen(QPen(Qt.GlobalColor.yellow, 1))
             painter.drawLine(segment_start, y_value, x, y_value)
             segment_start = x + 1
             last_val = v
@@ -321,16 +321,16 @@ class WaveformView(QWidget):
         painter.fillRect(rect, QColor(int(norm * 255), 0, int((1 - norm) * 255)))
         text_rect = QRectF(segment_start, y_value,
                            drawing_width - segment_start, base_y + effective_height - y_value)
-        painter.setPen(QPen(Qt.white, 1))
-        painter.drawText(text_rect, Qt.AlignCenter, last_disp)
+        painter.setPen(QPen(Qt.GlobalColor.white, 1))
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, last_disp)
 
     # --- Mouse & Wheel event handling ---
     def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.RightButton:
+        if event.button() == Qt.MouseButton.RightButton:
             self.cursor_time = None
             self.update()
             self.cursorChanged.emit(0)
-        elif event.button() == Qt.LeftButton:
+        elif event.button() == Qt.MouseButton.LeftButton:
             self.selection_start_x = self.selection_end_x = event.position().x()
             self.update()
 
@@ -355,7 +355,7 @@ class WaveformView(QWidget):
 
     def wheelEvent(self, event) -> None:
         delta = event.angleDelta().y()
-        if event.modifiers() & Qt.ControlModifier:
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             self.zoom(1.1 if delta > 0 else 0.9)
         else:
             self.pan(-delta / 10)
@@ -409,12 +409,12 @@ class WaveformView(QWidget):
             self.set_time_window(min_time, max_time)
 
     def keyPressEvent(self, event) -> None:
-        if event.modifiers() & Qt.ControlModifier:
-            if event.key() == Qt.Key_A and self.cursor_time is not None:
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            if event.key() == Qt.Key.Key_A and self.cursor_time is not None:
                 self.marker_A = self.cursor_time
                 self.markersChanged.emit()
                 self.update()
-            elif event.key() == Qt.Key_B and self.cursor_time is not None:
+            elif event.key() == Qt.Key.Key_B and self.cursor_time is not None:
                 self.marker_B = self.cursor_time
                 self.markersChanged.emit()
                 self.update()
@@ -452,7 +452,7 @@ class WaveformAverages(QWidget):
     def paintEvent(self, event) -> None:
         with qpainter(self) as painter:
             painter.fillRect(self.rect(), QColor("black"))
-            painter.setFont(QFont("Courier", 10, QFont.Bold))
+            painter.setFont(QFont("Courier", 10, QFont.Weight.Bold))
             fm = QFontMetrics(painter.font())
             painter.setPen(QColor("yellow"))
             painter.drawText(5, fm.ascent() + 2, self.header)
@@ -510,7 +510,7 @@ class AveragesHeaderOverlay(QWidget):
     def paintEvent(self, event) -> None:
         with qpainter(self) as painter:
             painter.fillRect(self.rect(), QColor("black"))
-            painter.setFont(QFont("Courier", 10, QFont.Bold))
+            painter.setFont(QFont("Courier", 10, QFont.Weight.Bold))
             fm = QFontMetrics(painter.font())
             painter.setPen(QColor("yellow"))
             painter.drawText(5, fm.ascent() + 2, self.avg_panel.header)
@@ -535,7 +535,7 @@ class WaveformPanel(QWidget):
         self.value_panel = WaveformValues(self)
         self.avg_panel = WaveformAverages(self)
 
-        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
         for widget, size in ((self.name_panel, name_panel_width),
                              (self.wave_view, 600),
                              (self.value_panel, value_panel_width),
@@ -571,7 +571,7 @@ class WaveformPanel(QWidget):
         self.name_panel.representationChanged.connect(self.redraw)
 
     def eventFilter(self, obj, event) -> bool:
-        if obj == self.scroll_area.viewport() and event.type() in (QEvent.Resize, QEvent.Paint):
+        if obj == self.scroll_area.viewport() and event.type() in (QEvent.Type.Resize, QEvent.Type.Paint):
             self.update_overlays()
         return super().eventFilter(obj, event)
 
@@ -582,7 +582,7 @@ class WaveformPanel(QWidget):
     def update_overlays(self) -> None:
         pos = self.wave_view.mapTo(self.scroll_area.viewport(), QPoint(0, 0))
         self.wave_header_overlay.setGeometry(pos.x(), 0, self.wave_view.width(), self.wave_view.top_margin)
-        fm = QFontMetrics(QFont("Courier", 10, QFont.Bold))
+        fm = QFontMetrics(QFont("Courier", 10, QFont.Weight.Bold))
         avg_header_height = fm.height() + 4
         pos2 = self.avg_panel.mapTo(self.scroll_area.viewport(), QPoint(0, 0))
         self.avg_header_overlay.setGeometry(pos2.x(), 0, self.avg_panel.width(), avg_header_height)
@@ -717,13 +717,13 @@ class WaveformNames(QWidget):
         if index is None:
             return super().mousePressEvent(event)
         clicked_signal = self.signals[index]
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             mods = event.modifiers()
-            if mods & Qt.ShiftModifier and self.last_clicked_index is not None:
+            if mods & Qt.KeyboardModifier.ShiftModifier and self.last_clicked_index is not None:
                 start, end = sorted((self.last_clicked_index, index))
                 for i in range(start, end + 1):
                     self.selected_signals.add(self.signals[i])
-            elif mods & Qt.ControlModifier:
+            elif mods & Qt.KeyboardModifier.ControlModifier:
                 if clicked_signal in self.selected_signals:
                     self.selected_signals.remove(clicked_signal)
                 else:
@@ -733,7 +733,7 @@ class WaveformNames(QWidget):
                 self.selected_signals = {clicked_signal}
                 self.last_clicked_index = index
             self.update()
-        elif event.button() == Qt.RightButton:
+        elif event.button() == Qt.MouseButton.RightButton:
             if clicked_signal not in self.selected_signals:
                 self.selected_signals = {clicked_signal}
                 self.last_clicked_index = index
@@ -813,7 +813,7 @@ class WaveformValues(QWidget):
     def paintEvent(self, event) -> None:
         with qpainter(self) as painter:
             painter.fillRect(self.rect(), QColor("black"))
-            painter.setFont(QFont("Courier", 10, QFont.Bold))
+            painter.setFont(QFont("Courier", 10, QFont.Weight.Bold))
             fm = QFontMetrics(painter.font())
             for (y, text) in self.values:
                 painter.setPen(QColor("yellow"))
@@ -842,7 +842,7 @@ class VCDViewer(QMainWindow):
         self._create_main_ui()
 
         self.search_shortcut = QShortcut(QKeySequence("F"), self)
-        self.search_shortcut.setContext(Qt.ApplicationShortcut)
+        self.search_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         self.search_shortcut.activated.connect(self.open_search_window)
         self.search_window: Optional[SearchWindow] = None
 
@@ -859,7 +859,7 @@ class VCDViewer(QMainWindow):
         filemenu.addSeparator()
 
     def _create_main_ui(self) -> None:
-        main_splitter = QSplitter(Qt.Horizontal, self)
+        main_splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.setCentralWidget(main_splitter)
 
         from design_explorer import DesignExplorer
@@ -974,7 +974,7 @@ class VCDViewer(QMainWindow):
                     return
 
     def keyPressEvent(self, event) -> None:
-        if event.key() == Qt.Key_Delete:
+        if event.key() == Qt.Key.Key_Delete:
             selected = self.wave_panel.name_panel.selected_signals
             if selected:
                 for sig in list(selected):
@@ -993,12 +993,12 @@ class VCDViewer(QMainWindow):
     def save_state(self) -> None:
         state = {
             "vcd_filename": self.vcd_filename,
-            "signals": [{
+            "signals": [ {
                 "fullname": sig.fullname,
                 "rep_mode": sig.rep_mode,
                 "height_factor": sig.height_factor,
                 "analog_render": sig.analog_render
-            } for sig in self.wave_panel.signals],
+            } for sig in self.wave_panel.signals ],
             "zoom": {
                 "start_time": self.wave_panel.wave_view.start_time,
                 "end_time": self.wave_panel.wave_view.end_time
