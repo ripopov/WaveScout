@@ -29,6 +29,17 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
 from search_window import SearchWindow
 from state_manager import StateManager
 
+# ---------------------------------------------------------------------
+# Module-level constants
+# (All “magic” values have been centralized here.)
+DEFAULT_TOP_MARGIN = 30
+DEFAULT_TEXT_FONT = QFont("Courier", 10)
+DEFAULT_SIGNAL_HEIGHT = 30
+NAME_PANEL_WIDTH = 150
+VALUE_PANEL_WIDTH = 100
+AVG_PANEL_WIDTH = 100
+DEFAULT_WAVE_VIEW_WIDTH = 600
+
 
 # ---------------------------------------------------------------------
 # A context manager for QPainter to simplify cleanup.
@@ -42,48 +53,45 @@ def qpainter(widget: QWidget) -> QPainter:
 
 
 # ---------------------------------------------------------------------
-# Helper drawing functions
+# Helper drawing functions (now using constants rather than passed parameters)
 # ---------------------------------------------------------------------
-def draw_timeline_header(painter: QPainter, start_time: float, end_time: float,
-                         top_margin: int, text_font: QFont, width: float) -> None:
+def draw_timeline_header(painter: QPainter, start_time: float, end_time: float, width: float) -> None:
     painter.setPen(Qt.GlobalColor.white)
-    painter.drawLine(0, top_margin, width, top_margin)
+    painter.drawLine(0, DEFAULT_TOP_MARGIN, width, DEFAULT_TOP_MARGIN)
     start_str, end_str = f"{start_time:.2f}", f"{end_time:.2f}"
-    painter.drawText(5, top_margin - 5, start_str)
-    fm = QFontMetrics(text_font)
-    painter.drawText(width - fm.horizontalAdvance(end_str) - 5, top_margin - 5, end_str)
+    painter.drawText(5, DEFAULT_TOP_MARGIN - 5, start_str)
+    fm = QFontMetrics(DEFAULT_TEXT_FONT)
+    painter.drawText(width - fm.horizontalAdvance(end_str) - 5, DEFAULT_TOP_MARGIN - 5, end_str)
 
 
 def draw_marker(painter: QPainter, marker: Optional[float], label: str,
-                start_time: float, end_time: float, top_margin: int, width: float) -> None:
+                start_time: float, end_time: float, width: float) -> None:
     if marker is None or not (start_time <= marker <= end_time):
         return
     time_span = end_time - start_time
     pixels_per_time = width / time_span if time_span else 1
     x = (marker - start_time) * pixels_per_time
     painter.setPen(QPen(Qt.GlobalColor.yellow, 1))
-    painter.drawLine(x, top_margin, x, painter.viewport().height())
-    painter.drawText(QRectF(x - 15, 0, 30, top_margin), Qt.AlignmentFlag.AlignCenter, label)
+    painter.drawLine(x, DEFAULT_TOP_MARGIN, x, painter.viewport().height())
+    painter.drawText(QRectF(x - 15, 0, 30, DEFAULT_TOP_MARGIN), Qt.AlignmentFlag.AlignCenter, label)
 
 
 def draw_cursor(painter: QPainter, cursor_time: Optional[float],
-                start_time: float, end_time: float, top_margin: int,
-                height: float, width: float) -> None:
+                start_time: float, end_time: float, height: float, width: float) -> None:
     if cursor_time is None:
         return
     time_span = end_time - start_time
     pixels_per_time = width / time_span if time_span else 1
     x = (cursor_time - start_time) * pixels_per_time
     painter.setPen(QPen(Qt.GlobalColor.red, 1, Qt.PenStyle.DashLine))
-    painter.drawLine(x, top_margin, x, height)
+    painter.drawLine(x, DEFAULT_TOP_MARGIN, x, height)
 
 
 def draw_selection_rect(painter: QPainter, sel_start: Optional[float],
-                        sel_end: Optional[float], top_margin: int,
-                        width: float, height: float) -> None:
+                        sel_end: Optional[float], width: float, height: float) -> None:
     if sel_start is not None and sel_end is not None:
         x1, x2 = min(sel_start, sel_end), max(sel_start, sel_end)
-        painter.fillRect(QRectF(x1, top_margin, x2 - x1, height - top_margin),
+        painter.fillRect(QRectF(x1, DEFAULT_TOP_MARGIN, x2 - x1, height - DEFAULT_TOP_MARGIN),
                          QBrush(QColor(0, 0, 255, 100)))
 
 
@@ -122,10 +130,10 @@ class WaveformView(QWidget):
         self.end_time: float = 200
         self.zoom_factor: float = 1.0
 
-        self.signal_height: int = 30
-        self.left_margin: int = 0
-        self.top_margin: int = 30
-        self.text_font: QFont = QFont("Courier", 10)
+        # Now use our constants for top margin and signal height
+        self.signal_height: int = DEFAULT_SIGNAL_HEIGHT
+        self.top_margin: int = DEFAULT_TOP_MARGIN
+        self.text_font: QFont = DEFAULT_TEXT_FONT
         self.value_font: QFont = QFont("Courier", 10, QFont.Weight.Bold)
         self.cursor_time: Optional[float] = None
         self.highlighted_signal: Optional[VCDSignal] = None
@@ -145,17 +153,12 @@ class WaveformView(QWidget):
             pixels_per_time = drawing_width / time_span if time_span else 1
 
             # Draw timeline header, selection, signals, cursor, markers, boundaries:
-            draw_timeline_header(painter, self.start_time, self.end_time,
-                                 self.top_margin, self.text_font, drawing_width)
-            draw_selection_rect(painter, self.selection_start_x, self.selection_end_x,
-                                self.top_margin, drawing_width, drawing_height)
+            draw_timeline_header(painter, self.start_time, self.end_time, drawing_width)
+            draw_selection_rect(painter, self.selection_start_x, self.selection_end_x, drawing_width, drawing_height)
             self._draw_signals(painter, drawing_width, drawing_height, pixels_per_time)
-            draw_cursor(painter, self.cursor_time, self.start_time, self.end_time,
-                        self.top_margin, drawing_height, drawing_width)
-            draw_marker(painter, self.marker_A, "A", self.start_time, self.end_time,
-                        self.top_margin, drawing_width)
-            draw_marker(painter, self.marker_B, "B", self.start_time, self.end_time,
-                        self.top_margin, drawing_width)
+            draw_cursor(painter, self.cursor_time, self.start_time, self.end_time, drawing_height, drawing_width)
+            draw_marker(painter, self.marker_A, "A", self.start_time, self.end_time, drawing_width)
+            draw_marker(painter, self.marker_B, "B", self.start_time, self.end_time, drawing_width)
             self._draw_global_boundaries(painter, drawing_width, drawing_height, pixels_per_time)
 
     def _draw_signals(self, painter: QPainter, drawing_width: float,
@@ -479,23 +482,20 @@ class WaveformHeaderOverlay(QWidget):
             draw_timeline_header(painter,
                                  self.waveform_view.start_time,
                                  self.waveform_view.end_time,
-                                 self.waveform_view.top_margin,
-                                 self.waveform_view.text_font,
                                  self.width())
             if self.waveform_view.cursor_time is not None:
                 draw_cursor(painter, self.waveform_view.cursor_time,
                             self.waveform_view.start_time,
                             self.waveform_view.end_time,
-                            self.waveform_view.top_margin,
                             self.height(), self.width())
             draw_marker(painter, self.waveform_view.marker_A, "A",
                         self.waveform_view.start_time,
                         self.waveform_view.end_time,
-                        self.waveform_view.top_margin, self.width())
+                        self.width())
             draw_marker(painter, self.waveform_view.marker_B, "B",
                         self.waveform_view.start_time,
                         self.waveform_view.end_time,
-                        self.waveform_view.top_margin, self.width())
+                        self.width())
 
 
 class AveragesHeaderOverlay(QWidget):
@@ -524,9 +524,7 @@ class WaveformPanel(QWidget):
     Composite widget that arranges the waveform view, names, values and averages.
     Connects child widget signals to coordinate view updates.
     """
-    def __init__(self, parent: Optional[QWidget] = None,
-                 name_panel_width: int = 150, value_panel_width: int = 100,
-                 avg_panel_width: int = 100) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         from design_explorer import DesignExplorer  # local import
 
@@ -537,12 +535,12 @@ class WaveformPanel(QWidget):
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         # Add widgets in the order: Names, Values, Waveform, Averages
-        for widget, size in ((self.name_panel, name_panel_width),
-                             (self.value_panel, value_panel_width),
-                             (self.wave_view, 600),
-                             (self.avg_panel, avg_panel_width)):
+        for widget, size in ((self.name_panel, NAME_PANEL_WIDTH),
+                             (self.value_panel, VALUE_PANEL_WIDTH),
+                             (self.wave_view, DEFAULT_WAVE_VIEW_WIDTH),
+                             (self.avg_panel, AVG_PANEL_WIDTH)):
             self.splitter.addWidget(widget)
-        self.splitter.setSizes([name_panel_width, value_panel_width, 600, avg_panel_width])
+        self.splitter.setSizes([NAME_PANEL_WIDTH, VALUE_PANEL_WIDTH, DEFAULT_WAVE_VIEW_WIDTH, AVG_PANEL_WIDTH])
 
         self.content_widget = QWidget()
         clayout = QVBoxLayout(self.content_widget)
@@ -555,7 +553,6 @@ class WaveformPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.scroll_area)
 
-        # (The rest of the __init__ method remains unchanged)
         self.wave_header_overlay = WaveformHeaderOverlay(self.scroll_area.viewport(), self.wave_view)
         self.avg_header_overlay = AveragesHeaderOverlay(self.scroll_area.viewport(), self.avg_panel)
         self.scroll_area.viewport().installEventFilter(self)
@@ -563,15 +560,14 @@ class WaveformPanel(QWidget):
         self.scroll_area.horizontalScrollBar().valueChanged.connect(self.update_overlays)
 
         self.signals: List[VCDSignal] = []
-        self.top_margin: int = 30
-        self.signal_height: int = 30
+        self.top_margin: int = DEFAULT_TOP_MARGIN
+        self.signal_height: int = DEFAULT_SIGNAL_HEIGHT
         self.highlighted_signal: Optional[VCDSignal] = None
 
         self.wave_view.cursorChanged.connect(self.update_values)
         self.wave_view.timeWindowChanged.connect(lambda s, e: self.update_values())
         self.wave_view.markersChanged.connect(self.update_averages)
         self.name_panel.representationChanged.connect(self.redraw)
-
 
     def eventFilter(self, obj, event) -> bool:
         if obj == self.scroll_area.viewport() and event.type() in (QEvent.Type.Resize, QEvent.Type.Paint):
@@ -656,13 +652,13 @@ class WaveformPanel(QWidget):
         return total / duration
 
     def redraw(self) -> None:
-        self.wave_view.top_margin = self.top_margin
+        self.wave_view.top_margin = DEFAULT_TOP_MARGIN
         self.wave_view.highlighted_signal = self.highlighted_signal
         self.wave_view.update()
-        self.name_panel.set_signals(self.signals, self.top_margin, self.signal_height, self.highlighted_signal)
+        self.name_panel.set_signals(self.signals, DEFAULT_TOP_MARGIN, DEFAULT_SIGNAL_HEIGHT, self.highlighted_signal)
         self.update_values()
         self.update_averages()
-        total_height = self.wave_view.top_margin + 20 + sum(self.signal_height * s.height_factor for s in self.signals)
+        total_height = self.wave_view.top_margin + 20 + sum(DEFAULT_SIGNAL_HEIGHT * s.height_factor for s in self.signals)
         self.content_widget.setMinimumHeight(total_height)
         self.update_overlays()
 
@@ -680,8 +676,8 @@ class WaveformNames(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.signals: List[VCDSignal] = []
-        self.top_margin: int = 30
-        self.signal_height: int = 30
+        self.top_margin: int = DEFAULT_TOP_MARGIN
+        self.signal_height: int = DEFAULT_SIGNAL_HEIGHT
         self.selected_signals: set = set()
         self.last_clicked_index: Optional[int] = None
 
@@ -874,7 +870,7 @@ class VCDViewer(QMainWindow):
 
         right_frame = QWidget()
         rlayout = QVBoxLayout(right_frame)
-        self.wave_panel = WaveformPanel(name_panel_width=150, value_panel_width=100, avg_panel_width=100)
+        self.wave_panel = WaveformPanel()
         rlayout.addWidget(self.wave_panel, 1)
         control_frame = QWidget()
         ctrl_layout = QHBoxLayout(control_frame)
@@ -922,7 +918,6 @@ class VCDViewer(QMainWindow):
             self.timescale = self.model.timescale
             self.timescale_unit = ''.join(c for c in self.timescale if not c.isdigit()).strip()
             self.tree_signal_map.clear()
-            # Update the design explorer with the new hierarchy!
             self.design_explorer.set_hierarchy(self.model.hierarchy)
             self.rebuild_tree()
             self.wave_panel.wave_view.clear()
@@ -930,14 +925,11 @@ class VCDViewer(QMainWindow):
             self.wave_panel.redraw()
 
     def rebuild_tree(self) -> None:
-        # Use the design_explorer's filter_entry (if available) for filtering
         pattern = (self.design_explorer.filter_entry.text().strip()
                    if hasattr(self.design_explorer, "filter_entry") else "")
-        # Clear the tree widget from design_explorer
         self.design_explorer.tree.clear()
         self.design_explorer.tree.signal_map.clear()
         self.tree_signal_map.clear()
-        # Pass the new model's hierarchy to build the tree
         self._build_filtered_tree(self.design_explorer.tree, self.model.hierarchy, pattern)
 
     def _build_filtered_tree(self, parent_item, tree_dict: Dict[str, Any], pattern: str) -> None:
@@ -948,7 +940,6 @@ class VCDViewer(QMainWindow):
                 signal = subtree["_signal"]
                 if not pattern or fnmatch.fnmatch(signal.name, f"*{pattern}*"):
                     leaf = QTreeWidgetItem(parent_item, [signal.name])
-                    # Access the tree's signal_map via design_explorer
                     self.design_explorer.tree.signal_map[leaf] = signal
                     self.tree_signal_map[leaf] = signal
                     leaf.setForeground(0, QColor("red" if self._is_dynamic(signal) else "gray"))
