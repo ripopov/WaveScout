@@ -128,13 +128,10 @@ class WaveformView(QWidget):
         self.signals: List[VCDSignal] = []
         self.start_time: float = 0
         self.end_time: float = 200
-        self.zoom_factor: float = 1.0
-
         # Now use our constants for top margin and signal height
         self.signal_height: int = DEFAULT_SIGNAL_HEIGHT
         self.top_margin: int = DEFAULT_TOP_MARGIN
         self.text_font: QFont = DEFAULT_TEXT_FONT
-        self.value_font: QFont = QFont("Courier", 10, QFont.Weight.Bold)
         self.cursor_time: Optional[float] = None
         self.highlighted_signal: Optional[VCDSignal] = None
         self.marker_A: Optional[float] = None
@@ -610,10 +607,6 @@ class WaveformPanel(QWidget):
                 self.wave_view.signals.remove(signal)
             self.redraw()
 
-    def set_cursor(self, time: float) -> None:
-        self.wave_view.cursor_time = time
-        self.redraw()
-
     def update_values(self, *args) -> None:
         self.value_panel.clear()
         for signal, y, effective_height in self.get_signal_positions():
@@ -835,8 +828,6 @@ class VCDViewer(QMainWindow):
         self.model = WaveformModel(vcd_filename, self)
         self.vcd_filename: str = vcd_filename
         self.timescale: str = self.model.timescale
-        self.timescale_unit: str = ''.join(c for c in self.timescale if not c.isdigit()).strip()
-        self.tree_signal_map: Dict[Any, VCDSignal] = {}
         self._create_menu()
         self._create_main_ui()
 
@@ -916,8 +907,6 @@ class VCDViewer(QMainWindow):
             self.vcd_filename = new_file
             self.model = WaveformModel(self.vcd_filename, self)
             self.timescale = self.model.timescale
-            self.timescale_unit = ''.join(c for c in self.timescale if not c.isdigit()).strip()
-            self.tree_signal_map.clear()
             self.design_explorer.set_hierarchy(self.model.hierarchy)
             self.rebuild_tree()
             self.wave_panel.wave_view.clear()
@@ -929,7 +918,6 @@ class VCDViewer(QMainWindow):
                    if hasattr(self.design_explorer, "filter_entry") else "")
         self.design_explorer.tree.clear()
         self.design_explorer.tree.signal_map.clear()
-        self.tree_signal_map.clear()
         self._build_filtered_tree(self.design_explorer.tree, self.model.hierarchy, pattern)
 
     def _build_filtered_tree(self, parent_item, tree_dict: Dict[str, Any], pattern: str) -> None:
@@ -941,7 +929,6 @@ class VCDViewer(QMainWindow):
                 if not pattern or fnmatch.fnmatch(signal.name, f"*{pattern}*"):
                     leaf = QTreeWidgetItem(parent_item, [signal.name])
                     self.design_explorer.tree.signal_map[leaf] = signal
-                    self.tree_signal_map[leaf] = signal
                     leaf.setForeground(0, QColor("red" if self._is_dynamic(signal) else "gray"))
             else:
                 node = QTreeWidgetItem(parent_item, [key])
