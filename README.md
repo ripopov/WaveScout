@@ -2,7 +2,7 @@
 
 **AI-generated VCD Waveform viewer using Python and PySide6.**
 
-![WaveScout Screenshot](Screenshot-2025-02-06.png)
+![WaveScout Screenshot](Screenshot-2025-02-07.png)
 
 ## Introduction
 
