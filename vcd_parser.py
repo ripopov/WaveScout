@@ -1,7 +1,8 @@
-# vcd_parser.py
-# VCD Data Classes and Parser
-# This module provides classes and functions to parse VCD (Value Change Dump) files.
-# VCD files are used in digital design simulations to record changes in signal values over time.
+#!/usr/bin/env python3
+"""
+This module provides classes and functions to parse VCD (Value Change Dump)
+files and dump signals
+"""
 
 import re
 from math import ceil
@@ -11,129 +12,152 @@ from datetime import datetime
 class VCDSignal:
     """
     Class representing a single signal extracted from a VCD file.
-    Stores metadata about the signal (such as its name, hierarchy, width)
-    as well as the time-stamped value transitions.
+    Stores metadata (name, hierarchy, width) as well as time-stamped transitions.
     """
-
     def __init__(self, identifier, name, hierarchy, width=1):
-        self.id = identifier  # Unique VCD identifier for the signal (e.g., "!")
-        self.name = name  # Declared name of the signal (e.g., "BinCount" or "ext.COPY_ENGINE_READ_REQUEST")
-        self.hierarchy = hierarchy[:]  # List of hierarchical scopes leading to the signal (copied to avoid external modification)
-        self.fullname = '.'.join(hierarchy + [name])  # Full hierarchical name (e.g., "top.sub.BinCount")
-        self.width = width  # Bit width of the signal (default is 1 for single-bit signals)
-        self.transitions = []  # List of (time, value) tuples recording when the signal changes value
-        self.aliases = [self.fullname]  # List of alternative full names (aliases) for the signal
+        self.id = identifier                   # Unique VCD identifier (e.g., "!")
+        self.name = name                       # Declared name (e.g., "BinCount")
+        self.hierarchy = hierarchy[:]          # Copy of the hierarchy list
+        self.fullname = '.'.join(hierarchy + [name])  # Full hierarchical name
+        self.width = width                     # Bit width (default 1)
+        self.transitions = []                  # List of (time, value) tuples
+        self.aliases = [self.fullname]         # Alternative full names
 
-        # Additional custom attributes for display and rendering in waveform viewers:
-        self.height_factor = 1  # Vertical scaling factor for waveform display (1 = normal, 2 = double height, etc.)
-        self.rep_mode = "hex"  # Default representation mode for displaying the signal value; options: "hex", "bin", or "decimal"
-        self.analog_render = False  # Toggle to enable analog (step) style rendering in waveform displays
+        # Additional attributes (for display/waveform purposes)
+        self.height_factor = 1
+        self.rep_mode = "hex"                  # Options: "hex", "bin", or "decimal"
+        self.analog_render = False
 
 
 class VCDParser:
     """
-    Class responsible for parsing a VCD file and extracting signals and their transitions.
-    Also builds a hierarchical representation of the design for easier exploration.
-    """
+    Optimized VCD file parser.
 
-    def __init__(self, filename):
+    Parameters:
+        filename (str): Path to the VCD file.
+        assume_sorted (bool): If True, the simulation time markers are assumed
+                              to be in order, so per-signal sorting is skipped.
+        full_memory (bool): If True, the entire file is loaded into memory
+                            for faster processing. (Use False if memory is constrained.)
+    """
+    def __init__(self, filename, assume_sorted=True, full_memory=True):
         self.filename = filename
-        self.signals = {}  # Dictionary mapping VCD variable IDs to VCDSignal objects
-        self.hierarchy = {}  # Nested dictionary representing the design's hierarchical structure
-        self.timescale = None  # Timescale of the simulation (e.g., "1ns", "10ps") as defined in the VCD header
-        self.metadata = {}  # Dictionary for storing additional VCD metadata (e.g., date, version)
+        self.signals = {}     # Map VCD IDs to VCDSignal objects
+        self.hierarchy = {}   # Nested dict representing the design hierarchy
+        self.timescale = None # Timescale string from the header (e.g., "1ns")
+        self.metadata = {}    # Additional metadata (date, version, etc.)
+        self.assume_sorted = assume_sorted
+        self.full_memory = full_memory
 
     def parse(self):
         """
-        Parse the VCD file specified by self.filename.
-
-        The parser reads the header to extract metadata, scope, and variable definitions,
-        then processes the rest of the file to record value transitions for each signal.
+        Parse the VCD file.
 
         Returns:
-            The timescale as specified in the VCD file, or None if the file is not found.
+            The timescale string (e.g., "1ns") if parsing is successful; otherwise None.
         """
+        # Precompile regex for vector (multi-bit) changes.
+        b_vector_re = re.compile(r"b([01xz]+)\s+(\S+)")
+        # Translation table to replace unknown bits ('x' or 'X') with '0'
+        norm_table = str.maketrans("xX", "00")
 
-        # Helper function to normalize signal values by replacing unknown bits ('x' or 'X') with '0'
-        def normalize_value(val):
-            return ''.join('0' if c in 'xX' else c for c in val)
+        current_scope = []
+        current_time = 0
+        in_header = True
+
+        # Cache local variables to speed up inner-loop lookups.
+        signals = self.signals
+        hierarchy = self.hierarchy
+        assume_sorted = self.assume_sorted
 
         try:
-            with open(self.filename, "r") as f:
-                current_scope = []  # List to keep track of the current scope hierarchy during parsing
-                in_header = True  # Flag indicating whether we are still reading the header section
-                current_time = 0  # Variable to track the current simulation time
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue  # Skip empty lines
+            if self.full_memory:
+                # Read the entire file into memory
+                with open(self.filename, "rb") as f:
+                    content = f.read().decode("utf-8", errors="ignore")
+                lines = content.splitlines()
+            else:
+                # Use mmap as a fallback (still split the entire content)
+                import mmap
+                with open(self.filename, "rb") as f:
+                    with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                        content = mm.read().decode("utf-8", errors="ignore")
+                        lines = content.splitlines()
 
-                    if in_header:
-                        # Process header directives and metadata.
-                        if line.startswith("$timescale"):
-                            # Extract the simulation timescale (e.g., "1ns", "10ps")
-                            tokens = []
-                            parts = line.split()
-                            if len(parts) > 1:
-                                tokens.extend(parts[1:])
-                            # Read additional lines until the end of the timescale block is reached
-                            while "$end" not in line:
-                                line = f.readline().strip()
+            n_lines = len(lines)
+            i = 0  # Line index
+
+            while i < n_lines:
+                line = lines[i].strip()
+                i += 1
+                if not line:
+                    continue
+
+                # Process header until "$enddefinitions" is encountered.
+                if in_header:
+                    if line[0] == '$':
+                        tokens = line.split()
+                        directive = tokens[0]
+                        if directive == "$timescale":
+                            # Collect tokens until "$end" is reached.
+                            timescale_tokens = tokens[1:]
+                            while "$end" not in line and i < n_lines:
+                                line = lines[i].strip()
+                                i += 1
                                 if "$end" in line:
+                                    # Append tokens preceding "$end"
+                                    for token in line.split():
+                                        if token == "$end":
+                                            break
+                                        timescale_tokens.append(token)
                                     break
-                                tokens.extend(line.split())
-                            # Set the timescale to the first token found, or "unknown" if none found
-                            self.timescale = tokens[0] if tokens else "unknown"
+                                else:
+                                    timescale_tokens.extend(line.split())
+                            self.timescale = timescale_tokens[0] if timescale_tokens else "unknown"
 
-                        elif line.startswith("$date"):
-                            # Extract the date metadata from the VCD header
+                        elif directive == "$date":
                             date_info = []
-                            while "$end" not in line:
-                                line = f.readline().strip()
+                            while "$end" not in line and i < n_lines:
+                                line = lines[i].strip()
+                                i += 1
                                 if "$end" in line:
                                     break
                                 date_info.append(line)
                             self.metadata["date"] = ' '.join(date_info)
 
-                        elif line.startswith("$version"):
-                            # Extract version information from the VCD header
+                        elif directive == "$version":
                             version_info = []
-                            while "$end" not in line:
-                                line = f.readline().strip()
+                            while "$end" not in line and i < n_lines:
+                                line = lines[i].strip()
+                                i += 1
                                 if "$end" in line:
                                     break
                                 version_info.append(line)
                             self.metadata["version"] = ' '.join(version_info)
 
-                        elif line.startswith("$scope"):
-                            # When a new scope is declared, add its name to the current scope list.
-                            parts = line.split()
-                            if len(parts) >= 3:
-                                current_scope.append(parts[2])
+                        elif directive == "$scope":
+                            if len(tokens) >= 3:
+                                current_scope.append(tokens[2])
 
-                        elif line.startswith("$upscope"):
-                            # End the current scope by removing the last scope from the list.
+                        elif directive == "$upscope":
                             if current_scope:
                                 current_scope.pop()
 
-                        elif line.startswith("$var"):
-                            # Parse a variable definition line that declares a signal.
-                            # Format: $var <type> <width> <id> <name> $end
-                            parts = line.split()
-                            if len(parts) >= 6:
-                                var_id = parts[3]
+                        elif directive == "$var":
+                            # Format: "$var <type> <width> <id> <name> $end"
+                            if len(tokens) >= 6:
+                                var_id = tokens[3]
                                 try:
-                                    end_index = parts.index("$end")
+                                    end_index = tokens.index("$end")
                                 except ValueError:
-                                    end_index = len(parts)
-                                var_name = ' '.join(parts[4:end_index])
+                                    end_index = len(tokens)
+                                var_name = ' '.join(tokens[4:end_index])
                                 try:
-                                    width = int(parts[2])
+                                    width = int(tokens[2])
                                 except ValueError:
                                     width = 1
 
-                                # Determine the full hierarchical name of the signal.
-                                # If the signal name contains a dot and scopes exist, combine only the top-level scope with the var_name.
+                                # Build full hierarchical name.
                                 if current_scope and '.' in var_name:
                                     new_fullname = current_scope[0] + '.' + var_name
                                 elif current_scope:
@@ -141,79 +165,69 @@ class VCDParser:
                                 else:
                                     new_fullname = var_name
 
-                                # If the signal already exists, update its alias list and hierarchy.
-                                if var_id in self.signals:
-                                    existing_signal = self.signals[var_id]
+                                if var_id in signals:
+                                    existing_signal = signals[var_id]
                                     if new_fullname not in existing_signal.aliases:
                                         existing_signal.aliases.append(new_fullname)
                                     self._insert_into_hierarchy(new_fullname, existing_signal)
                                 else:
-                                    # Create a new VCDSignal object for this signal.
                                     signal = VCDSignal(var_id, var_name, current_scope, width)
-                                    # Overwrite the default fullname if modified by the current scope rules.
                                     signal.fullname = new_fullname
-                                    self.signals[var_id] = signal
+                                    signals[var_id] = signal
                                     self._insert_into_hierarchy(signal.fullname, signal)
 
-                        elif line.startswith("$enddefinitions"):
-                            # End of header section; subsequent lines contain simulation data.
+                        elif directive == "$enddefinitions":
                             in_header = False
 
-                    else:
-                        # Process simulation data (value changes and time markers).
-                        if line.startswith("#"):
-                            # A line starting with '#' indicates a new simulation time.
-                            try:
-                                current_time = int(line[1:])
-                            except ValueError:
-                                current_time = 0
-                        else:
-                            # Process value change entries.
-                            if line.startswith("b"):
-                                # A vector (multi-bit) value change is indicated by a leading 'b'.
-                                # Expected format: b<binary_value> <signal_id>
-                                m = re.match(r"b([01xz]+)\s+(\S+)", line)
-                                if m:
-                                    value, sig_id = m.groups()
-                                    # Normalize the value by converting any unknown bits ('x' or 'X') to '0'
-                                    value = normalize_value(value)
-                                    if sig_id in self.signals:
-                                        self.signals[sig_id].transitions.append((current_time, value))
-                            else:
-                                # A single-bit value change is indicated by a line starting with the value.
-                                # Format: <value><signal_id>
-                                sig_id = line[1:]
-                                value = line[0]
-                                # Normalize single-bit value (convert 'x' or 'X' to '0')
-                                value = '0' if value in 'xX' else value
-                                if sig_id in self.signals:
-                                    self.signals[sig_id].transitions.append((current_time, value))
-            # After processing the file, sort each signal's transitions by time.
-            for sig in self.signals.values():
-                sig.transitions.sort(key=lambda t: t[0])
-            return self.timescale
+                    # If the line does not start with '$' in the header, skip it.
+                    continue
+
+                # Process simulation data (after header).
+                c = line[0]
+                if c == '#':
+                    try:
+                        current_time = int(line[1:])
+                    except ValueError:
+                        current_time = 0
+                elif c == 'b':
+                    m = b_vector_re.match(line)
+                    if m:
+                        value, sig_id = m.groups()
+                        # Replace any unknown bits with '0'
+                        value = value.translate(norm_table)
+                        if sig_id in signals:
+                            signals[sig_id].transitions.append((current_time, value))
+                else:
+                    # Single-bit change: first char is value, rest is signal id.
+                    value = c
+                    sig_id = line[1:]
+                    if value in 'xX':
+                        value = '0'
+                    if sig_id in signals:
+                        signals[sig_id].transitions.append((current_time, value))
 
         except FileNotFoundError:
-            # If the specified VCD file does not exist, notify the user and continue without signals.
-            print(f"VCD file not found: {self.filename}. Running without loading any signals.")
+            print(f"VCD file not found: {self.filename}. Running without signals.")
             self.hierarchy = {}
             return None
+        except Exception as e:
+            print("Error while parsing:", e)
+            return None
+
+        # If file ordering isn’t guaranteed, sort each signal's transitions.
+        if not assume_sorted:
+            for sig in signals.values():
+                sig.transitions.sort(key=lambda t: t[0])
+
+        return self.timescale
 
     def _insert_into_hierarchy(self, fullname, signal):
         """
-        Insert the signal into the hierarchical design structure (self.hierarchy).
-
-        The hierarchy is built as a nested dictionary where each key represents a scope or signal name.
-        If the signal's declared name contains a dot and a scope is defined, the var_name is kept intact
-        under the top-level scope; otherwise, the fullname is split at the dots.
-
-        Parameters:
-            fullname (str): The full hierarchical name of the signal.
-            signal (VCDSignal): The signal object to be inserted into the hierarchy.
+        Insert the signal into the hierarchical design structure.
         """
-        # Decide how to split the fullname into parts for the hierarchy.
+        # Decide how to split the fullname: if the signal name itself contains a dot
+        # and scopes exist, use a two-part split; otherwise split by dot.
         if signal.hierarchy and '.' in signal.name:
-            # If the signal name already contains a dot and scopes exist, only the top-level scope is used.
             parts = [signal.hierarchy[0], signal.name]
         else:
             parts = fullname.split(".")
@@ -222,50 +236,35 @@ class VCDParser:
             if part not in subtree:
                 subtree[part] = {}
             subtree = subtree[part]
-        # Store a reference to the signal at the leaf of the hierarchy.
         subtree["_signal"] = signal
 
 
 def convert_vector(value, width, mode):
     """
-    Convert a binary string value into a formatted string representation.
+    Convert a binary string value into a formatted representation.
 
-    This function interprets a string containing a binary number and returns it
-    formatted in the specified mode: hexadecimal ('hex'), binary ('bin'), or decimal ('decimal').
-
-    Parameters:
-        value (str): The binary string (e.g., "1010") to convert.
-        width (int): The bit width of the signal; used to determine the number of hex digits.
-        mode (str): The desired display mode. Should be one of 'hex', 'bin', or 'decimal'.
+    Modes:
+      - "hex": hexadecimal (e.g., "0xA3")
+      - "bin": binary (e.g., "0b1010")
+      - "decimal": decimal string
 
     Returns:
-        str: The formatted string representation of the value.
+      Formatted string representation.
     """
     if set(value) <= {'0', '1'}:
         if mode == "hex":
-            # Calculate the number of hexadecimal digits needed (4 bits per hex digit)
             digits = ceil(width / 4)
             return f"0x{int(value, 2):0{digits}X}"
         elif mode == "bin":
             return "0b" + value
         elif mode == "decimal":
             return str(int(value, 2))
-    # If the value contains non-binary characters, return it in uppercase.
     return value.upper()
 
 
 def numeric_value(v):
     """
     Convert a string representation of a signal value to its numeric equivalent.
-
-    The function attempts to interpret the input as a binary number, hexadecimal (if it starts with '0x'),
-    or a floating-point number. If conversion fails, it returns 0.0.
-
-    Parameters:
-        v (str): The signal value as a string.
-
-    Returns:
-        int or float: The numeric value of the signal.
     """
     try:
         if set(v) <= {'0', '1'}:
@@ -283,12 +282,8 @@ def dump_signals(signals, timescale, dump_filename="signal_dump.vcd"):
     Dump the transition data of the provided signals to a VCD file.
 
     Parameters:
-        signals (list): List of signal objects. Each must have:
-                        - transitions (list of (time, value) tuples)
-                        - width (int)
-                        - id (str)
-                        - fullname (str)
-        timescale (str): Timescale string (e.g., "1ns") to be written in the VCD file.
+        signals (list): List of signal objects.
+        timescale (str): Timescale (e.g., "1ns").
         dump_filename (str): Name of the output VCD file.
     """
     if not signals:
@@ -301,8 +296,7 @@ def dump_signals(signals, timescale, dump_filename="signal_dump.vcd"):
             first = sig.transitions[0][0]
             last = sig.transitions[-1][0]
         else:
-            first = 0
-            last = 0
+            first = last = 0
         if global_start is None or first < global_start:
             global_start = first
         if global_end is None or last > global_end:
@@ -312,12 +306,11 @@ def dump_signals(signals, timescale, dump_filename="signal_dump.vcd"):
     if global_end is None:
         global_end = 0
 
-    time_points = set()
+    time_points = {global_start}
     for sig in signals:
         for t, _ in sig.transitions:
             if global_start <= t <= global_end:
                 time_points.add(t)
-    time_points.add(global_start)
     time_points = sorted(time_points)
 
     def get_val_at(sig, ts):
@@ -327,9 +320,7 @@ def dump_signals(signals, timescale, dump_filename="signal_dump.vcd"):
                 sval = v
             else:
                 break
-        if sval is None:
-            sval = "0"
-        return sval
+        return sval if sval is not None else "0"
 
     try:
         with open(dump_filename, "w") as f:
@@ -374,3 +365,13 @@ def dump_signals(signals, timescale, dump_filename="signal_dump.vcd"):
         print(f"Dumped {len(signals)} signal(s) to {dump_filename}.")
     except Exception as e:
         print("Error dumping signals:", e)
+
+
+# Example usage:
+if __name__ == "__main__":
+    # Adjust 'full_memory' based on your environment and available RAM.
+    parser = VCDParser("huge_file.vcd", assume_sorted=True, full_memory=True)
+    timescale = parser.parse()
+    if timescale:
+        # For example, dump all parsed signals.
+        dump_signals(list(parser.signals.values()), timescale)
