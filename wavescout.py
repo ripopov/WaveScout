@@ -19,12 +19,12 @@ from typing import List, Tuple, Optional, Dict, Any
 
 from vcd_parser import VCDParser, VCDSignal, dump_signals, numeric_value, convert_vector
 
-from PySide6.QtCore import Qt, QRectF, QPoint, QEvent, Signal, QObject
+from PySide6.QtCore import Qt, QRectF, QPoint, QEvent, Signal, QObject, QThread
 from PySide6.QtGui import (QPainter, QPen, QBrush, QColor, QFont, QFontMetrics, QAction,
                            QGuiApplication, QKeySequence, QShortcut)
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QPushButton, QLabel, QSplitter, QMenu, QTreeWidget, QTreeWidgetItem,
-                               QFileDialog, QScrollArea)
+                               QFileDialog, QScrollArea, QProgressBar)
 
 from search_window import SearchWindow
 from state_manager import StateManager
@@ -88,6 +88,21 @@ def draw_selection_rect(painter: QPainter, sel_start: Optional[float],
         x1, x2 = min(sel_start, sel_end), max(sel_start, sel_end)
         painter.fillRect(QRectF(x1, DEFAULT_TOP_MARGIN, x2 - x1, height - DEFAULT_TOP_MARGIN),
                          QBrush(QColor(0, 0, 255, 100)))
+
+# =============================================================================
+# VCD LOADER WORKER (for asynchronous parsing)
+# =============================================================================
+class VCDLoaderWorker(QObject):
+    finished = Signal(object)  # Emits the loaded WaveformModel instance
+
+    def __init__(self, vcd_filename: str) -> None:
+        super().__init__()
+        self.vcd_filename = vcd_filename
+
+    def run(self) -> None:
+        # This call may take a long time for large files.
+        model = WaveformModel(self.vcd_filename)
+        self.finished.emit(model)
 
 # =============================================================================
 # WAVEFORM MODEL
@@ -879,11 +894,20 @@ class VCDViewer(QMainWindow):
         self.setWindowTitle("VCD Waveform Viewer")
         self.resize(1200, 600)
         self.state_manager = StateManager(self)
-        self.model = WaveformModel(vcd_filename, self)
         self.vcd_filename: str = vcd_filename
-        self.timescale: str = self.model.timescale
+        self.model = None  # will be loaded asynchronously
+        self.timescale: str = "unknown"
+
+        # Create and add a progress bar to the status bar.
+        self.progressBar = QProgressBar()
+        self.progressBar.setVisible(False)
+        self.statusBar().addPermanentWidget(self.progressBar)
+
         self._create_menu()
         self._create_main_ui()
+
+        # Start loading the VCD file asynchronously.
+        self.load_vcd_model(self.vcd_filename)
 
         self.search_shortcut = QShortcut(QKeySequence("F"), self)
         self.search_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
@@ -908,7 +932,7 @@ class VCDViewer(QMainWindow):
 
         from design_explorer import DesignExplorer
         self.design_explorer = DesignExplorer(self)
-        self.design_explorer.set_hierarchy(self.model.hierarchy)
+        self.design_explorer.set_hierarchy(self.model.hierarchy if self.model else {})
         self.design_explorer.signalsToAdd.connect(self.add_signals_from_tree)
         self.design_explorer.tree.itemDoubleClicked.connect(self.on_tree_double_click)
         main_splitter.addWidget(self.design_explorer)
@@ -931,6 +955,46 @@ class VCDViewer(QMainWindow):
         ctrl_layout.addWidget(QLabel(f"Timescale: {self.timescale}"))
         rlayout.addWidget(control_frame)
         main_splitter.addWidget(right_frame)
+
+    def load_vcd_model(self, filename: str) -> None:
+        self.progressBar.setVisible(True)
+        # Set to "busy" mode (indeterminate)
+        self.progressBar.setRange(0, 0)
+        self.statusBar().showMessage("Loading VCD file...")
+
+        # Create a QThread and a worker that will parse the VCD file.
+        self.loader_thread = QThread()
+        self.loader = VCDLoaderWorker(filename)
+        self.loader.moveToThread(self.loader_thread)
+
+        # Connect signals.
+        self.loader_thread.started.connect(self.loader.run)
+        self.loader.finished.connect(self.on_vcd_loaded)
+        self.loader.finished.connect(self.loader_thread.quit)
+        self.loader.finished.connect(self.loader.deleteLater)
+        self.loader_thread.finished.connect(self.loader_thread.deleteLater)
+
+        # Start the worker thread.
+        self.loader_thread.start()
+
+    def on_vcd_loaded(self, model: WaveformModel) -> None:
+        self.model = model
+        self.timescale = self.model.timescale
+
+        # Update the design explorer with the new hierarchy.
+        self.design_explorer.set_hierarchy(self.model.hierarchy)
+        self.rebuild_tree()
+
+        # Clear and update the waveform panel.
+        self.wave_panel.wave_view.clear()
+        self.wave_panel.signals = []
+        self.wave_panel.redraw()
+
+        # Hide the progress bar.
+        self.progressBar.setRange(0, 100)
+        self.progressBar.setValue(100)
+        self.progressBar.setVisible(False)
+        self.statusBar().showMessage("VCD file loaded", 2000)
 
     def open_search_window(self) -> None:
         selected = self.wave_panel.name_panel.selected_signals
@@ -959,13 +1023,8 @@ class VCDViewer(QMainWindow):
         new_file, _ = QFileDialog.getOpenFileName(self, "Open VCD File", "", "VCD files (*.vcd);;All files (*)")
         if new_file:
             self.vcd_filename = new_file
-            self.model = WaveformModel(self.vcd_filename, self)
-            self.timescale = self.model.timescale
-            self.design_explorer.set_hierarchy(self.model.hierarchy)
-            self.rebuild_tree()
-            self.wave_panel.wave_view.clear()
-            self.wave_panel.signals = []
-            self.wave_panel.redraw()
+            # Use asynchronous loader for the new file.
+            self.load_vcd_model(self.vcd_filename)
 
     def rebuild_tree(self) -> None:
         pattern = (self.design_explorer.filter_entry.text().strip()

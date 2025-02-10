@@ -1,3 +1,4 @@
+# vcd_parser.py
 # VCD Data Classes and Parser
 # This module provides classes and functions to parse VCD (Value Change Dump) files.
 # VCD files are used in digital design simulations to record changes in signal values over time.
@@ -17,8 +18,7 @@ class VCDSignal:
     def __init__(self, identifier, name, hierarchy, width=1):
         self.id = identifier  # Unique VCD identifier for the signal (e.g., "!")
         self.name = name  # Declared name of the signal (e.g., "BinCount" or "ext.COPY_ENGINE_READ_REQUEST")
-        self.hierarchy = hierarchy[
-                         :]  # List of hierarchical scopes leading to the signal (copied to avoid external modification)
+        self.hierarchy = hierarchy[:]  # List of hierarchical scopes leading to the signal (copied to avoid external modification)
         self.fullname = '.'.join(hierarchy + [name])  # Full hierarchical name (e.g., "top.sub.BinCount")
         self.width = width  # Bit width of the signal (default is 1 for single-bit signals)
         self.transitions = []  # List of (time, value) tuples recording when the signal changes value
