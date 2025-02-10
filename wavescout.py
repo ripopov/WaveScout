@@ -31,6 +31,7 @@ from state_manager import StateManager
 
 # ---------------------------------------------------------------------
 # Module-level constants
+# ---------------------------------------------------------------------
 DEFAULT_TOP_MARGIN = 30
 DEFAULT_TEXT_FONT = QFont("Courier", 10)
 DEFAULT_SIGNAL_HEIGHT = 30
@@ -39,9 +40,9 @@ VALUE_PANEL_WIDTH = 100
 AVG_PANEL_WIDTH = 100
 DEFAULT_WAVE_VIEW_WIDTH = 600
 
-
 # ---------------------------------------------------------------------
 # A context manager for QPainter to simplify cleanup.
+# ---------------------------------------------------------------------
 @contextmanager
 def qpainter(widget_or_device) -> QPainter:
     painter = QPainter(widget_or_device)
@@ -50,9 +51,8 @@ def qpainter(widget_or_device) -> QPainter:
     finally:
         painter.end()
 
-
 # ---------------------------------------------------------------------
-# Helper drawing functions
+# Helper drawing functions (interactive elements drawn online)
 # ---------------------------------------------------------------------
 def draw_timeline_header(painter: QPainter, start_time: float, end_time: float, width: float) -> None:
     painter.setPen(Qt.GlobalColor.white)
@@ -61,7 +61,6 @@ def draw_timeline_header(painter: QPainter, start_time: float, end_time: float, 
     painter.drawText(5, DEFAULT_TOP_MARGIN - 5, start_str)
     fm = QFontMetrics(DEFAULT_TEXT_FONT)
     painter.drawText(width - fm.horizontalAdvance(end_str) - 5, DEFAULT_TOP_MARGIN - 5, end_str)
-
 
 def draw_marker(painter: QPainter, marker: Optional[float], label: str,
                 start_time: float, end_time: float, width: float) -> None:
@@ -74,7 +73,6 @@ def draw_marker(painter: QPainter, marker: Optional[float], label: str,
     painter.drawLine(x, DEFAULT_TOP_MARGIN, x, painter.viewport().height())
     painter.drawText(QRectF(x - 15, 0, 30, DEFAULT_TOP_MARGIN), Qt.AlignmentFlag.AlignCenter, label)
 
-
 def draw_cursor(painter: QPainter, cursor_time: Optional[float],
                 start_time: float, end_time: float, height: float, width: float) -> None:
     if cursor_time is None:
@@ -85,17 +83,19 @@ def draw_cursor(painter: QPainter, cursor_time: Optional[float],
     painter.setPen(QPen(Qt.GlobalColor.red, 1, Qt.PenStyle.DashLine))
     painter.drawLine(x, DEFAULT_TOP_MARGIN, x, height)
 
-
 def draw_selection_rect(painter: QPainter, sel_start: Optional[float],
                         sel_end: Optional[float], width: float, height: float) -> None:
     if sel_start is not None and sel_end is not None:
         x1, x2 = min(sel_start, sel_end), max(sel_start, sel_end)
-        painter.fillRect(QRectF(x1, DEFAULT_TOP_MARGIN, x2 - x1, height - DEFAULT_TOP_MARGIN),
-                         QBrush(QColor(0, 0, 255, 100)))
-
+        rect = QRectF(x1, DEFAULT_TOP_MARGIN, x2 - x1, height - DEFAULT_TOP_MARGIN)
+        # Fill with semi-transparent blue.
+        painter.fillRect(rect, QBrush(QColor(0, 0, 255, 100)))
+        # Draw a yellow dashed border.
+        painter.setPen(QPen(QColor("yellow"), 2, Qt.DashLine))
+        painter.drawRect(rect)
 
 # =============================================================================
-# VCD LOADER WORKER (for asynchronous parsing)
+# VCD LOADER WORKER (asynchronous parsing)
 # =============================================================================
 class VCDLoaderWorker(QObject):
     finished = Signal(object)  # Emits the loaded WaveformModel instance
@@ -108,13 +108,11 @@ class VCDLoaderWorker(QObject):
         model = WaveformModel(self.vcd_filename)
         self.finished.emit(model)
 
-
 # =============================================================================
 # WAVEFORM MODEL
 # =============================================================================
 class WaveformModel(QObject):
     """Encapsulates VCD file data: timescale, signals, and hierarchy."""
-
     def __init__(self, vcd_filename: str, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self.vcd_filename: str = vcd_filename
@@ -123,20 +121,19 @@ class WaveformModel(QObject):
         self.signals: List[VCDSignal] = list(self.vcd_parser.signals.values())
         self.hierarchy: Dict[str, Any] = self.vcd_parser.hierarchy
 
-
 # =============================================================================
-# WAVEFORM RENDER WORKER (for offline rendering)
+# WAVEFORM RENDER WORKER (offline rendering of signal traces only)
 # =============================================================================
 class WaveformRenderWorker(QObject):
     """
-    Renders the entire waveform into an off-screen QImage.
-    If the rendering is cancelled (by a newer request) then no finished signal is emitted.
+    Renders only the signal traces (expensive to compute) into an off-screen QImage.
+    Interactive elements (timeline header, cursor, markers, selection) are drawn online.
     """
-    finished = Signal(QImage, dict)  # emits the QImage and the render parameters used
+    finished = Signal(QImage, dict)  # Emits the QImage and the render parameters used
 
     def __init__(self, params: dict, signals: List[VCDSignal], top_margin: int, signal_height: int) -> None:
         super().__init__()
-        self.params = params  # dict containing width, height, start_time, end_time, etc.
+        self.params = params  # Contains: width, height, start_time, end_time
         self.signals = signals
         self.top_margin = top_margin
         self.signal_height = signal_height
@@ -150,76 +147,35 @@ class WaveformRenderWorker(QObject):
         height = self.params.get('height', 400)
         start_time = self.params.get('start_time', 0)
         end_time = self.params.get('end_time', 200)
-        sel_start = self.params.get('selection_start_x')
-        sel_end = self.params.get('selection_end_x')
-        cursor_time = self.params.get('cursor_time')
-        marker_A = self.params.get('marker_A')
-        marker_B = self.params.get('marker_B')
-
+        # Create an off-screen QImage and paint only the signal traces.
         image = QImage(width, height, QImage.Format.Format_ARGB32)
         image.fill(QColor("black"))
         with qpainter(image) as painter:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-            draw_timeline_header(painter, start_time, end_time, width)
-            draw_selection_rect(painter, sel_start, sel_end, width, height)
             time_span = end_time - start_time
             pixels_per_time = width / time_span if time_span else 1
-
             y = self.top_margin + 20
             for signal in self.signals:
                 if self._canceled:
-                    return
+                    return  # Cancel early if requested.
                 effective_height = self.signal_height * signal.height_factor
                 if signal.width > 1:
                     if signal.analog_render:
                         self._draw_analog_step(painter, signal, y, effective_height, width, pixels_per_time, start_time)
                     else:
-                        self._draw_vector_signal(painter, signal, y, effective_height, width, pixels_per_time,
-                                                 start_time)
+                        self._draw_vector_signal(painter, signal, y, effective_height, width, pixels_per_time, start_time)
                 else:
                     self._draw_digital_signal(painter, signal, y, effective_height, width, pixels_per_time, start_time)
                 y += effective_height
-
-            draw_cursor(painter, cursor_time, start_time, end_time, height, width)
-            draw_marker(painter, marker_A, "A", start_time, end_time, width)
-            draw_marker(painter, marker_B, "B", start_time, end_time, width)
-            global_min, global_max = self._get_global_range(start_time)
-            self._draw_global_boundaries(painter, width, height, pixels_per_time, start_time, end_time, global_min,
-                                         global_max)
         self.finished.emit(image, self.params)
-
-    def _get_global_range(self, start_time: float) -> Tuple[Optional[float], Optional[float]]:
-        global_min: Optional[float] = None
-        global_max: Optional[float] = None
-        for s in self.signals:
-            if s.transitions:
-                t0, t1 = s.transitions[0][0], s.transitions[-1][0]
-                global_min = t0 if global_min is None or t0 < global_min else global_min
-                global_max = t1 if global_max is None or t1 > global_max else global_max
-        return global_min, global_max
-
-    def _draw_global_boundaries(self, painter: QPainter, width: float,
-                                height: float, pixels_per_time: float,
-                                start_time: float, end_time: float,
-                                global_min: Optional[float], global_max: Optional[float]) -> None:
-        if global_min is not None and start_time <= global_min <= end_time:
-            x = 0 if start_time == global_min else (global_min - start_time) * pixels_per_time
-            pen_width = 3 if start_time == global_min else 1
-            painter.setPen(QPen(Qt.GlobalColor.red, pen_width))
-            painter.drawLine(x, self.top_margin, x, height)
-        if global_max is not None and start_time <= global_max <= end_time:
-            x = width if end_time == global_max else (global_max - start_time) * pixels_per_time
-            pen_width = 3 if end_time == global_max else 1
-            painter.setPen(QPen(Qt.GlobalColor.red, pen_width))
-            painter.drawLine(x, self.top_margin, x, height)
 
     def _value_to_y(self, val: str, base_y: float, effective_height: float) -> float:
         return base_y + 5 if val in ("1", "b1", "true") else base_y + effective_height - 5
 
     def _draw_digital_signal(self, painter: QPainter, signal: VCDSignal, base_y: float,
-                             effective_height: float, drawing_width: float,
-                             pixels_per_time: float, start_time: float) -> None:
+                               effective_height: float, drawing_width: float,
+                               pixels_per_time: float, start_time: float) -> None:
         transitions = signal.transitions
         if not transitions:
             return
@@ -248,8 +204,8 @@ class WaveformRenderWorker(QObject):
         painter.drawLine(prev_x, prev_y, drawing_width, prev_y)
 
     def _draw_vector_signal(self, painter: QPainter, signal: VCDSignal, base_y: float,
-                            effective_height: float, drawing_width: float,
-                            pixels_per_time: float, start_time: float) -> None:
+                              effective_height: float, drawing_width: float,
+                              pixels_per_time: float, start_time: float) -> None:
         transitions = signal.transitions
         if not transitions:
             return
@@ -299,8 +255,8 @@ class WaveformRenderWorker(QObject):
         painter.restore()
 
     def _draw_analog_step(self, painter: QPainter, signal: VCDSignal, base_y: float,
-                          effective_height: float, drawing_width: float,
-                          pixels_per_time: float, start_time: float) -> None:
+                           effective_height: float, drawing_width: float,
+                           pixels_per_time: float, start_time: float) -> None:
         nums = []
         for t, v in signal.transitions:
             try:
@@ -308,8 +264,7 @@ class WaveformRenderWorker(QObject):
             except Exception:
                 continue
         if not nums or ((min_val := min(nums)) == (max_val := max(nums))):
-            self._draw_digital_signal(painter, signal, base_y, effective_height, drawing_width, pixels_per_time,
-                                      start_time)
+            self._draw_digital_signal(painter, signal, base_y, effective_height, drawing_width, pixels_per_time, start_time)
             return
 
         def map_value(num: int) -> float:
@@ -334,8 +289,7 @@ class WaveformRenderWorker(QObject):
             x = (t - start_time) * pixels_per_time
             norm = (last_num - min_val) / (max_val - min_val)
             heat_color = QColor(int(norm * 255), 0, int((1 - norm) * 255))
-            rect = QRectF(segment_start, base_y + effective_height, x - segment_start + epsilon,
-                          - (base_y + effective_height - y_old))
+            rect = QRectF(segment_start, base_y + effective_height, x - segment_start + epsilon, - (base_y + effective_height - y_old))
             painter.fillRect(rect, heat_color)
             painter.setPen(QPen(Qt.GlobalColor.yellow, 1))
             painter.drawLine(segment_start, y_old, x, y_old)
@@ -351,8 +305,7 @@ class WaveformRenderWorker(QObject):
             y_old = y_new
         norm = (last_num - min_val) / (max_val - min_val)
         heat_color = QColor(int(norm * 255), 0, int((1 - norm) * 255))
-        rect = QRectF(segment_start, base_y + effective_height, drawing_width - segment_start + epsilon,
-                      - (base_y + effective_height - y_old))
+        rect = QRectF(segment_start, base_y + effective_height, drawing_width - segment_start + epsilon, - (base_y + effective_height - y_old))
         painter.fillRect(rect, heat_color)
         painter.drawLine(segment_start, y_old, drawing_width, y_old)
         text_rect = QRectF(segment_start, y_old, drawing_width - segment_start, base_y + effective_height - y_old)
@@ -360,16 +313,14 @@ class WaveformRenderWorker(QObject):
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, last_disp)
         painter.restore()
 
-
 # =============================================================================
-# WAVEFORM VIEW (VIEW)
+# WAVEFORM VIEW (online drawing of interactive elements)
 # =============================================================================
 class WaveformView(QWidget):
     """
     Custom widget to display waveform data.
-    Handles panning, zooming, cursor and marker updates.
-
-    This version offloads expensive trace rendering to an offline worker.
+    Interactive elements (timeline header, cursor, markers, selection, global boundaries)
+    are drawn online. Only signal traces are rendered offline.
     """
     timeWindowChanged = Signal(float, float)
     cursorChanged = Signal(float)
@@ -392,7 +343,7 @@ class WaveformView(QWidget):
         self.selection_end_x: Optional[float] = None
         self.selection_threshold: int = 10
 
-        # For offline rendering.
+        # Offline rendering of signal traces.
         self._offscreen_image: Optional[QImage] = None
         self._render_params: dict = {}
         self._render_thread: Optional[QThread] = None
@@ -400,15 +351,41 @@ class WaveformView(QWidget):
 
     def paintEvent(self, event) -> None:
         with qpainter(self) as painter:
-            cur_params = self._current_render_params()
-            if (self._offscreen_image is not None and
-                    self._render_params == cur_params):
+            # Draw the offline image (signal traces) if available.
+            if self._offscreen_image is not None:
                 painter.drawImage(0, 0, self._offscreen_image)
             else:
                 painter.fillRect(self.rect(), QColor("black"))
-                painter.setPen(QColor("white"))
-                painter.setFont(self.text_font)
-                painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Rendering...")
+            # Overlay interactive elements drawn live.
+            draw_timeline_header(painter, self.start_time, self.end_time, self.width())
+            draw_selection_rect(painter, self.selection_start_x, self.selection_end_x, self.width(), self.height())
+            draw_cursor(painter, self.cursor_time, self.start_time, self.end_time, self.height(), self.width())
+            draw_marker(painter, self.marker_A, "A", self.start_time, self.end_time, self.width())
+            draw_marker(painter, self.marker_B, "B", self.start_time, self.end_time, self.width())
+            # Draw global boundaries online.
+            global_min, global_max = self._get_global_range_online()
+            time_span = self.end_time - self.start_time
+            pixels_per_time = self.width() / time_span if time_span else 1
+            if global_min is not None and self.start_time <= global_min <= self.end_time:
+                x = 0 if self.start_time == global_min else (global_min - self.start_time) * pixels_per_time
+                pen_width = 3 if self.start_time == global_min else 1
+                painter.setPen(QPen(Qt.GlobalColor.red, pen_width))
+                painter.drawLine(x, self.top_margin, x, self.height())
+            if global_max is not None and self.start_time <= global_max <= self.end_time:
+                x = self.width() if self.end_time == global_max else (global_max - self.start_time) * pixels_per_time
+                pen_width = 3 if self.end_time == global_max else 1
+                painter.setPen(QPen(Qt.GlobalColor.red, pen_width))
+                painter.drawLine(x, self.top_margin, x, self.height())
+
+    def _get_global_range_online(self) -> Tuple[Optional[float], Optional[float]]:
+        global_min: Optional[float] = None
+        global_max: Optional[float] = None
+        for s in self.signals:
+            if s.transitions:
+                t0, t1 = s.transitions[0][0], s.transitions[-1][0]
+                global_min = t0 if global_min is None or t0 < global_min else global_min
+                global_max = t1 if global_max is None or t1 > global_max else global_max
+        return global_min, global_max
 
     def _current_render_params(self) -> dict:
         return {
@@ -416,15 +393,9 @@ class WaveformView(QWidget):
             'height': self.height(),
             'start_time': self.start_time,
             'end_time': self.end_time,
-            'selection_start_x': self.selection_start_x,
-            'selection_end_x': self.selection_end_x,
-            'cursor_time': self.cursor_time,
-            'marker_A': self.marker_A,
-            'marker_B': self.marker_B
         }
 
     def schedule_rendering(self) -> None:
-        # Cancel any existing render job.
         if self._render_worker is not None:
             self._render_worker.cancel()
         if self._render_thread is not None:
@@ -434,7 +405,6 @@ class WaveformView(QWidget):
             except RuntimeError:
                 pass
             self._render_thread = None
-
         cur_params = self._current_render_params()
         self._render_params = cur_params
         main_window = self.window()
@@ -448,7 +418,6 @@ class WaveformView(QWidget):
         self._render_worker.finished.connect(self._on_render_finished)
         self._render_worker.finished.connect(self._render_thread.quit)
         self._render_worker.finished.connect(self._render_worker.deleteLater)
-        # When the thread finishes, clear our pointer.
         self._render_thread.finished.connect(lambda: setattr(self, "_render_thread", None))
         self._render_thread.start()
 
@@ -496,15 +465,17 @@ class WaveformView(QWidget):
             self.schedule_rendering()
             self.cursorChanged.emit(0)
         elif event.button() == Qt.MouseButton.LeftButton:
+            # Start selection drag; update interactive overlay but do not schedule offline rendering yet.
             self.selection_start_x = self.selection_end_x = event.position().x()
-            self.schedule_rendering()
+            self.update()
         else:
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
         if self.selection_start_x is not None:
+            # While dragging, update selection rectangle and call update() to refresh overlay.
             self.selection_end_x = event.position().x()
-            self.schedule_rendering()
+            self.update()
         else:
             super().mouseMoveEvent(event)
 
@@ -514,13 +485,13 @@ class WaveformView(QWidget):
                 drawing_width = self.width()
                 time_span = self.end_time - self.start_time
                 pixels_per_time = drawing_width / time_span if time_span else 1
-                x1, x2 = min(self.selection_start_x, self.selection_end_x), max(self.selection_start_x,
-                                                                                self.selection_end_x)
+                x1, x2 = min(self.selection_start_x, self.selection_end_x), max(self.selection_start_x, self.selection_end_x)
                 self.set_time_window(self.start_time + (x1 / pixels_per_time),
                                      self.start_time + (x2 / pixels_per_time))
             else:
                 self._set_cursor_from_event(event)
             self.selection_start_x = self.selection_end_x = None
+            # Now that selection is finalized, schedule an offline render.
             self.schedule_rendering()
         else:
             super().mouseReleaseEvent(event)
@@ -572,7 +543,6 @@ class WaveformView(QWidget):
                 break
         return convert_vector(val, signal.width, signal.rep_mode) if signal.width > 1 else val
 
-    # --- New zoom_to_fit method ---
     def zoom_to_fit(self) -> None:
         if not self.signals:
             return
@@ -581,13 +551,11 @@ class WaveformView(QWidget):
         if min_time != max_time:
             self.set_time_window(min_time, max_time)
 
-
 # =============================================================================
 # WAVEFORM AVERAGES (VIEW)
 # =============================================================================
 class WaveformAverages(QWidget):
     """Displays marker information and computed signal averages."""
-
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.avg_data: List[Tuple[float, str]] = []
@@ -612,13 +580,11 @@ class WaveformAverages(QWidget):
                 painter.drawText(self.width() - fm.horizontalAdvance(avg_str) - 5,
                                  y + fm.ascent() / 2, avg_str)
 
-
 # =============================================================================
 # OVERLAY HEADERS (VIEW)
 # =============================================================================
 class WaveformHeaderOverlay(QWidget):
     """Fixed overlay that draws the timeline header over the waveform view."""
-
     def __init__(self, parent: QWidget, waveform_view: WaveformView) -> None:
         super().__init__(parent)
         self.waveform_view = waveform_view
@@ -633,24 +599,9 @@ class WaveformHeaderOverlay(QWidget):
                                  self.waveform_view.start_time,
                                  self.waveform_view.end_time,
                                  self.width())
-            if self.waveform_view.cursor_time is not None:
-                draw_cursor(painter, self.waveform_view.cursor_time,
-                            self.waveform_view.start_time,
-                            self.waveform_view.end_time,
-                            self.height(), self.width())
-            draw_marker(painter, self.waveform_view.marker_A, "A",
-                        self.waveform_view.start_time,
-                        self.waveform_view.end_time,
-                        self.width())
-            draw_marker(painter, self.waveform_view.marker_B, "B",
-                        self.waveform_view.start_time,
-                        self.waveform_view.end_time,
-                        self.width())
-
 
 class AveragesHeaderOverlay(QWidget):
     """Fixed overlay that draws a header over the averages panel."""
-
     def __init__(self, parent: QWidget, avg_panel: WaveformAverages) -> None:
         super().__init__(parent)
         self.avg_panel = avg_panel
@@ -666,16 +617,14 @@ class AveragesHeaderOverlay(QWidget):
             painter.setPen(QColor("yellow"))
             painter.drawText(5, fm.ascent() + 2, self.avg_panel.header)
 
-
 # =============================================================================
-# WAVEFORM PANEL (CONTROLLER/VIEW CONTAINER)
+# WAVEFORM PANEL (VIEW CONTAINER)
 # =============================================================================
 class WaveformPanel(QWidget):
     """
-    Composite widget that arranges the waveform view, names, values and averages.
+    Composite widget that arranges the waveform view, names, values, and averages.
     Connects child widget signals to coordinate view updates.
     """
-
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         from design_explorer import DesignExplorer  # local import
@@ -818,11 +767,9 @@ class WaveformPanel(QWidget):
         self.name_panel.set_signals(self.signals, DEFAULT_TOP_MARGIN, DEFAULT_SIGNAL_HEIGHT)
         self.update_values()
         self.update_averages()
-        total_height = self.wave_view.top_margin + 20 + sum(
-            DEFAULT_SIGNAL_HEIGHT * s.height_factor for s in self.signals)
+        total_height = self.wave_view.top_margin + 20 + sum(DEFAULT_SIGNAL_HEIGHT * s.height_factor for s in self.signals)
         self.content_widget.setMinimumHeight(total_height)
         self.update_overlays()
-
 
 # =============================================================================
 # WAVEFORM NAMES (VIEW)
@@ -952,13 +899,11 @@ class WaveformNames(QWidget):
         if hasattr(main_window, "dump_signals"):
             main_window.dump_signals(list(targets))
 
-
 # =============================================================================
 # WAVEFORM VALUES (VIEW)
 # =============================================================================
 class WaveformValues(QWidget):
     """Displays the current value of each signal at the cursor time."""
-
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.values: List[Tuple[float, str]] = []
@@ -980,7 +925,6 @@ class WaveformValues(QWidget):
                 painter.setPen(QColor("yellow"))
                 painter.drawText(self.width() - fm.horizontalAdvance(text) - 5, y + fm.ascent() / 2, text)
 
-
 # =============================================================================
 # VCD VIEWER (MAIN CONTROLLER)
 # =============================================================================
@@ -989,7 +933,6 @@ class VCDViewer(QMainWindow):
     Main application window that creates the model and integrates all views.
     Manages file operations, state saving/loading, and user interactions.
     """
-
     def __init__(self, vcd_filename: str) -> None:
         super().__init__()
         self.setWindowTitle("VCD Waveform Viewer")
@@ -1168,12 +1111,12 @@ class VCDViewer(QMainWindow):
     def save_state(self) -> None:
         state = {
             "vcd_filename": self.vcd_filename,
-            "signals": [{
+            "signals": [ {
                 "fullname": sig.fullname,
                 "rep_mode": sig.rep_mode,
                 "height_factor": sig.height_factor,
                 "analog_render": sig.analog_render
-            } for sig in self.wave_panel.signals],
+            } for sig in self.wave_panel.signals ],
             "zoom": {
                 "start_time": self.wave_panel.wave_view.start_time,
                 "end_time": self.wave_panel.wave_view.end_time
@@ -1182,14 +1125,12 @@ class VCDViewer(QMainWindow):
             "marker_A": self.wave_panel.wave_view.marker_A,
             "marker_B": self.wave_panel.wave_view.marker_B
         }
-        save_file, _ = QFileDialog.getSaveFileName(self, "Save Application State", "",
-                                                   "JSON Files (*.json);;All Files (*)")
+        save_file, _ = QFileDialog.getSaveFileName(self, "Save Application State", "", "JSON Files (*.json);;All Files (*)")
         if save_file:
             self.state_manager.save_state(state, save_file)
 
     def load_state(self) -> None:
-        load_file, _ = QFileDialog.getOpenFileName(self, "Load Application State", "",
-                                                   "JSON Files (*.json);;All Files (*)")
+        load_file, _ = QFileDialog.getOpenFileName(self, "Load Application State", "", "JSON Files (*.json);;All Files (*)")
         if not load_file:
             return
         state = self.state_manager.load_state(load_file)
@@ -1197,8 +1138,7 @@ class VCDViewer(QMainWindow):
             return
         saved_vcd = state.get("vcd_filename", "")
         if saved_vcd and saved_vcd != self.vcd_filename:
-            print(
-                "Warning: saved state is from a different VCD file. Only signals with matching names will be restored.")
+            print("Warning: saved state is from a different VCD file. Only signals with matching names will be restored.")
         self.wave_panel.signals = []
         self.wave_panel.wave_view.clear()
         for sig_data in state.get("signals", []):
@@ -1220,7 +1160,6 @@ class VCDViewer(QMainWindow):
 
     def dump_signals(self, signals: List[VCDSignal]) -> None:
         dump_signals(signals, self.timescale)
-
 
 if __name__ == "__main__":
     vcd_filename = "jtag.vcd"
