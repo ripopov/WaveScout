@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+wavescout.py
 VCD Viewer: An interactive waveform visualization and analysis tool.
 
 This application follows an MVC/MVP design to decouple components using signals.
@@ -1033,7 +1034,9 @@ class VCDViewer(QMainWindow):
             return
         if self.search_window is not None:
             self.search_window.close()
-        self.search_window = SearchWindow(list(selected), self)
+        # Create an ordered list of selected signals using the order in the names panel.
+        ordered_signals = [sig for sig in self.wave_panel.name_panel.signals if sig in selected]
+        self.search_window = SearchWindow(ordered_signals, self)
         self.search_window.timestampFound.connect(self.on_timestamp_found)
         self.search_window.show()
 
