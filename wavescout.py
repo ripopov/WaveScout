@@ -180,8 +180,7 @@ class WaveformRenderWorker(QObject):
         transitions = signal.transitions
         if not transitions:
             return
-        last_val = next((v for t, v in reversed(transitions) if t <= start_time),
-                        transitions[0][1])
+        last_val = next((v for t, v in reversed(transitions) if t <= start_time), transitions[0][1])
         prev_x = 0
         prev_y = self._value_to_y(last_val, base_y, effective_height)
         high_brush = QBrush(QColor(0, 100, 0, 128))
@@ -212,8 +211,7 @@ class WaveformRenderWorker(QObject):
             return
         y_top, y_bottom = base_y + 5, base_y + effective_height - 5
         delta = 2
-        last_val = next((v for t, v in reversed(transitions) if t <= start_time),
-                        transitions[0][1])
+        last_val = next((v for t, v in reversed(transitions) if t <= start_time), transitions[0][1])
         last_disp = convert_vector(last_val, signal.width, signal.rep_mode)
         segment_start = 0
         painter.save()
@@ -735,7 +733,7 @@ class WaveformPanel(QWidget):
         if duration <= 0:
             return 0.0, 0.0, 0.0
         transitions = signal.transitions
-        current_val = next((v for t, v in transitions if t <= A), "0")
+        current_val = next((v for t, v in reversed(transitions) if t <= A), transitions[0][1] if transitions else "0")
         current_time = A
         current_num = numeric_value(current_val)
         min_val = current_num
