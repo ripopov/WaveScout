@@ -22,7 +22,7 @@ from vcd_parser import VCDParser, VCDSignal, dump_signals, numeric_value, conver
 
 from PySide6.QtCore import Qt, QRectF, QPoint, QEvent, Signal, QObject, QThread
 from PySide6.QtGui import (QPainter, QPen, QBrush, QColor, QFont, QFontMetrics,
-                           QAction, QGuiApplication, QKeySequence, QShortcut, QImage)
+                           QAction, QGuiApplication, QKeySequence, QShortcut, QImage, QDragEnterEvent, QDropEvent)
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QPushButton, QLabel, QSplitter, QMenu, QTreeWidget, QTreeWidgetItem,
                                QFileDialog, QScrollArea, QProgressBar)
@@ -936,6 +936,8 @@ class VCDViewer(QMainWindow):
         super().__init__()
         self.setWindowTitle("VCD Waveform Viewer")
         self.resize(1200, 600)
+        self.setAcceptDrops(True)  # Enable drag-and-drop support
+
         self.state_manager = StateManager(self)
         self.vcd_filename: str = vcd_filename
         self.model = None
@@ -954,6 +956,27 @@ class VCDViewer(QMainWindow):
         self.search_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         self.search_shortcut.activated.connect(self.open_search_window)
         self.search_window: Optional[SearchWindow] = None
+
+    # Drag Enter: Accept drops if they contain URLs (file paths)
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    # Drop: Check for a VCD file and load it
+    def dropEvent(self, event: QDropEvent) -> None:
+        urls = event.mimeData().urls()
+        if urls:
+            # Use the first dropped file (you can extend to multiple files if needed)
+            file_path = urls[0].toLocalFile()
+            if file_path.lower().endswith('.vcd'):
+                self.vcd_filename = file_path
+                self.load_vcd_model(file_path)
+                self.statusBar().showMessage(f"Loaded VCD file: {file_path}", 3000)
+            else:
+                self.statusBar().showMessage("Unsupported file type. Please drop a VCD file.", 3000)
+        event.acceptProposedAction()
 
     def _create_menu(self) -> None:
         menubar = self.menuBar()
