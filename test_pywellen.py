@@ -82,3 +82,44 @@ def test_vcd_hierarchy(vcd_file):
     print_vcd_hierarchy(vcd_file)
     assert signal_count == VCD_SIGNAL_COUNTS[vcd_file], \
         f"Signal count mismatch in {vcd_file}. Expected: {VCD_SIGNAL_COUNTS[vcd_file]}, Got: {signal_count}"
+
+
+def test_jtag_vcd_signals():
+    """Test reading signal values from jtag.vcd"""
+    waveform = Waveform("jtag.vcd")
+
+    # Get signals using get_signal_from_path
+    tck_signal = waveform.get_signal_from_path("tb.tck")
+    seed_signal = waveform.get_signal_from_path("tb.seed")
+
+    assert tck_signal is not None, "tb.tck signal not found in VCD file"
+    assert seed_signal is not None, "tb.seed signal not found in VCD file"
+
+    # Test tb.tck transitions
+    tck_golden = {
+        0: 1,
+        5: 0,
+        10: 1,
+        15: 0,
+        20: 1,
+        25: 0
+    }
+
+    # Test tb.seed transitions (in decimal format)
+    seed_golden = {
+        0: 12,  # b1100
+        10: 828829,  # b11001010010110011101
+        20: 1411815354  # b1010100001001101001011110111010
+    }
+
+    # Verify tck transitions
+    for timestamp, expected_value in tck_golden.items():
+        actual_value = int(tck_signal.value_at_time(timestamp))
+        assert actual_value == expected_value, \
+            f"tb.tck mismatch at time {timestamp}. Expected: {expected_value}, Got: {actual_value}"
+
+    # Verify seed transitions
+    for timestamp, expected_value in seed_golden.items():
+        actual_value = seed_signal.value_at_time(timestamp)
+        assert actual_value == expected_value, \
+            f"tb.seed mismatch at time {timestamp}. Expected: {expected_value}, Got: {actual_value}"
