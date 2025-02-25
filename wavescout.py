@@ -647,6 +647,7 @@ class WaveformPanel(QWidget):
         self.avg_panel = WaveformAverages(self)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.setOpaqueResize(False)
         for widget, size in ((self.name_panel, NAME_PANEL_WIDTH),
                              (self.value_panel, VALUE_PANEL_WIDTH),
                              (self.wave_view, DEFAULT_WAVE_VIEW_WIDTH),
@@ -1005,6 +1006,7 @@ class VCDViewer(QMainWindow):
 
     def _create_main_ui(self) -> None:
         main_splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        main_splitter.setOpaqueResize(False)
         self.setCentralWidget(main_splitter)
 
         from design_explorer import DesignExplorer
