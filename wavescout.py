@@ -20,7 +20,7 @@ from typing import List, Tuple, Optional, Dict, Any
 
 from vcd_parser import VCDParser, VCDSignal, dump_signals, numeric_value, convert_vector
 
-from PySide6.QtCore import Qt, QRectF, QPoint, QEvent, Signal, QObject, QThread
+from PySide6.QtCore import Qt, QRectF, QPoint, QEvent, Signal, QObject, QThread, QTimer
 from PySide6.QtGui import (QPainter, QPen, QBrush, QColor, QFont, QFontMetrics,
                            QAction, QGuiApplication, QKeySequence, QShortcut, QImage, QDragEnterEvent, QDropEvent)
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -407,9 +407,13 @@ class WaveformView(QWidget):
         cur_params = self._current_render_params()
         self._render_params = cur_params
         main_window = self.window()
-        if hasattr(main_window, 'progressBar'):
-            main_window.progressBar.setRange(0, 0)
-            main_window.progressBar.setVisible(True)
+
+        # Start a timer to delay showing the progress bar if rendering takes longer than 200ms.
+        self._progress_timer = QTimer(self)
+        self._progress_timer.setSingleShot(True)
+        self._progress_timer.timeout.connect(lambda: self._show_progress_bar(main_window))
+        self._progress_timer.start(400)
+
         self._render_thread = QThread()
         self._render_worker = WaveformRenderWorker(cur_params, self.signals, self.top_margin, self.signal_height)
         self._render_worker.moveToThread(self._render_thread)
@@ -420,7 +424,16 @@ class WaveformView(QWidget):
         self._render_thread.finished.connect(lambda: setattr(self, "_render_thread", None))
         self._render_thread.start()
 
+    def _show_progress_bar(self, main_window):
+        # Only show the progress bar if rendering is still ongoing.
+        if self._render_thread is not None and hasattr(main_window, 'progressBar'):
+            main_window.progressBar.setRange(0, 0)
+            main_window.progressBar.setVisible(True)
+
     def _on_render_finished(self, image: QImage, params: dict) -> None:
+        # Stop the timer if it's still active.
+        if hasattr(self, '_progress_timer') and self._progress_timer.isActive():
+            self._progress_timer.stop()
         if params == self._current_render_params():
             self._offscreen_image = image
             self._render_params = params
