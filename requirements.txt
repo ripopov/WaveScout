@@ -1,1 +1,3 @@
 PySide6>=6.2
+pywellen>=0.14.3
+pytest>=8.3.4
