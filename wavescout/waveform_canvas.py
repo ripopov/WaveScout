@@ -1,0 +1,1115 @@
+"""Optimized waveform canvas widget with offline rendering pipeline."""
+
+from PySide6.QtWidgets import QWidget, QScrollBar
+from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer, QPointF, QRectF
+from PySide6.QtGui import QPainter, QPen, QColor, QFont, QFontMetrics, QPolygonF, QImage
+from typing import List, Tuple, Dict, Optional, Union
+from dataclasses import dataclass, field
+from enum import Enum
+from .data_model import SignalNode, SignalHandle, SignalNodeID, Time, TimeUnit, TimeRulerConfig, RenderType
+from .signal_sampling import (
+    ValueKind, SignalSample, SignalDrawingData,
+    generate_signal_draw_commands, determine_value_kind
+)
+from .signal_renderer import (
+    draw_digital_signal, draw_bus_signal, draw_analog_signal, draw_event_signal, draw_benchmark_pattern
+)
+from .config import RENDERING, COLORS, UI
+import time as time_module
+import math
+
+
+@dataclass
+class SignalRangeCache:
+    """Cache for analog signal min/max ranges."""
+    min: float  # Min value across all time
+    max: float  # Max value across all time
+    viewport_ranges: Dict[Tuple[Time, Time], Tuple[float, float]] = field(default_factory=dict)  # Cached viewport ranges
+
+@dataclass
+class CachedWaveDrawData:
+    """Cached drawing data for all visible signals."""
+    draw_commands: Dict[SignalNodeID, SignalDrawingData] = field(default_factory=dict)  # instance_id -> commands
+    viewport_hash: str = ""  # To check if cache is valid
+
+
+class TransitionCache:
+    """Cache for signal transitions to avoid repeated database queries."""
+
+    def __init__(self, max_entries: int = RENDERING.TRANSITION_CACHE_MAX_ENTRIES):
+        self.cache: Dict[Tuple[int, Time, Time], List[Tuple[Time, str]]] = {}
+        self.access_times: Dict[Tuple[int, Time, Time], float] = {}
+        self.max_entries = max_entries
+
+    def get(self, handle: SignalHandle, start_time: Time, end_time: Time) -> Optional[List[Tuple[Time, str]]]:
+        """Get transitions from cache if available."""
+        key = (handle, start_time, end_time)
+        if key in self.cache:
+            self.access_times[key] = time_module.time()
+            return self.cache[key]
+        return None
+
+    def put(self, handle: SignalHandle, start_time: Time, end_time: Time, transitions: List[Tuple[Time, str]]):
+        """Store transitions in cache."""
+        # Evict old entries if cache is full
+        if len(self.cache) >= self.max_entries:
+            self._evict_lru()
+
+        key = (handle, start_time, end_time)
+        self.cache[key] = transitions
+        self.access_times[key] = time_module.time()
+
+    def _evict_lru(self):
+        """Evict least recently used entry."""
+        if not self.access_times:
+            return
+
+        lru_key = min(self.access_times, key=lambda k: self.access_times.get(k, 0))
+        del self.cache[lru_key]
+        del self.access_times[lru_key]
+
+    def clear(self):
+        """Clear the cache."""
+        self.cache.clear()
+        self.access_times.clear()
+
+
+class WaveformCanvas(QWidget):
+    """Optimized widget for drawing waveforms with caching."""
+
+    cursorMoved = Signal(object)  # Emitted when cursor is moved (using object to handle large integers)
+
+    def __init__(self, model, parent=None):
+        super().__init__(parent)
+        self._model = model
+        self._row_height = RENDERING.DEFAULT_ROW_HEIGHT  # Default/base row height
+        self._header_height = RENDERING.DEFAULT_HEADER_HEIGHT  # Default header height - standard QTreeView header height
+        self._time_scale = 1.0  # pixels per time unit
+        self._row_heights = {}  # Dictionary to store row heights by row index
+        self._start_time = 0
+        self._end_time = 1000000
+        self._cursor_time = 0
+        self._shared_scrollbar = None
+        self._visible_nodes = []  # Flattened list of visible nodes
+        self._row_to_node = {}   # Map row index to node
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
+        self.setMinimumWidth(RENDERING.MIN_CANVAS_WIDTH)
+        
+        # Grid drawing state
+        self._last_tick_positions = []
+        self._last_ruler_config = None
+
+        # Caching
+        self._transition_cache = TransitionCache()
+        self._last_viewport = (0, 0)  # Track viewport changes
+        self._signal_range_cache: Dict[SignalNodeID, SignalRangeCache] = {}  # Cache for analog signal ranges
+        
+        # Single-threaded rendering - no thread pool needed
+
+        # Deferred updates
+        self._update_timer = QTimer()
+        self._update_timer.setSingleShot(True)
+        self._update_timer.timeout.connect(self._do_update)
+        self._pending_update = False
+        
+        # Rendered image cache
+        self._rendered_image: Optional[QImage] = None
+        self._render_generation = 0  # Track render requests
+        self._last_render_params_hash = None  # Track last rendered params
+        
+        # Waveform time boundaries
+        self._waveform_min_time: Time = 0
+        self._waveform_max_time: Optional[Time] = None
+        
+        
+        # Debug counters and timing
+        self._paint_frame_counter = 0  # Incremented on every paintEvent
+        self._render_complete_counter = 0  # Incremented when render completes
+        self._last_paint_time_ms = 0.0  # Time taken by last paintEvent
+        self._last_render_time_ms = 0.0  # Time taken by last render
+    
+    def __del__(self):
+        """Clean up on destruction."""
+        pass
+
+    def setSharedScrollBar(self, scrollbar: QScrollBar):
+        """Set the shared vertical scrollbar."""
+        self._shared_scrollbar = scrollbar
+        if scrollbar:
+            scrollbar.valueChanged.connect(self.update)
+
+    def setHeaderHeight(self, height: int):
+        """Set the header height to match the tree view's header."""
+        # Ensure minimum header height
+        height = max(height, RENDERING.DEFAULT_HEADER_HEIGHT)
+        if self._header_height != height:
+            self._header_height = height
+            self.update()  # Trigger a repaint if header height changes
+
+    def setRowHeight(self, height: int):
+        """Set the row height to match other views."""
+        self._row_height = height
+        self.update()
+        
+    
+
+    def setTimeRange(self, start_time: Time, end_time: Time):
+        """Set the visible time range."""
+        
+        # Check if viewport changed significantly
+        viewport_changed = (abs(self._start_time - start_time) > 1 or
+                          abs(self._end_time - end_time) > 1)
+
+        self._start_time = start_time
+        self._end_time = end_time
+        self._update_time_scale()
+
+        # Clear cache if viewport changed significantly
+        if viewport_changed:
+            self._transition_cache.clear()
+            # Don't clear rendered image - keep showing old one until new render completes
+
+        self.update()
+
+    def setCursorTime(self, time: Time):
+        """Set the cursor position."""
+        old_time = self._cursor_time
+        self._cursor_time = time
+        
+        # If we have a rendered image and cursor is just moving within visible range,
+        # do a minimal update by just repainting the cursor areas
+        if (self._rendered_image and not self._rendered_image.isNull() and
+            old_time >= self._start_time and old_time <= self._end_time and
+            time >= self._start_time and time <= self._end_time):
+            # Calculate the rectangles that need updating (old and new cursor positions)
+            old_x = int((old_time - self._start_time) * self.width() / (self._end_time - self._start_time))
+            new_x = int((time - self._start_time) * self.width() / (self._end_time - self._start_time))
+            
+            # Update regions around both cursor positions (with some padding)
+            padding = RENDERING.CURSOR_PADDING
+            width = RENDERING.CURSOR_WIDTH + 2 * padding + 1
+            self.update(old_x - padding, 0, width, self.height())
+            self.update(new_x - padding, 0, width, self.height())
+        else:
+            # Full update needed
+            self.update()
+        
+    def setModel(self, model):
+        """Set the data model and connect to its signals."""
+        # Disconnect from old model if exists
+        if self._model:
+            try:
+                self._model.layoutChanged.disconnect(self._on_model_layout_changed)
+                self._model.rowsInserted.disconnect(self._on_model_rows_changed)
+                self._model.rowsRemoved.disconnect(self._on_model_rows_changed)
+                self._model.dataChanged.disconnect(self._on_model_data_changed)
+                self._model.modelReset.disconnect(self._on_model_reset)
+            except:
+                pass
+        
+        self._model = model
+        
+        # Connect to new model
+        if self._model:
+            self._model.layoutChanged.connect(self._on_model_layout_changed)
+            self._model.rowsInserted.connect(self._on_model_rows_changed)
+            self._model.rowsRemoved.connect(self._on_model_rows_changed)
+            self._model.dataChanged.connect(self._on_model_data_changed)
+            self._model.modelReset.connect(self._on_model_reset)
+            
+            # Update visible nodes
+            self.updateVisibleNodes()
+    
+    def _on_model_layout_changed(self):
+        """Handle model layout changes."""
+        
+        # Update visible nodes (this will also update row heights)
+        self.updateVisibleNodes()
+        
+        # Always invalidate and update when layout changes
+        # This ensures changes like height scaling are properly reflected
+        self._rendered_image = None  # Invalidate rendered image
+        self._last_render_params_hash = None  # Force re-render
+        self.update()
+    
+    def _on_model_rows_changed(self, parent, first, last):
+        """Handle model row insertion/removal."""
+        self.updateVisibleNodes()
+        self._rendered_image = None  # Invalidate rendered image
+        self._last_render_params_hash = None  # Force re-render
+        self.update()
+    
+    def _on_model_data_changed(self, topLeft, bottomRight, roles=None):
+        """Handle model data changes."""
+        # Update if display data changed or if no roles specified (assume all changed)
+        if roles is None or not roles or Qt.ItemDataRole.DisplayRole in roles or Qt.ItemDataRole.UserRole in roles:
+            self._rendered_image = None  # Invalidate rendered image
+            self._last_render_params_hash = None  # Force re-render
+            self.update()
+    
+    def _on_model_reset(self):
+        """Handle model reset (typically after beginResetModel/endResetModel)."""
+        self.updateVisibleNodes()
+        self._rendered_image = None  # Invalidate rendered image
+        self._last_render_params_hash = None  # Force re-render
+        self.update()
+
+    def updateVisibleNodes(self):
+        """Update the list of visible nodes based on expansion state."""
+        self._visible_nodes = []
+        self._row_to_node = {}
+        self._row_heights = {}  # Reset row heights
+
+        if not self._model:
+            return
+        
+        # Update waveform time boundaries
+        self._update_waveform_bounds()
+
+        def add_visible_nodes(parent_index=QModelIndex(), row_offset=0):
+            """Recursively add visible nodes."""
+            rows = self._model.rowCount(parent_index)
+            current_row = row_offset
+
+            for row in range(rows):
+                index = self._model.index(row, 0, parent_index)
+                node = self._model.data(index, Qt.ItemDataRole.UserRole)
+
+                if node:
+                    self._visible_nodes.append(node)
+                    self._row_to_node[current_row] = node
+                    # Store the scaled row height for this row
+                    self._row_heights[current_row] = self._row_height * node.height_scaling
+                    current_row += 1
+
+                    # Add children if expanded
+                    if self._model.hasChildren(index):
+                        # Check if node is expanded (from data model)
+                        is_expanded = node.is_group and node.is_expanded
+
+                        if is_expanded:
+                            current_row = add_visible_nodes(index, current_row)
+
+            return current_row
+
+        add_visible_nodes()
+        
+        
+        # Don't automatically generate draw commands here - let paintEvent handle it
+        # This prevents generating commands with wrong viewport before setTimeRange is called
+    
+    def _update_waveform_bounds(self):
+        """Update the waveform time boundaries from the database."""
+        if not self._model or not self._model._session or not self._model._session.waveform_db:
+            self._waveform_max_time = None
+            return
+        
+        try:
+            # Get time table from waveform database
+            time_table = self._model._session.waveform_db.get_time_table()
+            if time_table and len(time_table) > 0:
+                # The last time in the time table is the maximum time
+                self._waveform_max_time = time_table[-1]
+            else:
+                self._waveform_max_time = None
+        except:
+            self._waveform_max_time = None
+
+    def _update_time_scale(self):
+        """Update time scale based on widget width and time range."""
+        if self._end_time > self._start_time and self.width() > 0:
+            self._time_scale = self.width() / (self._end_time - self._start_time)
+        else:
+            self._time_scale = 1.0
+
+    def resizeEvent(self, event):
+        """Handle widget resize with deferred update."""
+        super().resizeEvent(event)
+        old_width = event.oldSize().width()
+        new_width = event.size().width()
+        
+        self._update_time_scale()
+        
+        # Don't clear rendered image - it will be stretched but that's better than flickering
+
+        # Defer update to avoid multiple repaints during resize
+        self._pending_update = True
+        self._update_timer.stop()
+        self._update_timer.start(RENDERING.UPDATE_TIMER_DELAY)  # delay for smoother resize
+        
+    def showEvent(self, event):
+        """Handle widget show event."""
+        super().showEvent(event)
+        # Trigger initial render when widget is shown
+        if self.width() > 0 and self.height() > 0:
+            self.update()
+
+    def _do_update(self):
+        """Perform the actual update after timer expires."""
+        if self._pending_update:
+            self._pending_update = False
+            self.update()
+
+    def paintEvent(self, event):
+        """Paint the waveforms with caching."""
+        # Start timing
+        paint_start_time = time_module.time()
+        
+        # Increment frame counter
+        self._paint_frame_counter += 1
+        
+        painter = QPainter(self)
+        
+        # Check if this is a partial update
+        is_partial_update = self._should_do_partial_update(event)
+        
+        if is_partial_update:
+            self._paint_partial_update(painter, event.rect())
+        else:
+            self._paint_full_update(painter)
+        
+        # Draw overlays (cursor, etc.)
+        self._paint_overlays(painter, event.rect(), is_partial_update)
+        
+        # Calculate paint time
+        self._last_paint_time_ms = (time_module.time() - paint_start_time) * 1000
+        
+        # Draw debug info if enabled
+        self._paint_debug_info(painter, is_partial_update)
+    
+    def _should_do_partial_update(self, event) -> bool:
+        """Determine if this is a partial update (cursor only)."""
+        update_rect = event.rect()
+        cursor_region_width = RENDERING.CURSOR_WIDTH + 2 * RENDERING.CURSOR_PADDING + 1
+        return bool(update_rect.width() < cursor_region_width * 2 and 
+                    self._rendered_image and 
+                    not self._rendered_image.isNull())
+    
+    def _paint_partial_update(self, painter: QPainter, update_rect):
+        """Handle partial update by redrawing only the affected region."""
+        if self._rendered_image is not None:
+            painter.drawImage(update_rect, self._rendered_image, update_rect)
+    
+    def _paint_full_update(self, painter: QPainter):
+        """Handle full update by redrawing everything."""
+        # Paint background
+        self._paint_background(painter)
+        
+        # Draw grid if enabled
+        self._paint_grid(painter)
+        
+        # Render and draw waveforms
+        self._paint_waveforms(painter)
+    
+    def _paint_background(self, painter: QPainter):
+        """Paint the background with different colors for valid/invalid time ranges."""
+        self._paint_background_with_boundaries(painter)
+    
+    def _paint_grid(self, painter: QPainter):
+        """Draw grid lines behind waveforms."""
+        # Calculate time ruler positions first (needed for grid)
+        self._calculate_and_store_ruler_info()
+        
+        # Draw grid lines if enabled
+        if (hasattr(self, '_last_tick_positions') and hasattr(self, '_last_ruler_config') and 
+            self._last_ruler_config is not None):
+            if self._last_ruler_config.show_grid_lines and self._last_tick_positions:
+                self._draw_grid_lines(painter, self._last_tick_positions, self._last_ruler_config)
+    
+    def _paint_waveforms(self, painter: QPainter):
+        """Render and paint the waveforms."""
+        # Check if we need to render
+        render_params = self._collect_render_params()
+        param_hash = self._hash_render_params(render_params)
+        
+        if param_hash != self._last_render_params_hash:
+            # Parameters changed, need to re-render
+            self._last_render_params_hash = param_hash
+            self._render_generation += 1
+            
+            # Render synchronously
+            image, generation, render_time_ms = self._render_to_image(render_params, self._render_generation)
+            self._rendered_image = image
+            self._render_complete_counter += 1
+            self._last_render_time_ms = render_time_ms
+        
+        # Draw the rendered image if available
+        if self._rendered_image and not self._rendered_image.isNull():
+            painter.drawImage(0, 0, self._rendered_image)
+    
+    def _paint_overlays(self, painter: QPainter, update_rect, is_partial_update: bool):
+        """Paint overlays on top of waveforms (boundary lines, ruler, cursor)."""
+        # Draw boundary lines
+        if not is_partial_update:
+            self._draw_boundary_lines(painter)
+        
+        # Draw time ruler
+        if not is_partial_update:
+            self._draw_time_ruler(painter)
+        
+        # Draw cursor
+        self._paint_cursor(painter, update_rect, is_partial_update)
+    
+    def _paint_cursor(self, painter: QPainter, update_rect, is_partial_update: bool):
+        """Draw the cursor if it's visible."""
+        if self._cursor_time >= self._start_time and self._cursor_time <= self._end_time:
+            x = int((self._cursor_time - self._start_time) * self.width() / 
+                   (self._end_time - self._start_time))
+            
+            # Only draw cursor if it's in the update region (or full update)
+            if not is_partial_update or (x >= update_rect.left() - RENDERING.CURSOR_PADDING and 
+                                        x <= update_rect.right() + RENDERING.CURSOR_PADDING):
+                painter.setPen(QPen(QColor(COLORS.CURSOR), RENDERING.CURSOR_WIDTH))
+                painter.drawLine(x, 0, x, self.height())
+    
+    def _paint_debug_info(self, painter: QPainter, is_partial_update: bool):
+        """Draw debug information if not a partial update."""
+        if not is_partial_update:
+            self._draw_debug_counters(painter)
+    
+    
+    def _hash_render_params(self, params):
+        """Create a hash of render parameters for quick comparison."""
+        # Build key params list
+        key_params = [
+            params['width'],
+            params['height'],
+            params['start_time'],
+            params['end_time'],
+            # Don't include cursor_time - cursor is drawn separately
+            params['scroll_value'],
+            params['benchmark_mode'],
+            params.get('header_height', 35),  # Include header height
+        ]
+        
+        # Add visible nodes info if not in benchmark mode
+        if not params['benchmark_mode']:
+            key_params.append(len(params['visible_nodes_info']))
+            # Include node handles, height scaling, and data format to detect changes
+            if 'visible_nodes' in params:
+                key_params.append(
+                    tuple((node.handle, node.name, node.height_scaling, 
+                           node.format.data_format if not node.is_group else None) 
+                          for node in params['visible_nodes'])
+                )
+            # Include row heights to detect layout changes
+            if 'row_heights' in params:
+                key_params.append(tuple(params['row_heights'].items()))
+        
+        return hash(tuple(key_params))
+    
+    def _collect_render_params(self):
+        """Collect all parameters needed for rendering."""
+        # Get scroll position
+        scroll_value = 0
+        if self._shared_scrollbar:
+            scroll_value = self._shared_scrollbar.value()
+        
+        # Check benchmark mode
+        benchmark_mode = False
+        if self._model and self._model._session and hasattr(self._model._session, 'canvas_benchmark_mode'):
+            benchmark_mode = self._model._session.canvas_benchmark_mode
+        
+        # In benchmark mode, we don't need nodes or draw commands
+        if benchmark_mode:
+            return {
+                'width': self.width(),
+                'height': self.height(),
+                'start_time': self._start_time,
+                'end_time': self._end_time,
+                'cursor_time': self._cursor_time,
+                'scroll_value': scroll_value,
+                'benchmark_mode': benchmark_mode,
+                'visible_nodes_info': [],
+                'draw_commands': {},
+                'generation': self._render_generation
+            }
+        
+        # Only copy visible nodes info, not the actual nodes
+        visible_nodes_info = []
+        for i, node in enumerate(self._visible_nodes):
+            node_info = {
+                'name': node.name,
+                'handle': node.handle,
+                'is_group': node.is_group,
+                'format': node.format,
+                'render_type': node.format.render_type if hasattr(node.format, 'render_type') else None,
+                'height_scaling': node.height_scaling,
+                'instance_id': node.instance_id
+            }
+            visible_nodes_info.append(node_info)
+        
+        # Get waveform_db reference if available
+        waveform_db = None
+        if self._model and self._model._session and self._model._session.waveform_db:
+            waveform_db = self._model._session.waveform_db
+        
+        return {
+            'width': self.width(),
+            'height': self.height(),
+            'start_time': self._start_time,
+            'end_time': self._end_time,
+            'cursor_time': self._cursor_time,
+            'scroll_value': scroll_value,
+            'benchmark_mode': benchmark_mode,
+            'visible_nodes_info': visible_nodes_info,
+            'visible_nodes': self._visible_nodes.copy(),  # Pass full nodes for draw command generation
+            'waveform_db': waveform_db,
+            'generation': self._render_generation,
+            'row_heights': self._row_heights.copy(),  # Pass row heights for rendering
+            'base_row_height': self._row_height,
+            'header_height': self._header_height,  # Include header height for proper rendering
+            'waveform_max_time': self._waveform_max_time,  # Add waveform max time for renderer
+            'signal_range_cache': self._signal_range_cache  # Pass signal range cache for analog rendering
+        }
+    
+    def _render_to_image(self, params, generation):
+        """Render waveforms to an image (runs in thread pool)."""
+        # Start timing
+        render_start_time = time_module.time()
+        
+        # Timing for draw command generation
+        draw_cmd_start = time_module.time()
+        
+        # Generate draw commands if not in benchmark mode
+        if not params['benchmark_mode'] and params['waveform_db']:
+            visible_signal_node = [node for node in params['visible_nodes'] if not node.is_group and node.handle is not None]
+            draw_commands = self._generate_all_draw_commands(
+                visible_signal_node,
+                params['start_time'],
+                params['end_time'],
+                params['width'],
+                params['waveform_db']
+            )
+            params['draw_commands'] = draw_commands.draw_commands
+        else:
+            params['draw_commands'] = {}
+        
+        draw_cmd_time = (time_module.time() - draw_cmd_start) * 1000
+        
+        
+        # Timing for image creation and painting
+        paint_start = time_module.time()
+        
+        # Create image
+        image = QImage(params['width'], params['height'], QImage.Format.Format_ARGB32_Premultiplied)
+        # Use darker background color by default (for invalid ranges)
+        image.fill(QColor(COLORS.BACKGROUND_INVALID))
+        
+        # Create painter
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)  # Faster rendering
+        
+        try:
+            if params['benchmark_mode']:
+                # Render benchmark pattern
+                draw_benchmark_pattern(painter, params['width'], params['height'])
+            else:
+                # First paint the valid time range background
+                if self._waveform_max_time is not None and params['width'] > 0:
+                    # Calculate pixel positions for time boundaries
+                    x_min = int((self._waveform_min_time - params['start_time']) * params['width'] / 
+                               (params['end_time'] - params['start_time']))
+                    x_max = int((self._waveform_max_time + 1 - params['start_time']) * params['width'] / 
+                               (params['end_time'] - params['start_time']))
+                    
+                    # Clip to image bounds
+                    x_min = max(0, x_min)
+                    x_max = min(params['width'], x_max)
+                    
+                    # Paint the valid time range with lighter background
+                    if x_max > x_min:
+                        painter.fillRect(x_min, 0, x_max - x_min, params['height'], QColor(COLORS.BACKGROUND))
+                
+                # Render normal waveforms
+                self._render_waveforms(painter, params)
+        finally:
+            painter.end()
+        
+        paint_time = (time_module.time() - paint_start) * 1000
+        
+        # Calculate render time
+        render_time_ms = (time_module.time() - render_start_time) * 1000
+        
+        
+        
+        return image, generation, render_time_ms
+    
+    
+    def _render_waveforms(self, painter, params):
+        """Render waveforms (thread-safe version)."""
+        import time as time_module
+
+        # Don't draw ruler here - it's drawn separately in paintEvent to ensure it's always on top
+        
+        # Check if we have draw commands
+        draw_commands = params.get('draw_commands', {})
+        if not draw_commands:
+            # Show loading message
+            painter.setPen(QColor(COLORS.TEXT_MUTED))
+            painter.setFont(QFont("Arial", RENDERING.FONT_SIZE_LARGE))
+            painter.drawText(params['width'] // 2 - 50, params['height'] // 2, "Loading waveforms...")
+            return
+
+        # Waveforms need to be offset by header height even in cached image
+        y_offset = params.get('header_height', RENDERING.DEFAULT_HEADER_HEIGHT)  # Use header height from params
+
+        painter.save()
+        # Set clipping to prevent drawing outside the waveform area
+        painter.setClipRect(0, y_offset, params['width'], params['height'] - y_offset)
+
+        # Draw each visible row
+        cumulative_y = y_offset
+        row_heights = params.get('row_heights', {})
+        base_row_height = params.get('base_row_height', 20)
+        
+        for row, node_info in enumerate(params['visible_nodes_info']):
+            # Get the height for this row
+            row_height = row_heights.get(row, base_row_height)
+            
+            # Calculate y position: cumulative position minus scroll offset
+            y = cumulative_y - params['scroll_value']
+            
+            # The painter's clipping will handle not drawing rows outside the viewport.
+            self._draw_row(painter, node_info, draw_commands, row, y, row_height, params)
+            
+            # Update cumulative y for next row
+            cumulative_y += row_height
+
+        painter.restore()
+        
+    
+    
+    def _draw_time_ruler_simple(self, painter, params):
+        """Simple version of time ruler drawing."""
+        # Use default config since we can't access model from thread
+        config = TimeRulerConfig()
+        
+        # Draw ruler background
+        painter.fillRect(0, 0, params['width'], RENDERING.DEFAULT_HEADER_HEIGHT, QColor(COLORS.HEADER_BACKGROUND))
+        painter.setPen(QPen(QColor(COLORS.RULER_LINE), 1))
+        painter.drawLine(0, RENDERING.DEFAULT_HEADER_HEIGHT - 1, params['width'], RENDERING.DEFAULT_HEADER_HEIGHT - 1)
+        
+        # Simple time labels
+        painter.setPen(QColor(COLORS.TEXT))
+        painter.setFont(QFont(RENDERING.FONT_FAMILY, RENDERING.FONT_SIZE_NORMAL))
+        
+        # Draw some time markers
+        num_ticks = 10
+        for i in range(num_ticks + 1):
+            x = i * params['width'] // num_ticks
+            time = params['start_time'] + (params['end_time'] - params['start_time']) * i // num_ticks
+            
+            # Draw tick
+            painter.drawLine(x, 30, x, 34)
+            
+            # Draw label
+            label = f"{time}"
+            painter.drawText(x - 20, 5, 40, 20, Qt.AlignmentFlag.AlignCenter, label)
+    
+    def _draw_row(self, painter, node_info, draw_commands, row, y, row_height, params):
+        """Thread-safe version of row drawing."""
+        # Draw background
+        if row % 2 == 0:
+            painter.fillRect(0, y, params['width'], row_height, QColor(COLORS.ALTERNATE_ROW))
+        
+        # Draw border
+        painter.setPen(QPen(QColor(COLORS.BORDER), 1))
+        painter.drawLine(0, y + row_height - 1, params['width'], y + row_height - 1)
+        
+        
+        # Draw signal if it has drawing commands
+        if node_info['handle'] is not None and node_info['handle'] in draw_commands:
+            drawing_data = draw_commands[node_info['handle']]
+            # Use render_type from node_info, not from drawing_data
+            render_type = node_info.get('render_type') or node_info['format'].render_type
+            if render_type == RenderType.BOOL:
+                draw_digital_signal(painter, node_info, drawing_data, y, row_height, params)
+            elif render_type == RenderType.BUS:
+                draw_bus_signal(painter, node_info, drawing_data, y, row_height, params)
+            elif render_type == RenderType.ANALOG:
+                draw_analog_signal(painter, node_info, drawing_data, y, row_height, params)
+            elif render_type == RenderType.EVENT:
+                draw_event_signal(painter, node_info, drawing_data, y, row_height, params)
+    
+    def _draw_cursor(self, painter, params):
+        """Thread-safe version of cursor drawing."""
+        if params['cursor_time'] >= params['start_time'] and params['cursor_time'] <= params['end_time']:
+            x = int((params['cursor_time'] - params['start_time']) * params['width'] / 
+                   (params['end_time'] - params['start_time']))
+            
+            painter.setPen(QPen(QColor(COLORS.CURSOR), RENDERING.CURSOR_WIDTH))
+            painter.drawLine(x, 0, x, params['height'])
+
+
+    def _calculate_and_store_ruler_info(self):
+        """Calculate and store ruler information for grid drawing."""
+        # Get configuration from session if available
+        if self._model and self._model._session:
+            config = self._model._session.time_ruler_config
+        else:
+            # Default configuration
+            config = TimeRulerConfig()
+        
+        # Calculate tick positions and step size
+        tick_positions, step_size = self._calculate_time_ruler_ticks(config)
+        
+        # Store tick positions for grid drawing
+        self._last_tick_positions = tick_positions
+        self._last_ruler_config = config
+        
+    def _draw_time_ruler(self, painter):
+        """Draw the time ruler according to spec 4.11."""
+
+        # If model not loaded, don't draw ruler
+        if not self._model:
+            return
+
+        # Use stored configuration if available
+        if hasattr(self, '_last_ruler_config') and self._last_ruler_config is not None:
+            config = self._last_ruler_config
+            tick_positions = self._last_tick_positions
+            _, step_size = self._calculate_time_ruler_ticks(config)
+        else:
+            # Fallback: calculate now
+            self._calculate_and_store_ruler_info()
+            config = self._last_ruler_config
+            tick_positions = self._last_tick_positions
+            _, step_size = self._calculate_time_ruler_ticks(config)
+        
+        # Draw ruler background
+        painter.fillRect(0, 0, self.width(), RENDERING.DEFAULT_HEADER_HEIGHT, QColor(COLORS.HEADER_BACKGROUND))
+        painter.setPen(QPen(QColor(COLORS.RULER_LINE), 1))
+        painter.drawLine(0, RENDERING.DEFAULT_HEADER_HEIGHT - 1, self.width(), RENDERING.DEFAULT_HEADER_HEIGHT - 1)
+        
+        # Draw ticks and labels
+        font = QFont(RENDERING.FONT_FAMILY_MONO, config.text_size)
+        painter.setFont(font)
+        painter.setPen(QColor(COLORS.TEXT))
+        
+        # Get font metrics for accurate text measurement
+        fm = QFontMetrics(font)
+        
+        for time_value, pixel_x in tick_positions:
+            if 0 <= pixel_x <= self.width():
+                # Draw tick mark
+                painter.drawLine(pixel_x, RENDERING.DEFAULT_HEADER_HEIGHT - 6, pixel_x, RENDERING.DEFAULT_HEADER_HEIGHT - 1)
+                
+                # Format and draw label
+                # Use the session's timescale unit if available, otherwise fall back to config
+                display_unit = config.time_unit
+                if self._model and hasattr(self._model, '_session') and self._model._session and self._model._session.timescale:
+                    display_unit = self._model._session.timescale.unit
+                label = self._format_time_label(time_value, display_unit, step_size)
+                
+                # Get actual text dimensions
+                text_rect = fm.boundingRect(label)
+                text_width = text_rect.width()
+                text_height = text_rect.height()
+                
+                # Calculate position to center text above tick
+                text_x = pixel_x - text_width // 2
+                text_y = 5  # Increased margin from top for better spacing
+                
+                # Draw text using simpler drawText overload
+                painter.drawText(text_x, text_y + fm.ascent(), label)
+    
+    def _calculate_time_ruler_ticks(self, config) -> Tuple[List[Tuple[float, int]], float]:
+        """Calculate optimal tick positions according to spec 4.11.2.
+        
+        Returns:
+            Tuple of (tick_positions, step_size) where tick_positions is a list of (time, pixel_x) tuples
+        """
+        if self._end_time <= self._start_time or self.width() <= 0:
+            return [], 0
+        
+        # Step 1: Estimate label width requirements
+        viewport_left = self._start_time
+        viewport_right = self._end_time
+        
+        # Create a sample label to estimate width
+        # Use the larger of start/end time for estimation
+        sample_time = max(abs(viewport_left), abs(viewport_right))
+        # For estimation, use a reasonable step size guess
+        estimated_step = (viewport_right - viewport_left) / 10
+        # Use the session's timescale unit if available, otherwise fall back to config
+        display_unit = config.time_unit
+        if self._model and hasattr(self._model, '_session') and self._model._session and self._model._session.timescale:
+            display_unit = self._model._session.timescale.unit
+        sample_label = self._format_time_label(sample_time, display_unit, estimated_step)
+        
+        # Get font metrics for accurate width calculation
+        font = QFont(RENDERING.FONT_FAMILY_MONO, config.text_size)
+        fm = QFontMetrics(font)
+        
+        # Add some padding between labels
+        label_width = fm.horizontalAdvance(sample_label) + RENDERING.DEBUG_TEXT_PADDING
+        
+        # Step 2: Calculate maximum number of labels that fit
+        available_space = self.width() * config.tick_density
+        max_labels = int(available_space / label_width) + 2
+        
+        # Step 3: Determine base scale
+        viewport_duration = viewport_right - viewport_left
+        if max_labels > 0:
+            raw_step = viewport_duration / max_labels
+        else:
+            raw_step = viewport_duration
+            
+        if raw_step > 0:
+            scale = 10 ** math.floor(math.log10(raw_step))
+        else:
+            scale = 1
+        
+        # Step 4: Find optimal step multiplier
+        nice_multipliers = [1, 2, 2.5, 5, 10, 20, 25, 50]
+        step_size = scale  # Default
+        
+        for multiplier in nice_multipliers:
+            test_step = scale * multiplier
+            
+            # Calculate first tick position (aligned to step)
+            first_tick = math.floor(viewport_left / test_step) * test_step
+            
+            # Count how many ticks would be generated
+            num_ticks = math.ceil((viewport_right - first_tick) / test_step) + 1
+            
+            if num_ticks <= max_labels:
+                step_size = test_step
+                break
+        
+        # Step 5: Generate tick positions
+        tick_positions = []
+        first_tick = math.floor(viewport_left / step_size) * step_size
+        
+        tick_time = first_tick
+        while tick_time <= viewport_right:
+            # Keep full precision for time values
+            pixel_x = self._time_to_x(tick_time)
+            tick_positions.append((tick_time, pixel_x))
+            
+            
+            tick_time += step_size
+            
+        return tick_positions, step_size
+    
+    def _draw_grid_lines(self, painter, tick_positions: List[Tuple[Time, int]], config):
+        """Draw vertical grid lines at tick positions."""
+        # Set up grid line style
+        pen = QPen(QColor(config.grid_color))
+        if config.grid_style == "dashed":
+            pen.setStyle(Qt.PenStyle.DashLine)
+        elif config.grid_style == "dotted":
+            pen.setStyle(Qt.PenStyle.DotLine)
+        painter.setPen(pen)
+        
+        # Draw vertical lines from below ruler to bottom
+        for _, pixel_x in tick_positions:
+            if 0 <= pixel_x <= self.width():
+                painter.drawLine(pixel_x, RENDERING.DEFAULT_HEADER_HEIGHT, pixel_x, self.height())
+    
+    def _format_time_label(self, time: float, unit: TimeUnit, step_size: Optional[float] = None) -> str:
+        """Format time value according to preferred unit.
+        
+        Args:
+            time: Time value in Timescale units
+            unit: The preferred time unit for display
+            step_size: The step size between ticks (used to determine decimal places)
+        """
+        # Get the current timescale
+        if self._model and hasattr(self._model, '_session') and self._model._session and self._model._session.timescale:
+            timescale = self._model._session.timescale
+        else:
+            # Default to 1ps if not available
+            from .data_model import Timescale, TimeUnit as TU
+            timescale = Timescale(1, TU.PICOSECONDS)
+        
+        # Convert from timescale units to seconds first
+        time_in_seconds = time * timescale.factor * (10 ** timescale.unit.to_exponent())
+        
+        # Convert seconds to the target unit
+        conversions = {
+            TimeUnit.ZEPTOSECONDS: (time_in_seconds * 1e21, "zs"),    # s to zs
+            TimeUnit.ATTOSECONDS: (time_in_seconds * 1e18, "as"),     # s to as
+            TimeUnit.FEMTOSECONDS: (time_in_seconds * 1e15, "fs"),    # s to fs
+            TimeUnit.PICOSECONDS: (time_in_seconds * 1e12, "ps"),     # s to ps
+            TimeUnit.NANOSECONDS: (time_in_seconds * 1e9, "ns"),      # s to ns
+            TimeUnit.MICROSECONDS: (time_in_seconds * 1e6, "μs"),     # s to μs
+            TimeUnit.MILLISECONDS: (time_in_seconds * 1e3, "ms"),     # s to ms
+            TimeUnit.SECONDS: (time_in_seconds, "s")                  # s to s
+        }
+        
+        value, suffix = conversions[unit]
+        
+        # Determine decimal places based on step size
+        if step_size is not None:
+            # Convert step size from timescale units to seconds
+            step_in_seconds = step_size * timescale.factor * (10 ** timescale.unit.to_exponent())
+            
+            # Convert step size to the current display unit
+            step_in_unit = step_in_seconds * (10 ** -unit.to_exponent())
+            
+            # Special handling for units with different factors
+            if unit == TimeUnit.MICROSECONDS:
+                step_in_unit = step_in_seconds * 1e6
+            elif unit == TimeUnit.MILLISECONDS:
+                step_in_unit = step_in_seconds * 1e3
+            
+            # Determine decimal places needed
+            if step_in_unit >= 1:
+                decimal_places = 0
+            elif step_in_unit >= 0.1:
+                decimal_places = 1
+            elif step_in_unit >= 0.01:
+                decimal_places = 2
+            elif step_in_unit >= 0.001:
+                decimal_places = 3
+            else:
+                decimal_places = 4  # Maximum precision
+        else:
+            # Default decimal places when step size is not provided
+            decimal_places = 0
+        
+        # Format with appropriate decimal places
+        if decimal_places == 0:
+            formatted_value = f"{value:.0f}"
+        else:
+            formatted_value = f"{value:.{decimal_places}f}"
+            # Remove trailing zeros after decimal point
+            if '.' in formatted_value:
+                formatted_value = formatted_value.rstrip('0').rstrip('.')
+        
+        # Handle unit upgrades for readability
+        if unit == TimeUnit.PICOSECONDS and value >= 1000:
+            return self._format_time_label(time, TimeUnit.NANOSECONDS, step_size)
+        elif unit == TimeUnit.NANOSECONDS and value >= 1000:
+            return self._format_time_label(time, TimeUnit.MICROSECONDS, step_size)
+        elif unit == TimeUnit.MICROSECONDS and value >= 1000:
+            return self._format_time_label(time, TimeUnit.MILLISECONDS, step_size)
+        elif unit == TimeUnit.MILLISECONDS and value >= 1000:
+            return self._format_time_label(time, TimeUnit.SECONDS, step_size)
+        
+        return f"{formatted_value} {suffix}"
+
+
+    
+    def _generate_all_draw_commands(self, signal_nodes: List[SignalNode], start_time: Time, end_time: Time, canvas_width: int, waveform_db) -> CachedWaveDrawData:
+        """Generate drawing commands for all signals (runs in thread pool)."""
+        result = CachedWaveDrawData()
+        result.viewport_hash = f"{start_time}_{end_time}_{canvas_width}"
+        
+        # Debug timing
+        total_start = time_module.time()
+        signal_times = []
+        
+        # Process each signal
+        for node in signal_nodes:
+            if node.handle is not None:
+                sig_start = time_module.time()
+                drawing_data = generate_signal_draw_commands(
+                    node, start_time, end_time, canvas_width, waveform_db, 
+                    self._waveform_max_time
+                )
+                sig_time = (time_module.time() - sig_start) * 1000
+                signal_times.append((node.name, sig_time))
+                
+                if drawing_data:
+                    result.draw_commands[node.handle] = drawing_data
+        
+        total_time = (time_module.time() - total_start) * 1000
+        
+        
+        return result
+    
+    def _time_to_x(self, time: Time) -> int:
+        """Convert time to x coordinate."""
+        return int((time - self._start_time) * self._time_scale)
+        
+    def _x_to_time(self, x: int) -> Time:
+        """Convert x coordinate to time."""
+        return int(x / self._time_scale + self._start_time)
+        
+    def mousePressEvent(self, event):
+        """Handle mouse clicks to set cursor."""
+        if event.button() == Qt.MouseButton.LeftButton:
+            time = self._x_to_time(int(event.position().x()))
+            self._cursor_time = max(self._start_time, min(time, self._end_time))
+            self.cursorMoved.emit(self._cursor_time)
+            self.update()
+    
+    def _paint_background_with_boundaries(self, painter):
+        """Paint background with different colors for valid/invalid time ranges."""
+        # Default background color for entire canvas
+        painter.fillRect(self.rect(), QColor(COLORS.BACKGROUND_DARK))  # Darker for invalid ranges
+        
+        # If we have valid waveform bounds, paint the valid range differently
+        if self._waveform_max_time is not None and self.width() > 0:
+            # Calculate pixel positions for time boundaries
+            x_min = self._time_to_x(self._waveform_min_time)
+            x_max = self._time_to_x(self._waveform_max_time + 1)  # +1 to include the last timestamp
+            
+            # Clip to widget bounds
+            x_min = max(0, x_min)
+            x_max = min(self.width(), x_max)
+            
+            # Paint the valid time range with a lighter background
+            if x_max > x_min:
+                painter.fillRect(x_min, 0, x_max - x_min, self.height(), QColor(COLORS.BACKGROUND))
+    
+    def _draw_boundary_lines(self, painter):
+        """Draw vertical lines at waveform time boundaries."""
+        if self._waveform_max_time is None:
+            return
+        
+        # Set up pen for boundary lines
+        painter.setPen(QPen(QColor(COLORS.BOUNDARY_LINE), 2))
+        
+        # Draw line at time 0 if visible
+        if self._waveform_min_time >= self._start_time and self._waveform_min_time <= self._end_time:
+            x_min = self._time_to_x(self._waveform_min_time)
+            painter.drawLine(x_min, 0, x_min, self.height())
+        
+        # Draw line at max_time + 1 if visible
+        boundary_time = self._waveform_max_time + 1
+        if boundary_time >= self._start_time and boundary_time <= self._end_time:
+            x_max = self._time_to_x(boundary_time)
+            painter.drawLine(x_max, 0, x_max, self.height())
+    
+    def _draw_debug_counters(self, painter):
+        """Draw debug counters in bottom right corner."""
+        # Save painter state
+        painter.save()
+        
+        # Set up font and colors
+        font = QFont(RENDERING.DEBUG_FONT_FAMILY, RENDERING.DEBUG_FONT_SIZE)
+        font.setBold(True)
+        painter.setFont(font)
+        
+        # Format times to 1 decimal place
+        paint_time_ms = self._last_paint_time_ms
+        render_time_ms = self._last_render_time_ms
+        
+        # Create text in requested format
+        debug_text = f"PaintEvent # {self._paint_frame_counter} ({paint_time_ms:.1f} ms), RenderedFrame # {self._render_complete_counter} ({render_time_ms:.1f} ms)"
+        # Calculate text position
+        metrics = QFontMetrics(font)
+        text_rect = metrics.boundingRect(debug_text)
+        x = self.width() - text_rect.width() - RENDERING.DEBUG_TEXT_MARGIN
+        y = self.height() - RENDERING.DEBUG_TEXT_MARGIN
+        
+        # Draw background
+        padding = RENDERING.DEBUG_TEXT_PADDING // 2
+        bg_rect = QRectF(x - padding, y - text_rect.height() - padding, 
+                        text_rect.width() + 2 * padding, text_rect.height() + 2 * padding)
+        painter.fillRect(bg_rect, QColor(*COLORS.DEBUG_BACKGROUND))
+        
+        # Draw text
+        painter.setPen(QColor(COLORS.DEBUG_TEXT))
+        painter.drawText(x, y, debug_text)
+        
+        # Restore painter state
+        painter.restore()
+    
+    def closeEvent(self, event):
+        """Clean up resources when closing."""
+        super().closeEvent(event)

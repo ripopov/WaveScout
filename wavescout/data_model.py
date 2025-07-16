@@ -1,0 +1,264 @@
+"""Core data structures for WaveScout Widget.
+
+This module defines the state of the waveform viewer widget: displayed signals,
+viewport, and markers. Don't confuse this with the WaveformDB which represents
+whole waveforms, while data_model represents only a view visible to the user.
+
+Displayed signals can be grouped into a tree structure. So WaveformSession is a tree,
+ but usually it flat (e.g., no groups).
+
+    WaveformSession
+    ├── root_nodes: [SignalNode]     (Top-level signals/groups)
+    │   ├── SignalNode (Top-level Group)
+    │   │   ├── name: "CPU"
+    │   │   ├── is_group: True
+    │   │   └── children: [
+    │   │       ├── SignalNode (Signal)
+    │   │       │   ├── name: "CPU.clk"
+    │   │       │   ├── handle: 42
+    │   │       │   └── format: DisplayFormat(BOOL)
+    │   │       └── SignalNode (Signal)
+    │   │           ├── name: "CPU.data"
+    │   │           ├── handle: 43
+    │   │           └── format: DisplayFormat(BUS, hex)
+    │   │       ]
+    │   └── SignalNode (Top-level Signal)
+    │       ├── name: "reset"
+    │       ├── handle: 10
+    │       └── format: DisplayFormat(BOOL)
+    ├── viewport: Viewport
+    │   ├── left: 0.2    (20% into waveform)
+    │   ├── right: 0.3   (30% into waveform)
+    │   └── total_duration: 1000000 ps
+    └── markers: [Marker]
+        └── Marker(time=500000, label="Start")
+
+"""
+
+from dataclasses import dataclass, field
+from typing import List, Optional, Any, ClassVar
+from enum import Enum
+
+Time = int  # In Timescale units
+
+# SignalHandle is an opaque identifier used to efficiently reference signals in the waveform database.
+# Instead of using full hierarchical names (e.g., "top.cpu.core.alu.result[31:0]") for every
+# database query, which would be slow for string comparisons, we use integer handles that act
+# as primary keys. This provides O(1) lookup performance when fetching signal data.
+# The handle is obtained when first querying a signal by name, then reused for all subsequent
+# operations like getting transitions, sampling values, etc.
+# Important: Multiple Variables with different hierarchical names can reference the same Signal.
+# We use handles instead of Signal objects directly because:
+# - Handles enable lazy loading - signals are loaded into cache only when needed for rendering
+# - Handles are serializable for session save/restore, while Signal objects are not
+# - This separation keeps the UI layer (SignalNode) decoupled from the data layer (Signal)
+SignalHandle = int
+
+# SignalNodeID is a unique identifier for each SignalNode instance.
+# This allows multiple instances of the same signal (same handle) to be displayed
+# with different settings (e.g., different height_scaling) without cache conflicts.
+SignalNodeID = int
+
+class DataFormat(Enum):
+    UNSIGNED = "unsigned"
+    SIGNED = "signed"
+    HEX = "hex"
+    BIN = "bin"
+    FLOAT = "float"
+
+class GroupRenderMode(Enum):
+    SEPARATE_ROWS = "separate_rows"
+    OVERLAPPED = "overlapped"
+    STACKED_AREA = "stacked_area"
+    PIPELINE = "pipeline"
+
+class RenderType(Enum):
+    BOOL = "bool"       # 1-bit digital signals
+    BUS = "bus"         # Multi-bit signals
+    EVENT = "event"     # Discrete events
+    ANALOG = "analog"   # Analog waveforms
+
+class AnalogScalingMode(Enum):
+    SCALE_TO_ALL_DATA = "scale_to_all"      # Use global min/max
+    SCALE_TO_VISIBLE_DATA = "scale_to_visible"  # Use viewport min/max
+
+@dataclass
+class DisplayFormat:
+    render_type: RenderType = RenderType.BOOL
+    data_format: DataFormat = DataFormat.UNSIGNED
+    color: str = "#33C3F0"       # any CSS color
+    analog_scaling_mode: AnalogScalingMode = AnalogScalingMode.SCALE_TO_ALL_DATA
+
+@dataclass
+class SignalNode:
+    """A node in the signal/group tree. Can be a signal or a group."""
+    name: str                          # Full hierarchical name (e.g., "top.tb.axi_bfm.clk")
+    handle: Optional[SignalHandle] = None        # identifier understood by WaveformDB (None for groups)
+    format: DisplayFormat = field(default_factory=DisplayFormat)
+    nickname: str = ""                  # User-defined display name
+    children: List["SignalNode"] = field(default_factory=list)
+    parent: Optional["SignalNode"] = field(default=None, repr=False)
+    is_group: bool = False
+    group_render_mode: Optional[GroupRenderMode] = None  # Only for groups
+    is_expanded: bool = True            # Whether group is expanded (only relevant for groups)
+    height_scaling: int = 1             # Relative row height (1, 2, 3, 4, 8)
+    is_multi_bit: bool = False         # Whether signal has multiple bits (for render type selection)
+
+    # Class-level counter for generating unique instance IDs
+    _id_counter: ClassVar[int] = 0
+
+    # Unique identifier for this SignalNode instance
+    instance_id: SignalNodeID = field(default_factory=lambda: SignalNode._generate_id())
+
+    @classmethod
+    def _generate_id(cls) -> SignalNodeID:
+        """Generate a unique instance ID."""
+        cls._id_counter += 1
+        return cls._id_counter
+
+class TimeUnit(Enum):
+    ZEPTOSECONDS = "zs"  # 10^-21 seconds
+    ATTOSECONDS = "as"   # 10^-18 seconds
+    FEMTOSECONDS = "fs"  # 10^-15 seconds
+    PICOSECONDS = "ps"   # 10^-12 seconds
+    NANOSECONDS = "ns"   # 10^-9 seconds
+    MICROSECONDS = "μs"  # 10^-6 seconds
+    MILLISECONDS = "ms"  # 10^-3 seconds
+    SECONDS = "s"        # 10^0 seconds
+
+    @classmethod
+    def from_string(cls, s: str) -> Optional['TimeUnit']:
+        """Convert string representation to TimeUnit."""
+        mapping = {
+            'zs': cls.ZEPTOSECONDS,
+            'as': cls.ATTOSECONDS,
+            'fs': cls.FEMTOSECONDS,
+            'ps': cls.PICOSECONDS,
+            'ns': cls.NANOSECONDS,
+            'us': cls.MICROSECONDS,  # Note: pywellen uses 'us' not 'μs'
+            'μs': cls.MICROSECONDS,
+            'ms': cls.MILLISECONDS,
+            's': cls.SECONDS
+        }
+        return mapping.get(s)
+
+    def to_exponent(self) -> int:
+        """Get the power of 10 exponent for this unit."""
+        exponents: dict[TimeUnit, int] = {
+            TimeUnit.ZEPTOSECONDS: -21,
+            TimeUnit.ATTOSECONDS: -18,
+            TimeUnit.FEMTOSECONDS: -15,
+            TimeUnit.PICOSECONDS: -12,
+            TimeUnit.NANOSECONDS: -9,
+            TimeUnit.MICROSECONDS: -6,
+            TimeUnit.MILLISECONDS: -3,
+            TimeUnit.SECONDS: 0
+        }
+        return exponents[self]
+
+@dataclass
+class Timescale:
+    """Represents the timescale of a waveform file."""
+    factor: int  # The numeric factor (e.g., 1, 10, 100)
+    unit: TimeUnit  # The time unit
+
+@dataclass
+class ViewportConfig:
+    """Configuration for viewport behavior and constraints."""
+    edge_space: float = 0.2             # Extra space beyond 0.0-1.0 (20% on each side)
+    minimum_width_time: Time = 10       # Minimum viewport width in time units (Timescale units)
+    scroll_sensitivity: float = 0.05    # Base percentage for scroll wheel panning
+    zoom_wheel_factor: float = 1.1      # Zoom factor per mouse wheel notch
+
+@dataclass
+class TimeRulerConfig:
+    """Configuration for time ruler and grid lines."""
+    tick_density: float = 0.8           # Controls tick spacing (0.5=sparse, 1.0=dense)
+    text_size: int = 10                 # Font size in pixels for tick labels
+    time_unit: TimeUnit = TimeUnit.NANOSECONDS  # Preferred time unit for display
+    show_grid_lines: bool = True        # Whether to draw vertical grid lines
+    grid_color: str = "#3e3e42"         # Color for grid lines
+    grid_style: str = "solid"           # Grid line style: "solid", "dashed", "dotted"
+    nice_numbers: List[float] = field(default_factory=lambda: [1, 2, 2.5, 5])  # Multipliers for tick intervals
+
+@dataclass
+class Viewport:
+    """Viewport represents the visible portion of the waveform using normalized coordinates.
+    
+    The viewport uses relative coordinates where:
+    - 0.0 represents the start of the waveform
+    - 1.0 represents the end of the waveform
+    - Values outside 0.0-1.0 represent areas beyond the waveform (edge space)
+    
+    The actual time values are calculated by multiplying these relative positions
+    by the total waveform duration from the WaveformDB.
+    """
+    left: float = 0.0                   # Left edge in relative coordinates (0.0-1.0)
+    right: float = 1.0                  # Right edge in relative coordinates (0.0-1.0)
+
+    # Total waveform duration for conversions (populated from WaveformDB)
+    total_duration: Time = 1000000      # Total waveform time in Timescale units
+
+    # Configuration
+    config: ViewportConfig = field(default_factory=ViewportConfig)
+
+    @property
+    def width(self) -> float:
+        """Width of viewport in relative coordinates (zoom level = 1/width)."""
+        return self.right - self.left
+
+    @property
+    def zoom_level(self) -> float:
+        """Calculated zoom level (1.0 = entire waveform visible)."""
+        return 1.0 / self.width if self.width > 0 else 1.0
+
+    @property
+    def start_time(self) -> Time:
+        """Start time in Timescale units."""
+        return int(self.left * self.total_duration)
+
+    @property
+    def end_time(self) -> Time:
+        """End time in Timescale units."""
+        return int(self.right * self.total_duration)
+
+    def time_to_relative(self, time: Time) -> float:
+        """Convert time in Timescale units to relative coordinate."""
+        return time / self.total_duration if self.total_duration > 0 else 0.0
+
+    def relative_to_time(self, relative: float) -> Time:
+        """Convert relative coordinate to time in Timescale units."""
+        return int(relative * self.total_duration)
+
+@dataclass
+class Marker:
+    time: Time
+    label: str = ""
+    color: str = "#FF0000"
+
+class SignalNameDisplayMode(Enum):
+    FULL_PATH = "full_path"           # Show full hierarchical path (e.g., "top.tb.axi_bfm.clk")
+    LAST_N_LEVELS = "last_n_levels"  # Show only last N levels (e.g., N=2: "axi_bfm.clk")
+
+@dataclass
+class AnalysisMode:
+    """Defines the analysis mode for signal measurements."""
+    mode: str = "none"  # 'none' | 'min' | 'max' | 'avg' | 'range_min' | 'range_max' | 'cursor_delta'
+    range_start: Optional[Time] = None  # For range-based analysis
+    range_end: Optional[Time] = None
+
+@dataclass
+class WaveformSession:
+    waveform_db: Optional[Any] = None  # Pointer to WaveformDB instance
+    root_nodes: List[SignalNode] = field(default_factory=list)
+    viewport: Viewport = field(default_factory=Viewport)
+    markers: List[Marker] = field(default_factory=list)
+    cursor_time: Time = 0
+    analysis_mode: AnalysisMode = field(default_factory=AnalysisMode)
+    signal_name_display_mode: SignalNameDisplayMode = SignalNameDisplayMode.LAST_N_LEVELS
+    signal_name_hierarchy_levels: int = 2  # For LAST_N_LEVELS mode
+    selected_nodes: List[SignalNode] = field(default_factory=list)  # Currently selected nodes
+    time_ruler_config: TimeRulerConfig = field(default_factory=TimeRulerConfig)  # Configuration for time ruler display
+    timescale: Timescale = field(default_factory=lambda: Timescale(1, TimeUnit.PICOSECONDS))  # Timescale from the waveform file, default 1 ps if waveform not specifies timescale
+    canvas_benchmark_mode: bool = False  # When enabled, canvas draws each pixel with a different color in rainbow pattern
+                                         # instead of waveforms. Used to benchmark pixel painting speed vs draw command computation

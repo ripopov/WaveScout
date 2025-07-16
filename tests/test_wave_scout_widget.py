@@ -1,0 +1,408 @@
+"""Test WaveScoutWidget with real VCD file."""
+
+import pytest
+from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt, QModelIndex
+from PySide6.QtTest import QTest
+from wavescout import WaveScoutWidget, WaveformItemModel, SignalNode, DisplayFormat, GroupRenderMode
+
+
+@pytest.fixture
+def qt_app(qtbot):
+    """Provide Qt application for testing."""
+    return QApplication.instance()
+
+
+@pytest.fixture
+def wave_widget(widget_with_groups):
+    """Create WaveScoutWidget with loaded VCD."""
+    # Use the widget_with_groups fixture which already has signals loaded
+    return widget_with_groups
+
+
+def test_widget_creation(wave_widget):
+    """Test that WaveScoutWidget is created successfully."""
+    assert wave_widget is not None
+    assert wave_widget.session is not None
+    assert wave_widget.model is not None
+
+
+def test_four_panels_exist(wave_widget):
+    """Test that all four panels exist."""
+    # Check that all views exist
+    assert hasattr(wave_widget, '_names_view')
+    assert hasattr(wave_widget, '_values_view')
+    assert hasattr(wave_widget, '_canvas')
+    assert hasattr(wave_widget, '_analysis_view')
+    
+    # Check they are visible
+    assert wave_widget._names_view.isVisible()
+    assert wave_widget._values_view.isVisible()
+    assert wave_widget._canvas.isVisible()
+    assert wave_widget._analysis_view.isVisible()
+
+
+def test_model_has_signals(wave_widget):
+    """Test that the model contains signals."""
+    model = wave_widget.model
+    
+    # Check root level has items
+    root_count = model.rowCount()
+    assert root_count > 0, "Model should have at least one root item"
+    
+    # Print signal information for debugging
+    print(f"\nModel has {root_count} root items:")
+    for i in range(min(root_count, 5)):  # Print first 5
+        index = model.index(i, 0)
+        name = model.data(index, Qt.DisplayRole)
+        print(f"  - {name}")
+
+
+def test_signal_names_panel(wave_widget):
+    """Test that signal names are displayed in the names panel."""
+    names_view = wave_widget._names_view
+    model = wave_widget.model
+    
+    # Check that the view has the model
+    assert names_view.model() == model
+    
+    # Check first column is visible
+    assert not names_view.isColumnHidden(0)
+    
+    # Check other columns are hidden
+    for col in range(1, 4):
+        assert names_view.isColumnHidden(col)
+    
+    # Get some signal names
+    signal_names = []
+    for i in range(min(model.rowCount(), 5)):
+        index = model.index(i, 0)
+        name = model.data(index, Qt.DisplayRole)
+        if name:
+            signal_names.append(name)
+    
+    assert len(signal_names) > 0, "Should have at least one signal name"
+    print(f"\nSignal names in panel: {signal_names}")
+
+
+def test_values_panel(wave_widget):
+    """Test that values are displayed in the values panel."""
+    values_view = wave_widget._values_view
+    model = wave_widget.model
+    
+    # Check that the view has the model
+    assert values_view.model() == model
+    
+    # Check second column is visible
+    assert not values_view.isColumnHidden(1)
+    
+    # Check other columns are hidden
+    for col in [0, 2, 3]:
+        assert values_view.isColumnHidden(col)
+    
+    # Get some values
+    values = []
+    for i in range(min(model.rowCount(), 5)):
+        index = model.index(i, 1)
+        value = model.data(index, Qt.DisplayRole)
+        if value:
+            values.append(value)
+    
+    print(f"\nValues at cursor: {values}")
+
+
+def test_analysis_panel(wave_widget):
+    """Test that analysis values are displayed in the analysis panel."""
+    analysis_view = wave_widget._analysis_view
+    model = wave_widget.model
+    
+    # Check that the view has the model
+    assert analysis_view.model() == model
+    
+    # Check fourth column is visible
+    assert not analysis_view.isColumnHidden(3)
+    
+    # Check other columns are hidden
+    for col in [0, 1, 2]:
+        assert analysis_view.isColumnHidden(col)
+
+
+def test_shared_scrollbar(wave_widget):
+    """Test that all views share the same scrollbar."""
+    # Get scrollbars from each view
+    names_scroll = wave_widget._names_view.verticalScrollBar()
+    values_scroll = wave_widget._values_view.verticalScrollBar()
+    analysis_scroll = wave_widget._analysis_view.verticalScrollBar()
+    
+    # Check they are the same object
+    assert names_scroll == values_scroll
+    assert values_scroll == analysis_scroll
+    assert names_scroll == wave_widget._shared_scrollbar
+
+
+def test_cursor_interaction(wave_widget, qtbot):
+    """Test cursor movement updates values."""
+    canvas = wave_widget._canvas
+    initial_cursor = wave_widget.session.cursor_time
+    
+    # Simulate click on canvas
+    new_x = 100
+    qtbot.mouseClick(canvas, Qt.LeftButton, pos=canvas.rect().center())
+    
+    # Check cursor changed
+    assert wave_widget.session.cursor_time != initial_cursor
+
+
+def test_signal_formats(wave_widget):
+    """Test that signals have different display formats."""
+    model = wave_widget.model
+    formats_found = set()
+    
+    # Check formats of signals
+    for i in range(model.rowCount()):
+        index = model.index(i, 0)
+        node = model.data(index, Qt.UserRole)
+        if isinstance(node, SignalNode) and not node.is_group:
+            formats_found.add(node.format.data_format)
+    
+    print(f"\nDisplay formats found: {formats_found}")
+    assert len(formats_found) > 1, "Should have multiple display formats"
+
+
+def test_group_handling(wave_widget):
+    """Test that groups are handled correctly."""
+    model = wave_widget.model
+    
+    # Find a group
+    group_found = False
+    for i in range(model.rowCount()):
+        index = model.index(i, 0)
+        node = model.data(index, Qt.UserRole)
+        if isinstance(node, SignalNode) and node.is_group:
+            group_found = True
+            # Check group has children
+            child_count = model.rowCount(index)
+            assert child_count > 0, "Group should have children"
+            print(f"\nFound group '{node.name}' with {child_count} children")
+            break
+    
+    assert group_found, "Should have at least one group in the test data"
+
+
+def test_expansion_sync(wave_widget, qtbot):
+    """Test that expansion state is synchronized across views."""
+    model = wave_widget.model
+    
+    # Find a group to expand
+    group_index = None
+    group_node = None
+    for i in range(model.rowCount()):
+        index = model.index(i, 0)
+        node = model.data(index, Qt.UserRole)
+        if isinstance(node, SignalNode) and node.is_group:
+            group_index = index
+            group_node = node
+            break
+    
+    if group_index:
+        # Initially should be expanded
+        assert group_node.is_expanded == True
+        
+        # Collapse in names view
+        wave_widget._names_view.collapse(group_index)
+        
+        # Check it's collapsed in other views
+        assert not wave_widget._values_view.isExpanded(group_index)
+        assert not wave_widget._analysis_view.isExpanded(group_index)
+        
+        # Check data model is updated
+        assert group_node.is_expanded == False
+        
+        # Expand in names view
+        wave_widget._names_view.expand(group_index)
+        
+        # Check it's expanded in other views
+        assert wave_widget._values_view.isExpanded(group_index)
+        assert wave_widget._analysis_view.isExpanded(group_index)
+        
+        # Check data model is updated
+        assert group_node.is_expanded == True
+
+
+def test_canvas_collapsed_groups(wave_widget, qtbot):
+    """Test that canvas correctly handles collapsed groups."""
+    model = wave_widget.model
+    canvas = wave_widget._canvas
+    
+    # Find a group
+    group_index = None
+    group_node = None
+    for i in range(model.rowCount()):
+        index = model.index(i, 0)
+        node = model.data(index, Qt.UserRole)
+        if isinstance(node, SignalNode) and node.is_group:
+            group_index = index
+            group_node = node
+            break
+    
+    if group_index and group_node:
+        # Count visible nodes with group expanded
+        expanded_count = len(canvas._visible_nodes)
+        
+        # Collapse the group
+        wave_widget._names_view.collapse(group_index)
+        qtbot.wait(50)  # Let updates propagate
+        
+        # Count visible nodes with group collapsed
+        collapsed_count = len(canvas._visible_nodes)
+        
+        # Should have fewer visible nodes when collapsed
+        assert collapsed_count < expanded_count, f"Expected fewer nodes when collapsed: {collapsed_count} >= {expanded_count}"
+        
+        # Children of the group should not be in visible nodes
+        for child in group_node.children:
+            assert child not in canvas._visible_nodes, f"Child {child.name} should not be visible when group is collapsed"
+        
+        # The group itself should still be visible
+        assert group_node in canvas._visible_nodes, "Group should still be visible when collapsed"
+        
+        print(f"\nExpanded nodes: {expanded_count}, Collapsed nodes: {collapsed_count}")
+
+
+def test_headers_visible(wave_widget):
+    """Test that headers are visible in all panels."""
+    # Check headers
+    assert not wave_widget._names_view.isHeaderHidden()
+    assert not wave_widget._values_view.isHeaderHidden()
+    assert not wave_widget._analysis_view.isHeaderHidden()
+    
+    # Get header text
+    model = wave_widget.model
+    headers = []
+    for col in range(4):
+        header = model.headerData(col, Qt.Horizontal, Qt.DisplayRole)
+        headers.append(header)
+    
+    assert headers == ["Signal", "Value", "Waveform", "Analysis"]
+    print(f"\nHeaders: {headers}")
+
+
+def test_create_group_from_selected(wave_widget):
+    """Test creating a group from selected nodes."""
+    model = wave_widget.model
+    session = wave_widget.session
+    
+    # Find two signals to select
+    signal_nodes = []
+    for i in range(model.rowCount()):
+        index = model.index(i, 0)
+        node = model.data(index, Qt.UserRole)
+        if isinstance(node, SignalNode) and not node.is_group:
+            signal_nodes.append(node)
+            if len(signal_nodes) >= 2:
+                break
+    
+    assert len(signal_nodes) >= 2, "Need at least 2 signals for test"
+    
+    # Select the signals
+    session.selected_nodes = signal_nodes.copy()
+    initial_root_count = len(session.root_nodes)
+    
+    # Create group
+    wave_widget._create_group_from_selected()
+    
+    # Check a new group was created
+    assert len(session.root_nodes) == initial_root_count - len(signal_nodes) + 1
+    
+    # Find the new group
+    new_group = None
+    for node in session.root_nodes:
+        if node.is_group and node.name.startswith("Group"):
+            new_group = node
+            break
+    
+    assert new_group is not None, "New group should be created"
+    assert len(new_group.children) == 2, "Group should contain 2 children"
+    assert all(child in signal_nodes for child in new_group.children), "Group should contain selected signals"
+
+
+def test_create_group_of_groups_preserves_hierarchy(wave_widget):
+    """Test creating a group from groups preserves the hierarchy."""
+    session = wave_widget.session
+    
+    # Create two groups with children
+    # Group 1: G1 with IF, WB signals
+    g1 = SignalNode(name="G1", is_group=True, is_expanded=True, group_render_mode=GroupRenderMode.SEPARATE_ROWS)
+    if_signal = SignalNode(name="IF", handle=0)
+    wb_signal1 = SignalNode(name="WB", handle=1)
+    if_signal.parent = g1
+    wb_signal1.parent = g1
+    g1.children = [if_signal, wb_signal1]
+    
+    # Group 2: G2 with EX, MEM, WB signals
+    g2 = SignalNode(name="G2", is_group=True, is_expanded=True, group_render_mode=GroupRenderMode.SEPARATE_ROWS)
+    ex_signal = SignalNode(name="EX", handle=2)
+    mem_signal = SignalNode(name="MEM", handle=3)
+    wb_signal2 = SignalNode(name="WB", handle=4)
+    ex_signal.parent = g2
+    mem_signal.parent = g2
+    wb_signal2.parent = g2
+    g2.children = [ex_signal, mem_signal, wb_signal2]
+    
+    # Clear existing nodes and set up our test scenario
+    session.root_nodes = [g1, g2]
+    wave_widget.model.layoutChanged.emit()
+    
+    # Select all nodes (simulating Ctrl+A)
+    # This will select G1, IF, WB, G2, EX, MEM, WB
+    all_nodes = [g1, if_signal, wb_signal1, g2, ex_signal, mem_signal, wb_signal2]
+    session.selected_nodes = all_nodes.copy()
+    
+    # Create group (simulating 'g' key)
+    wave_widget._create_group_from_selected()
+    
+    # Verify the structure
+    assert len(session.root_nodes) == 1, "Should have only one root node (the new group)"
+    
+    new_group = session.root_nodes[0]
+    assert new_group.is_group, "Root should be a group"
+    assert new_group.name.startswith("Group"), "New group should have appropriate name"
+    
+    # The new group should contain only G1 and G2 (not their children)
+    assert len(new_group.children) == 2, "New group should contain only the two original groups"
+    assert g1 in new_group.children, "G1 should be in new group"
+    assert g2 in new_group.children, "G2 should be in new group"
+    
+    # G1 and G2 should still have their original children
+    assert len(g1.children) == 2, "G1 should still have 2 children"
+    assert if_signal in g1.children, "IF should still be in G1"
+    assert wb_signal1 in g1.children, "WB should still be in G1"
+    
+    assert len(g2.children) == 3, "G2 should still have 3 children"
+    assert ex_signal in g2.children, "EX should still be in G2"
+    assert mem_signal in g2.children, "MEM should still be in G2"
+    assert wb_signal2 in g2.children, "WB should still be in G2"
+    
+    # Verify parent relationships
+    assert g1.parent == new_group, "G1's parent should be the new group"
+    assert g2.parent == new_group, "G2's parent should be the new group"
+    assert if_signal.parent == g1, "IF's parent should still be G1"
+    assert wb_signal1.parent == g1, "WB's parent should still be G1"
+    assert ex_signal.parent == g2, "EX's parent should still be G2"
+    assert mem_signal.parent == g2, "MEM's parent should still be G2"
+    assert wb_signal2.parent == g2, "WB's parent should still be G2"
+
+
+if __name__ == "__main__":
+    # For manual testing
+    app = QApplication([])
+    
+    vcd_file = Path(__file__).parent.parent / "test_inputs" / "swerv1.vcd"
+    session = create_sample_session(str(vcd_file))
+    
+    widget = WaveScoutWidget()
+    widget.setSession(session)
+    widget.resize(1200, 800)
+    widget.show()
+    
+    app.exec()

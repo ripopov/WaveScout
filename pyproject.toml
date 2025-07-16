@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "wavescout"
+version = "0.1.0"
+description = "PySide6 Digital/Mixed-Signal Waveform Viewer Widget"
+authors = ["WaveScout Team"]
+readme = "README.md"
+packages = [{include = "wavescout"}]
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.14"
+pyside6 = "6.9.1"
+pyyaml = "^6.0.2"
+numpy = "^2.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-qt = "^4.0"
+psutil = "^7.0.0"
+maturin = "^1.7"
+mypy = "^1.16"
+types-PyYAML = "^6.0"
+
+[tool.poetry.scripts]
+build-pywellen = "scripts.build_pywellen:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
