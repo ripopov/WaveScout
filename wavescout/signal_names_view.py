@@ -86,7 +86,7 @@ class SignalNamesView(BaseColumnView):
 
     def _get_selected_signal_nodes(self):
         """Return a list of selected SignalNode items (excluding groups)."""
-        nodes = []
+        nodes: list = []
         sel_model = self.selectionModel()
         if not sel_model:
             return nodes
