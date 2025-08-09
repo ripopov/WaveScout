@@ -90,13 +90,9 @@ class FuzzyFilterProxyModel(QSortFilterProxyModel):
         self.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.score_threshold = 60  # Minimum score to show results
         
-        # Try to import rapidfuzz, fall back to simple matching if not available
-        try:
-            from rapidfuzz import fuzz
-            self.fuzz = fuzz
-            self.use_rapidfuzz = True
-        except ImportError:
-            self.use_rapidfuzz = False
+        # Import rapidfuzz (mandatory dependency)
+        from rapidfuzz import fuzz
+        self.fuzz = fuzz
     
     def set_filter_text(self, text: str):
         """Set the filter text and invalidate the filter."""
@@ -119,24 +115,10 @@ class FuzzyFilterProxyModel(QSortFilterProxyModel):
         if not name:
             return False
         
-        if self.use_rapidfuzz:
-            # Use rapidfuzz for better fuzzy matching
-            # WRatio gives better results for partial matches
-            score = self.fuzz.WRatio(self.filter_text, name.lower())
-            return score >= self.score_threshold
-        else:
-            # Fallback: Simple fuzzy matching - all filter characters must appear in order
-            name_lower = name.lower()
-            filter_chars = list(self.filter_text)
-            
-            pos = 0
-            for char in filter_chars:
-                pos = name_lower.find(char, pos)
-                if pos == -1:
-                    return False
-                pos += 1
-            
-            return True
+        # Use rapidfuzz for fuzzy matching
+        # WRatio gives better results for partial matches
+        score = self.fuzz.WRatio(self.filter_text, name.lower())
+        return score >= self.score_threshold
 
 
 class VarsView(QWidget):

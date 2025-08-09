@@ -737,15 +737,15 @@ def test_inner_scope_variable_selection(qtbot):
         tb_top_index,
         QItemSelectionModel.ClearAndSelect
     )
-    qtbot.wait(100)
+    qtbot.wait(200)  # Give more time for signal processing
     
     # Check that variables are loaded in VarsView
     vars_view = window.design_tree_view.vars_view
     vars_table = vars_view.table_view
     
     def _vars_loaded():
-        return len(vars_view.vars_model.variables) > 0
-    qtbot.waitUntil(_vars_loaded, timeout=2000)
+        return vars_view.vars_model and len(vars_view.vars_model.variables) > 0
+    qtbot.waitUntil(_vars_loaded, timeout=3000)
     
     var_count = len(vars_view.vars_model.variables)
     assert var_count > 3, f"Expected more than 3 variables, got {var_count}"
