@@ -21,8 +21,8 @@ This module depends only on QPainter and small data types from the local data mo
 and sampling code; it contains no widget logic.
 """
 
-from typing import Dict, List, Tuple, Optional, Any
-from PySide6.QtGui import QPainter, QPen, QColor, QFont, QFontMetrics, QPolygonF
+from typing import Dict, Tuple, Optional, Any
+from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPolygonF
 from PySide6.QtCore import Qt, QPointF
 from .data_model import RenderType, Time, AnalogScalingMode, SignalHandle, SignalNodeID
 from .signal_sampling import SignalDrawingData, ValueKind

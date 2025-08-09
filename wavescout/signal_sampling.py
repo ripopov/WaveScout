@@ -6,10 +6,10 @@ zoom levels and generating optimized drawing commands for rendering.
 
 from enum import Enum
 from dataclasses import dataclass
-from typing import List, Tuple, Optional, Union, Any
+from typing import List, Tuple, Optional, Any
 import math
 
-from .data_model import SignalNode, RenderType, Time, DataFormat
+from .data_model import SignalNode, Time, DataFormat
 from .config import RENDERING
 import struct
 

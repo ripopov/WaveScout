@@ -3,7 +3,7 @@
 import yaml
 import pathlib
 from typing import Dict, Any, List, Optional
-from dataclasses import asdict, fields
+from dataclasses import asdict
 from .data_model import (
     WaveformSession, SignalNode, DisplayFormat, DataFormat, 
     GroupRenderMode, RenderType, Viewport, ViewportConfig, Marker, SignalNameDisplayMode, 

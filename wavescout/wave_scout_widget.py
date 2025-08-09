@@ -1,12 +1,10 @@
 """Main WaveScout widget with four synchronized panels."""
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QTreeView, 
+from PySide6.QtWidgets import (QWidget, QVBoxLayout,
                               QScrollBar, QSplitter,
-                              QLabel, QFrame, QAbstractItemView, QMenu,
-                              QStyledItemDelegate, QStyleOptionViewItem, QApplication)
-from PySide6.QtCore import Qt, Signal, QModelIndex, QItemSelectionModel, QItemSelection, QEvent, QTimer, QSize
-from PySide6.QtGui import QColor, QAction, QActionGroup
-from typing import Optional, Any
+                              QLabel, QFrame, QApplication)
+from PySide6.QtCore import Qt, Signal, QModelIndex, QItemSelectionModel, QItemSelection, QEvent, QTimer
+from typing import Optional
 from .waveform_item_model import WaveformItemModel
 from .waveform_canvas import WaveformCanvas
 from .data_model import WaveformSession, SignalNode, GroupRenderMode

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow,
                               QSplitter, QTreeView, QFileDialog,
                               QMessageBox, QProgressDialog, QAbstractItemView)
 from PySide6.QtCore import Qt, QThreadPool, QRunnable, Signal, QObject, QSettings, QEvent
-from PySide6.QtGui import QAction, QActionGroup, QFont
+from PySide6.QtGui import QAction, QActionGroup
 # QtAsyncio and asyncio removed - using single-threaded execution
 from wavescout import WaveScoutWidget, create_sample_session, save_session, load_session
 from wavescout.design_tree_model import DesignTreeModel

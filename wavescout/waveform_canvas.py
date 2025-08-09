@@ -1,20 +1,19 @@
 """Optimized waveform canvas widget with offline rendering pipeline."""
 
 from PySide6.QtWidgets import QWidget, QScrollBar
-from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer, QPointF, QRectF
-from PySide6.QtGui import QPainter, QPen, QColor, QFont, QFontMetrics, QPolygonF, QImage
-from typing import List, Tuple, Dict, Optional, Union
+from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer, QRectF
+from PySide6.QtGui import QPainter, QPen, QColor, QFont, QFontMetrics, QImage
+from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass, field
-from enum import Enum
 from .data_model import SignalNode, SignalHandle, SignalNodeID, Time, TimeUnit, TimeRulerConfig, RenderType
 from .signal_sampling import (
-    ValueKind, SignalSample, SignalDrawingData,
-    generate_signal_draw_commands, determine_value_kind
+    SignalDrawingData,
+    generate_signal_draw_commands
 )
 from .signal_renderer import (
     draw_digital_signal, draw_bus_signal, draw_analog_signal, draw_event_signal, draw_benchmark_pattern
 )
-from .config import RENDERING, COLORS, UI
+from .config import RENDERING, COLORS
 import time as time_module
 import math
 

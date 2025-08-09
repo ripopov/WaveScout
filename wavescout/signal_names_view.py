@@ -1,9 +1,8 @@
 """Signal names tree view for the WaveScout widget."""
 
-from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate, QStyleOptionViewItem, QApplication
-from PySide6.QtCore import Qt, Signal, QModelIndex, QItemSelectionModel, QItemSelection, QEvent, QTimer, QSize
-from PySide6.QtGui import QColor, QAction, QActionGroup
-from typing import Optional, Any
+from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate
+from PySide6.QtCore import Qt, Signal, QModelIndex
+from PySide6.QtGui import QAction, QActionGroup
 from .data_model import SignalNode, RenderType, AnalogScalingMode, DataFormat
 from .config import RENDERING, UI
 

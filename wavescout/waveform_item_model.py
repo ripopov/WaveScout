@@ -1,9 +1,9 @@
 """Qt Model/View bridge for waveform data."""
 
 from PySide6.QtCore import Qt, QModelIndex, QAbstractItemModel, QPersistentModelIndex, QObject, QMimeData, QByteArray
-from typing import overload, Any, List, Optional, Union, Tuple
+from typing import overload, List, Optional, Union, Tuple
 import json
-from .data_model import WaveformSession, SignalNode, SignalNameDisplayMode, RenderType, DataFormat
+from .data_model import WaveformSession, SignalNode, SignalNameDisplayMode, RenderType
 
 
 class WaveformItemModel(QAbstractItemModel):
