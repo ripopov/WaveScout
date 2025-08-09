@@ -353,3 +353,161 @@ def test_height_scaling_for_analog_sines(qtbot):
 
     # done: close
     window.close()
+
+
+def test_names_panel_dragging_grouping(qtbot):
+    """Test grouping and drag-reordering in Names panel via main window.
+
+    Scenario:
+      1) load apb_sim.vcd
+      2) add 5 items to the wavescout widget
+      3) group first 3 items into group
+      4) save session and verify yaml: group has 3 children; 2 independent root nodes
+      5) drag group between the two independent nodes
+      6) save and verify root_nodes order: independent -> group -> independent
+    """
+    from scout import WaveScoutMainWindow
+
+    repo_root = Path(__file__).resolve().parent.parent
+    vcd_path = repo_root / "test_inputs" / "apb_sim.vcd"
+    assert vcd_path.exists(), f"VCD not found: {vcd_path}"
+
+    # Launch main window with the VCD loaded
+    window = WaveScoutMainWindow(wave_file=str(vcd_path))
+    window.resize(1400, 900)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitExposed(window)
+
+    # Wait until session and design tree are ready
+    def _loaded():
+        return (
+            window.wave_widget.session is not None
+            and window.wave_widget.session.waveform_db is not None
+            and window.design_tree.model() is not None
+            and window.design_tree.model().rowCount() > 0
+        )
+    qtbot.waitUntil(_loaded, timeout=5000)
+
+    # Add 5 signals by walking the design tree and double-clicking first 5 leaf nodes
+    design_view = window.design_tree
+    model = design_view.model()
+
+    added = 0
+    root = QModelIndex()
+
+    # Expand first level to access common scopes
+    for r in range(model.rowCount(root)):
+        idx = model.index(r, 0, root)
+        if not idx.isValid():
+            continue
+        design_view.expand(idx)
+
+    def is_scope(index: QModelIndex) -> bool:
+        node = model.data(index, Qt.UserRole)
+        return getattr(node, "is_scope", False)
+
+    # Depth-first search to find leaf signals
+    stack = [QModelIndex()]
+    visited = set()
+    while stack and added < 5:
+        parent = stack.pop()
+        rows = model.rowCount(parent)
+        for r in range(rows):
+            idx = model.index(r, 0, parent)
+            if not idx.isValid():
+                continue
+            # If scope, push children to stack after expanding
+            if is_scope(idx):
+                design_view.expand(idx)
+                stack.append(idx)
+            else:
+                # Leaf signal - add it
+                window._on_design_tree_double_click(idx)
+                qtbot.wait(10)
+                added += 1
+                if added >= 5:
+                    break
+
+    session = window.wave_widget.session
+    assert session is not None
+    assert len(session.root_nodes) >= 5, f"Expected at least 5 root nodes, got {len(session.root_nodes)}"
+
+    # Select first three items in names view and group them
+    wave_widget = window.wave_widget
+    names_view = wave_widget._names_view
+    model_waves = wave_widget.model
+    sel_model = names_view.selectionModel()
+    assert model_waves is not None and sel_model is not None
+
+    first_three = session.root_nodes[:3]
+    from PySide6.QtCore import QItemSelection
+    selection = QItemSelection()
+    for node in first_three:
+        idx = names_view._find_node_index(node)
+        assert idx.isValid(), "Failed to locate node in names view for grouping"
+        selection.select(idx, idx)
+
+    # Apply selection (ClearAndSelect)
+    from PySide6.QtCore import QItemSelectionModel
+    names_view.selectionModel().select(selection, QItemSelectionModel.ClearAndSelect)
+    qtbot.wait(10)
+
+    # Ensure session.selected_nodes updated
+    assert len(session.selected_nodes) == 3
+    assert all(n in session.selected_nodes for n in first_three)
+
+    # Create group from selected
+    wave_widget._create_group_from_selected()
+    qtbot.wait(10)
+
+    # After grouping, expect: one group node + two independent nodes at root
+    assert len(session.root_nodes) >= 3
+    root_nodes = session.root_nodes
+    group_node = next((n for n in root_nodes if getattr(n, "is_group", False)), None)
+    assert group_node is not None, "Group node not found among root nodes"
+    assert len(group_node.children) == 3, f"Expected 3 nodes in group, got {len(group_node.children)}"
+
+    # Save session to YAML and verify structure
+    yaml_path1 = repo_root / "test_grouping_dragging_step1.yaml"
+    save_session(session, yaml_path1)
+    assert yaml_path1.exists()
+
+    with open(yaml_path1, "r") as f:
+        data1 = yaml.safe_load(f)
+    rn1 = data1.get("root_nodes", [])
+    # Verify: one group with 3 children and 2 independent nodes at root
+    groups = [n for n in rn1 if n.get("is_group")]
+    non_groups = [n for n in rn1 if not n.get("is_group")]
+    assert len(groups) == 1, f"Expected 1 group in root, got {len(groups)}"
+    assert len(non_groups) >= 2, f"Expected at least 2 non-group root nodes, got {len(non_groups)}"
+    assert len(groups[0].get("children", [])) == 3, "Group should contain 3 children"
+
+    # Drag group between the two independent nodes at root
+    # Find current root ordering and compute desired insert position: 1 (between first and second independent)
+    # Build mime data for dragging the group index
+    group_index = names_view._find_node_index(group_node)
+    assert group_index.isValid(), "Could not find group index in names view"
+    mime = model_waves.mimeData([group_index])
+    # Perform drop at root, row=1
+    ok = model_waves.dropMimeData(mime, Qt.MoveAction, 1, 0, QModelIndex())
+    assert ok, "dropMimeData returned False"
+    qtbot.wait(10)
+
+    # Save session again and verify root order: independent -> group -> independent
+    yaml_path2 = repo_root / "test_grouping_dragging_step2.yaml"
+    save_session(session, yaml_path2)
+    assert yaml_path2.exists()
+
+    with open(yaml_path2, "r") as f:
+        data2 = yaml.safe_load(f)
+    rn2 = data2.get("root_nodes", [])
+
+    # Collect the types in order (False for signal, True for group)
+    types = [n.get("is_group", False) for n in rn2[:3]]
+    # Expect exactly: [False, True, False] for first three root entries
+    assert types[0] is False and types[1] is True and types[2] is False, (
+        f"Unexpected root order types: {types}"
+    )
+
+    window.close()
