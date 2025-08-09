@@ -481,47 +481,7 @@ class WaveScoutMainWindow(QMainWindow):
         # Clean up stored path
         if hasattr(self, '_loading_session_path'):
             delattr(self, '_loading_session_path')
-                
-    def _apply_design_tree_theme(self):
-        """Apply dark theme to design tree."""
-        self.design_tree.setStyleSheet("""
-            QTreeView {
-                background-color: #252526;
-                alternate-background-color: #2d2d30;
-                color: #cccccc;
-                border: 1px solid #3e3e42;
-                selection-background-color: #094771;
-            }
-            QTreeView::item {
-                padding: 2px;
-                border-radius: 2px;
-            }
-            QTreeView::item:hover {
-                background-color: #3e3e42;
-                color: #ffffff;
-            }
-            QTreeView::item:selected {
-                background-color: #094771;
-                color: #ffffff;
-            }
-            QTreeView::item:selected:hover {
-                background-color: #0e5a8e;
-                color: #ffffff;
-            }
-            QTreeView::branch {
-                background-color: #252526;
-            }
-            QTreeView::branch:hover {
-                background-color: #3e3e42;
-            }
-            QHeaderView::section {
-                background-color: #2d2d30;
-                color: #cccccc;
-                padding: 4px;
-                border: 1px solid #3e3e42;
-            }
-        """)
-        
+
     def _expand_tree_levels(self, tree_view: QTreeView, levels: int, parent=None):
         """Recursively expand tree to specified number of levels."""
         model = tree_view.model()
