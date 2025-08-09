@@ -11,6 +11,7 @@ Eliminate the abrupt mode switch between low transition density (boxed regions w
 - When transitions occur on every pixel, they collapse into a single vertical line "|"
 - No abrupt visual switch between two disparate styles
 - Behavior changes continuously with density
+- Slopes must be symmetric - same angle on left and right sides of transition, regardless of the length of regions on either side
 - Value text placement/visibility conforms to interior width rules
 - Rendering performance remains O(N) in sampled regions
 - No data model changes required
@@ -37,7 +38,8 @@ Current behavior:
 
 ### Key Variables and Constants
 - `RENDERING.HIGH_DENSITY_THRESHOLD`: Threshold for mode switch (needs to be eliminated)
-- `RENDERING.BUS_TRANSITION_WIDTH`: Fixed width for diagonal transitions (currently static)
+- `RENDERING.BUS_TRANSITION_MAX_WIDTH`: Maximum width for diagonal transitions (4 pixels)
+- `RENDERING.BUS_TRANSITION_SLOPE_FACTOR`: Controls transition steepening rate (0.125)
 - `RENDERING.MIN_BUS_TEXT_WIDTH`: Minimum region width for text display
 
 ## 3. Data Model Design
@@ -53,10 +55,11 @@ No data model changes required. The enhancement works entirely within the render
    - `density = viewport_width_px / num_transitions`
 
 2. **Compute dynamic transition width**:
-   - Maximum width: `RENDERING.BUS_TRANSITION_WIDTH` (e.g., 8 pixels)
+   - Maximum width: `RENDERING.BUS_TRANSITION_MAX_WIDTH` (4 pixels)
    - Minimum width: 0.5 pixels (essentially vertical)
    - Formula: `transition_width = min(max_width, density * slope_factor)`
-   - Where `slope_factor` controls how quickly transitions steepen (e.g., 0.25)
+   - Where `slope_factor` controls how quickly transitions steepen (0.125)
+   - Ensure symmetric slopes on both sides of transition
 
 3. **Handle edge cases**:
    - When `transition_width < 1.0`: Draw vertical line
@@ -92,15 +95,16 @@ Replace the current dual-mode approach with a single rendering loop that:
 
 #### `wavescout/config.py` (if exists) or inline constants
 **Constants to Add/Modify**:
-- `BUS_TRANSITION_MAX_WIDTH`: Maximum transition width (renamed from `BUS_TRANSITION_WIDTH`)
-- `BUS_TRANSITION_SLOPE_FACTOR`: Controls steepening rate (new)
+- `BUS_TRANSITION_MAX_WIDTH`: Maximum transition width (4 pixels, renamed from `BUS_TRANSITION_WIDTH`)
+- `BUS_TRANSITION_SLOPE_FACTOR`: Controls steepening rate (0.125, new)
 - Remove or deprecate `HIGH_DENSITY_THRESHOLD`
 
 ### Key Implementation Details
 1. The transition from sloped to vertical should be gradual and visually smooth
-2. Consider using anti-aliasing for sub-pixel transition widths
-3. May need to adjust `MIN_BUS_TEXT_WIDTH` constant for narrower regions
-4. Test with both light and dark themes to ensure visibility
+2. Transitions must maintain symmetric slopes (same angle on both sides)
+3. Consider using anti-aliasing for sub-pixel transition widths
+4. May need to adjust `MIN_BUS_TEXT_WIDTH` constant for narrower regions
+5. Test with both light and dark themes to ensure visibility
 
 ### Future Enhancements (Not in Scope)
 - Configurable slope factor per signal
