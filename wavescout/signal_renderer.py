@@ -105,6 +105,9 @@ def draw_digital_signal(painter: QPainter, node_info: dict, drawing_data: Signal
         params: Dict with width, start_time, end_time, optional waveform_max_time.
     """
     color = QColor(node_info['format'].color)
+    # Force fully opaque color for crisp lines
+    if color.alpha() != 255:
+        color.setAlpha(255)
     pen = QPen(color)
     pen.setWidth(0)  # cosmetic 1 device-pixel for crisp HiDPI lines
     painter.setPen(pen)
@@ -196,6 +199,9 @@ def draw_bus_signal(painter: QPainter, node_info: dict, drawing_data: SignalDraw
         params: Dict with width, start_time, end_time, optional waveform_max_time.
     """
     color = QColor(node_info['format'].color)
+    # Force fully opaque color for crisp lines
+    if color.alpha() != 255:
+        color.setAlpha(255)
     
     # Get waveform max time from params
     waveform_max_time = params.get('waveform_max_time')
@@ -546,6 +552,8 @@ def draw_analog_signal(painter: QPainter, node_info: dict, drawing_data: SignalD
             optional signal_range_cache and waveform_db.
     """
     color = QColor(node_info['format'].color)
+    if color.alpha() != 255:
+        color.setAlpha(255)
     pen = QPen(color)
     pen.setWidth(0)  # cosmetic 1 device-pixel for crisp lines
     painter.setPen(pen)
@@ -605,8 +613,10 @@ def draw_analog_signal(painter: QPainter, node_info: dict, drawing_data: SignalD
         min_text = f"{min_val:.2f}"
         painter.drawText(5, y_bottom - 2, min_text)
     
-    # Reset pen for waveform drawing
-    painter.setPen(QPen(color, 1))
+    # Reset pen for waveform drawing (cosmetic 1px, no AA)
+    pen_wave = QPen(color)
+    pen_wave.setWidth(0)
+    painter.setPen(pen_wave)
     
     # Draw the waveform
     points = []
@@ -663,6 +673,7 @@ def draw_analog_signal(painter: QPainter, node_info: dict, drawing_data: SignalD
         # Use dashed pen style with the adjusted color
         aliasing_pen = QPen(aliasing_color, 0, Qt.PenStyle.DashLine)
         aliasing_pen.setWidth(0)
+        aliasing_pen.setCosmetic(True)
         painter.setPen(aliasing_pen)
         
         for x_pos in aliasing_regions:
@@ -691,6 +702,8 @@ def draw_event_signal(painter: QPainter, node_info: dict, drawing_data: SignalDr
         params: Dict with width, start_time, end_time, optional waveform_max_time.
     """
     color = QColor(node_info['format'].color)
+    if color.alpha() != 255:
+        color.setAlpha(255)
     pen = QPen(color)
     pen.setWidth(0)  # cosmetic 1 device-pixel
     painter.setPen(pen)

@@ -358,8 +358,8 @@ class WaveformCanvas(QWidget):
         self._paint_frame_counter += 1
         
         painter = QPainter(self)
-        # Enable high-quality rendering for overlays and text
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        # Enable high-quality text rendering; disable geometry antialiasing for crisp 1px lines
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         
         # Check if this is a partial update
@@ -607,9 +607,9 @@ class WaveformCanvas(QWidget):
         # Use darker background color by default (for invalid ranges)
         image.fill(QColor(COLORS.BACKGROUND_INVALID))
         
-        # Create painter with high-quality hints
+        # Create painter; disable geometry antialiasing for crisp lines, keep text AA
         painter = QPainter(image)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         
         try:
@@ -699,7 +699,9 @@ class WaveformCanvas(QWidget):
         
         # Draw ruler background
         painter.fillRect(0, 0, params['width'], RENDERING.DEFAULT_HEADER_HEIGHT, QColor(COLORS.HEADER_BACKGROUND))
-        painter.setPen(QPen(QColor(COLORS.RULER_LINE), 1))
+        pen = QPen(QColor(COLORS.RULER_LINE))
+        pen.setWidth(0)
+        painter.setPen(pen)
         painter.drawLine(0, RENDERING.DEFAULT_HEADER_HEIGHT - 1, params['width'], RENDERING.DEFAULT_HEADER_HEIGHT - 1)
         
         # Simple time labels
@@ -726,7 +728,9 @@ class WaveformCanvas(QWidget):
             painter.fillRect(0, y, params['width'], row_height, QColor(COLORS.ALTERNATE_ROW))
         
         # Draw border
-        painter.setPen(QPen(QColor(COLORS.BORDER), 1))
+        border_pen = QPen(QColor(COLORS.BORDER))
+        border_pen.setWidth(0)  # cosmetic 1 device-pixel
+        painter.setPen(border_pen)
         painter.drawLine(0, y + row_height - 1, params['width'], y + row_height - 1)
         
         
