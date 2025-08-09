@@ -16,7 +16,6 @@ class RenderingConfig:
     BUS_TRANSITION_MAX_WIDTH: int = 4  # Maximum width for diagonal transitions
     BUS_TRANSITION_SLOPE_FACTOR: float = 0.125  # Controls transition steepening rate
     MIN_BUS_TEXT_WIDTH: int = 30
-    HIGH_DENSITY_THRESHOLD: int = 100  # Deprecated - kept for compatibility
     DEFAULT_ROW_HEIGHT: int = 20
     DEFAULT_HEADER_HEIGHT: int = 35
     
