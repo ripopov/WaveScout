@@ -296,7 +296,19 @@ def draw_bus_signal(painter: QPainter, node_info: dict, drawing_data: SignalDraw
                 x_right_trans = x_end - actual_trans_width
                 
                 # Draw left transition (symmetric slopes)
-                if skip_left_transition:
+                # If previous region was vertical-only (very narrow), force vertical transition here
+                prev_is_vertical = False
+                if i > 0:
+                    prev_x, _ = drawing_data.samples[i - 1]
+                    if i - 2 >= 0:
+                        prev_prev_x, _ = drawing_data.samples[i - 2]
+                    else:
+                        prev_prev_x = max(min_valid_pixel, 0)
+                    prev_region_width = current_x - prev_x
+                    # Previous region is considered vertical-only if it's very narrow
+                    # or overall transition width is tiny and previous is narrow
+                    prev_is_vertical = (prev_region_width < 2) or (transition_width < 1.0 and prev_region_width < 4)
+                if skip_left_transition or prev_is_vertical:
                     painter.drawLine(x_start, y_top, x_start, y_bottom)
                     x_left_trans = x_start
                 else:
