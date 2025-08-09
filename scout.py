@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt, QThreadPool, QRunnable, Signal, QObject, QSetting
 from PySide6.QtGui import QAction, QActionGroup
 # QtAsyncio and asyncio removed - using single-threaded execution
 from wavescout import WaveScoutWidget, create_sample_session, save_session, load_session
-from wavescout.design_tree_model import DesignTreeModel
+from wavescout.design_tree_view import DesignTreeView
 
 
 class LoaderSignals(QObject):
@@ -63,22 +63,14 @@ class WaveScoutMainWindow(QMainWindow):
         # Create main splitter
         self.main_splitter = QSplitter(Qt.Horizontal)
         
-        # Create design tree (left pane)
-        self.design_tree = QTreeView()
-        self.design_tree.setAlternatingRowColors(True)
-        # Enable multi-selection to allow adding multiple signals at once
-        self.design_tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.design_tree.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.design_tree_model = DesignTreeModel()
-        self.design_tree.setModel(self.design_tree_model)
-        # Install event filter to handle keyboard shortcuts on the design tree
-        self.design_tree.installEventFilter(self)
+        # Create design tree view (left pane)
+        self.design_tree_view = DesignTreeView()
+        self.design_tree_view.signals_selected.connect(self._on_signals_selected)
+        self.design_tree_view.status_message.connect(self.statusBar().showMessage)
+        self.design_tree_view.install_event_filters()
         
-        # Connect double-click signal
-        self.design_tree.doubleClicked.connect(self._on_design_tree_double_click)
-        
-        # Add design tree to splitter first to place it on the left
-        self.main_splitter.addWidget(self.design_tree)
+        # Add design tree view to splitter first to place it on the left
+        self.main_splitter.addWidget(self.design_tree_view)
         
         # Create wave view widget (right pane)
         self.wave_widget = WaveScoutWidget()
@@ -291,12 +283,7 @@ class WaveScoutMainWindow(QMainWindow):
                 tree_progress.show()
                 QApplication.processEvents()
                 
-                self.design_tree_model.load_hierarchy(session.waveform_db)
-                # Expand first few levels
-                self._expand_tree_levels(self.design_tree, 2)
-                # Resize columns to content
-                for i in range(3):
-                    self.design_tree.resizeColumnToContents(i)
+                self.design_tree_view.set_waveform_db(session.waveform_db)
                     
                 tree_progress.close()
                 
@@ -374,10 +361,8 @@ class WaveScoutMainWindow(QMainWindow):
             print(f"Error: Session file not found: {file_path}")
             return
             
-        # Clear the design tree model before loading new session
-        self.design_tree_model.beginResetModel()
-        self.design_tree_model.root_node = None
-        self.design_tree_model.endResetModel()
+        # Clear the design tree before loading new session
+        self.design_tree_view.set_waveform_db(None)
         
         # Get filename for progress dialog
         file_name = os.path.basename(file_path)
@@ -446,10 +431,7 @@ class WaveScoutMainWindow(QMainWindow):
                 tree_progress.show()
                 QApplication.processEvents()
                 
-                self.design_tree_model.load_hierarchy(session.waveform_db)
-                self._expand_tree_levels(self.design_tree, 2)
-                for i in range(3):
-                    self.design_tree.resizeColumnToContents(i)
+                self.design_tree_view.set_waveform_db(session.waveform_db)
                     
                 tree_progress.close()
                 
@@ -507,96 +489,13 @@ class WaveScoutMainWindow(QMainWindow):
                     self._expand_tree_levels(tree_view, levels - 1, index)
 
 
-    def _on_design_tree_double_click(self, index):
-        """Handle double-click on design tree item."""
-        if not index.isValid() or not self.wave_widget.session:
+    def _on_signals_selected(self, signal_nodes):
+        """Handle signals selected from the design tree view."""
+        if not self.wave_widget.session:
             return
             
-        # Get the node from the design tree
-        node = self.design_tree_model.data(index, Qt.UserRole)
-        if not node or node.is_scope:
-            # Only add signals, not scopes
-            return
-            
-        # Create a new SignalNode with default settings
-        from wavescout.data_model import SignalNode, DisplayFormat, RenderType
-        
-        # Get full signal path from waveform database
-        full_name = self._get_full_signal_path(node)
-        if not full_name:
-            return
-            
-        # Find the handle for this signal
-        handle = self._find_signal_handle(node, full_name)
-        
-        # Get the var object
-        var = None
-        if hasattr(node, 'var') and node.var is not None:
-            var = node.var
-        elif handle is not None:
-            var = self.wave_widget.session.waveform_db.get_var(handle)
-            
-        if var and self.wave_widget.session.waveform_db:
-            # Use the existing function to create the node
-            from wavescout.waveform_loader import create_signal_node_from_wellen
-            hierarchy = self.wave_widget.session.waveform_db.hierarchy
-            new_node = create_signal_node_from_wellen(var, hierarchy, handle)
-            # Override the name to use the full path we found
-            new_node.name = full_name
-        else:
-            # Fallback if we don't have var object
-            from wavescout.data_model import SignalNode, DisplayFormat
-            new_node = SignalNode(
-                name=full_name,
-                handle=handle,
-                format=DisplayFormat(),
-                nickname="",
-                children=[],
-                parent=None,
-                is_group=False,
-                group_render_mode=None,
-                is_expanded=True
-            )
-        
-        # Add the node to the session
-        self._add_node_to_session(new_node)
-        
-    def _get_full_signal_path(self, design_node):
-        """Get the full hierarchical path for a signal from design tree."""
-        if not self.wave_widget.session.waveform_db:
-            return None
-            
-        # First try to use the var object directly
-        if hasattr(design_node, 'var') and design_node.var is not None:
-            if hasattr(self.wave_widget.session.waveform_db, 'hierarchy'):
-                hierarchy = self.wave_widget.session.waveform_db.hierarchy
-                return design_node.var.full_name(hierarchy)
-        
-        # Fallback to using handle if available
-        elif hasattr(design_node, 'var_handle') and design_node.var_handle is not None:
-            var = self.wave_widget.session.waveform_db.get_var(design_node.var_handle)
-            if var and hasattr(self.wave_widget.session.waveform_db, 'hierarchy'):
-                hierarchy = self.wave_widget.session.waveform_db.hierarchy
-                return var.full_name(hierarchy)
-        
-        return None
-        
-    def _find_signal_handle(self, design_node, full_name):
-        """Find the handle for a signal in the waveform database."""
-        if not self.wave_widget.session.waveform_db:
-            return None
-            
-        db = self.wave_widget.session.waveform_db
-        hierarchy = db.hierarchy
-        
-        # If the design node has a var object, find its handle
-        if hasattr(design_node, 'var') and design_node.var is not None:
-            handle = db.get_handle_for_var(design_node.var)
-            if handle is not None:
-                return handle
-        
-        # Fallback: search by name
-        return db.find_handle_by_name(full_name)
+        for node in signal_nodes:
+            self._add_node_to_session(node)
         
     def _add_node_to_session(self, new_node):
         """Add a node to the waveform session after the last selected node."""
@@ -642,44 +541,6 @@ class WaveScoutMainWindow(QMainWindow):
             mode_name = "Benchmark (Rainbow Pixels)" if benchmark_mode else "Normal (Waveforms)"
             self.statusBar().showMessage(f"Canvas mode: {mode_name}", 2000)
     
-    def eventFilter(self, watched, event):
-        """Handle key shortcuts on the design tree."""
-        if watched is self.design_tree and event.type() == QEvent.KeyPress:
-            if event.key() == Qt.Key_I:
-                # Add all selected items from the design tree into the wave widget
-                sel_model = self.design_tree.selectionModel()
-                if sel_model and self.wave_widget.session:
-                    # Use only the first column indexes
-                    indexes = sel_model.selectedRows(0)
-                    # Show progress dialog for bulk additions
-                    from PySide6.QtWidgets import QProgressDialog, QApplication
-                    count = len(indexes)
-                    if count == 0:
-                        return True
-                    # Determinate progress when adding multiple signals; allow cancel
-                    progress = QProgressDialog(
-                        f"Adding {count} signal(s)...",
-                        "Cancel",
-                        0,
-                        count,
-                        self
-                    )
-                    progress.setWindowTitle("Adding Signals")
-                    progress.setWindowModality(Qt.WindowModal)
-                    progress.setMinimumDuration(0)
-                    progress.show()
-                    QApplication.processEvents()
-
-                    for i, idx in enumerate(indexes, start=1):
-                        if progress.wasCanceled():
-                            break
-                        self._on_design_tree_double_click(idx)
-                        progress.setValue(i)
-                        QApplication.processEvents()
-
-                    progress.close()
-                    return True
-        return super().eventFilter(watched, event)
     
     def _set_ui_scale(self, scale: float):
         """Set the UI scaling factor."""

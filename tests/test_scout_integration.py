@@ -155,13 +155,17 @@ def test_height_scaling_ui(qtbot):
         return (
             window.wave_widget.session is not None
             and window.wave_widget.session.waveform_db is not None
-            and window.design_tree.model() is not None
-            and window.design_tree.model().rowCount() > 0
+            and window.design_tree_view.design_tree_model is not None
+            and window.design_tree_view.design_tree_model.rowCount() > 0
         )
     qtbot.waitUntil(_loaded, timeout=5000)
 
-    design_view = window.design_tree
-    model = design_view.model()
+    # Ensure event filters are installed
+    window.design_tree_view.install_event_filters()
+    
+    # Get the unified tree view (default mode)
+    design_view = window.design_tree_view.unified_tree
+    model = window.design_tree_view.design_tree_model
 
     # Helper to find first child index by display name under a given parent index
     def find_child_by_name(parent_index, name: str):
@@ -190,23 +194,30 @@ def test_height_scaling_ui(qtbot):
     assert paddr_idx and paddr_idx.isValid(), "paddr not found under apb_testbench"
 
     # Double-click to add prdata and paddr to the waveform session
-    def dclick_index(idx):
-        rect = design_view.visualRect(idx)
-        assert rect.isValid(), "Invalid visual rect for index"
-        pos = rect.center()
-        # In some offscreen environments, QTreeView may not emit doubleClicked reliably.
-        # Call the slot directly to simulate double-click behavior.
-        window._on_design_tree_double_click(idx)
+    # Instead of simulating mouse double-click, directly call the handler
+    # because Qt event simulation can be unreliable in test environments
+    def add_signal_from_index(idx):
+        node = idx.internalPointer()
+        if node and not node.is_scope:
+            signal_node = window.design_tree_view._create_signal_node(node)
+            if signal_node:
+                window.design_tree_view.signals_selected.emit([signal_node])
+                return True
+        return False
 
-    dclick_index(prdata_idx)
-    qtbot.wait(50)
-    dclick_index(paddr_idx)
-    qtbot.wait(100)
+    # Add prdata
+    assert add_signal_from_index(prdata_idx), "Failed to add prdata signal"
+    qtbot.wait(100)  # Allow signal processing
+    
+    # Add paddr
+    assert add_signal_from_index(paddr_idx), "Failed to add paddr signal"
+    qtbot.wait(100)  # Allow signal processing
 
     # Verify both signals are added to the session
     session = window.wave_widget.session
     names = [n.name for n in session.root_nodes]
-    assert any(name.endswith("apb_testbench.prdata") for name in names), "prdata was not added to session"
+    print(f"Session root_nodes: {names}")
+    assert any(name.endswith("apb_testbench.prdata") for name in names), f"prdata was not added to session. Found: {names}"
     assert any(name.endswith("apb_testbench.paddr") for name in names), "paddr was not added to session"
 
     # Find the SignalNode for prdata from the session for later assertion
@@ -277,13 +288,13 @@ def test_height_scaling_for_analog_sines(qtbot):
         return (
             window.wave_widget.session is not None
             and window.wave_widget.session.waveform_db is not None
-            and window.design_tree.model() is not None
-            and window.design_tree.model().rowCount() > 0
+            and window.design_tree_view.design_tree_model is not None
+            and window.design_tree_view.design_tree_model.rowCount() > 0
         )
     qtbot.waitUntil(_loaded, timeout=5000)
 
-    design_view = window.design_tree
-    model = design_view.model()
+    design_view = window.design_tree_view.unified_tree
+    model = window.design_tree_view.design_tree_model
 
     # Helper to find child by name under a parent index
     def find_child_by_name(parent_index, name: str):
@@ -308,10 +319,19 @@ def test_height_scaling_for_analog_sines(qtbot):
     assert sine1_idx and sine1_idx.isValid(), "sine_1mhz not found under top"
     assert sine2_idx and sine2_idx.isValid(), "sine_2mhz not found under top"
 
-    # Add both signals to the session by simulating double click handler
-    window._on_design_tree_double_click(sine1_idx)
+    # Add both signals to the session by emitting the signal directly
+    def add_signal_from_index(idx):
+        node = idx.internalPointer()
+        if node and not node.is_scope:
+            signal_node = window.design_tree_view._create_signal_node(node)
+            if signal_node:
+                window.design_tree_view.signals_selected.emit([signal_node])
+                return True
+        return False
+    
+    assert add_signal_from_index(sine1_idx), "Failed to add sine_1mhz"
     qtbot.wait(50)
-    window._on_design_tree_double_click(sine2_idx)
+    assert add_signal_from_index(sine2_idx), "Failed to add sine_2mhz"
     qtbot.wait(100)
 
     # Retrieve nodes from session
@@ -384,14 +404,14 @@ def test_names_panel_dragging_grouping(qtbot):
         return (
             window.wave_widget.session is not None
             and window.wave_widget.session.waveform_db is not None
-            and window.design_tree.model() is not None
-            and window.design_tree.model().rowCount() > 0
+            and window.design_tree_view.design_tree_model is not None
+            and window.design_tree_view.design_tree_model.rowCount() > 0
         )
     qtbot.waitUntil(_loaded, timeout=5000)
 
     # Add 5 signals by walking the design tree and double-clicking first 5 leaf nodes
-    design_view = window.design_tree
-    model = design_view.model()
+    design_view = window.design_tree_view.unified_tree
+    model = window.design_tree_view.design_tree_model
 
     added = 0
     root = QModelIndex()
@@ -423,9 +443,13 @@ def test_names_panel_dragging_grouping(qtbot):
                 stack.append(idx)
             else:
                 # Leaf signal - add it
-                window._on_design_tree_double_click(idx)
-                qtbot.wait(10)
-                added += 1
+                node = idx.internalPointer()
+                if node and not node.is_scope:
+                    signal_node = window.design_tree_view._create_signal_node(node)
+                    if signal_node:
+                        window.design_tree_view.signals_selected.emit([signal_node])
+                        qtbot.wait(10)
+                        added += 1
                 if added >= 5:
                     break
 
@@ -510,4 +534,291 @@ def test_names_panel_dragging_grouping(qtbot):
         f"Unexpected root order types: {types}"
     )
 
+    window.close()
+
+
+def test_split_mode_i_shortcut(qtbot):
+    """Test 'i' shortcut in split mode VarsView.
+    
+    Scenario:
+    1) Load VCD file into main application window from scout.py
+    2) Switch design tree to split mode
+    3) Select the first signal in VarsView
+    4) Key press 'i' 3 times
+    5) Save session to yaml
+    6) Verify that signal is present in yaml 3 times
+    """
+    from scout import WaveScoutMainWindow
+    from wavescout.design_tree_view import DesignTreeViewMode
+    from PySide6.QtTest import QTest
+    from PySide6.QtCore import QItemSelectionModel
+    
+    repo_root = Path(__file__).resolve().parent.parent
+    vcd_path = repo_root / "test_inputs" / "apb_sim.vcd"
+    assert vcd_path.exists(), f"VCD not found: {vcd_path}"
+    
+    # Launch main window with the VCD loaded
+    window = WaveScoutMainWindow(wave_file=str(vcd_path))
+    window.resize(1400, 900)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitExposed(window)
+    
+    # Wait until session and design tree are ready
+    def _loaded():
+        return (
+            window.wave_widget.session is not None
+            and window.wave_widget.session.waveform_db is not None
+            and window.design_tree_view.design_tree_model is not None
+        )
+    qtbot.waitUntil(_loaded, timeout=5000)
+    
+    # Switch to split mode
+    window.design_tree_view.set_mode(DesignTreeViewMode.SPLIT)
+    qtbot.wait(100)
+    
+    # Wait for split mode models to be initialized
+    def _split_mode_ready():
+        return (
+            window.design_tree_view.scope_tree_model is not None
+            and window.design_tree_view.vars_view is not None
+        )
+    qtbot.waitUntil(_split_mode_ready, timeout=2000)
+    
+    # Select the first scope in the scope tree to populate VarsView
+    scope_tree = window.design_tree_view.scope_tree
+    scope_model = window.design_tree_view.scope_tree_model
+    
+    # Select first scope (usually "apb_testbench" or similar)
+    first_scope = scope_model.index(0, 0, QModelIndex())
+    if first_scope.isValid():
+        scope_tree.selectionModel().setCurrentIndex(
+            first_scope,
+            QItemSelectionModel.ClearAndSelect
+        )
+        qtbot.wait(100)
+    
+    # Get the VarsView and check if variables are loaded
+    vars_view = window.design_tree_view.vars_view
+    vars_table = vars_view.table_view
+    filter_proxy = vars_view.filter_proxy
+    
+    # Wait for variables to be populated
+    def _vars_populated():
+        return filter_proxy.rowCount() > 0
+    qtbot.waitUntil(_vars_populated, timeout=2000)
+    
+    # Select the first variable in the table
+    first_var_index = filter_proxy.index(0, 0)
+    assert first_var_index.isValid(), "No variables found in VarsView"
+    
+    vars_table.selectionModel().setCurrentIndex(
+        first_var_index,
+        QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows
+    )
+    qtbot.wait(50)
+    
+    # Get the signal name for verification
+    var_data = filter_proxy.sourceModel().data(
+        filter_proxy.mapToSource(first_var_index),
+        Qt.ItemDataRole.UserRole
+    )
+    signal_name = var_data.get('full_path', var_data.get('name'))
+    print(f"Selected signal: {signal_name}")
+    
+    # Press 'i' key 3 times to add the signal 3 times
+    for i in range(3):
+        QTest.keyClick(vars_table, Qt.Key.Key_I)
+        qtbot.wait(100)
+        print(f"Pressed 'i' #{i+1}")
+    
+    # Check that the signal was added to the session
+    session = window.wave_widget.session
+    assert session is not None, "Session is None"
+    
+    # Count how many times the signal appears in root_nodes
+    signal_count = sum(1 for node in session.root_nodes 
+                      if node.name == signal_name or node.name.endswith(signal_name))
+    print(f"Signal appears {signal_count} times in session")
+    assert signal_count == 3, f"Expected signal to appear 3 times, but found {signal_count}"
+    
+    # Save session to YAML
+    yaml_path = repo_root / "test_split_mode_i_shortcut.yaml"
+    save_session(session, yaml_path)
+    assert yaml_path.exists(), "Session YAML was not saved"
+    
+    # Verify YAML contains the signal 3 times
+    with open(yaml_path, "r") as f:
+        data = yaml.safe_load(f)
+    
+    root_nodes = data.get("root_nodes", [])
+    yaml_signal_count = sum(1 for node in root_nodes 
+                           if node.get("name", "").endswith(signal_name))
+    
+    assert yaml_signal_count == 3, (
+        f"Expected signal to appear 3 times in YAML, but found {yaml_signal_count}"
+    )
+    
+    print(f"✓ Test passed: Signal '{signal_name}' appears 3 times in YAML")
+    
+    # Close the window
+    window.close()
+
+
+def test_inner_scope_variable_selection(qtbot):
+    """Test selecting variables from inner scopes in split mode.
+    
+    Scenario:
+    1) Load test_inputs/swerv1.vcd file into the main application window from scout.py
+    2) Switch design tree to split mode
+    3) Expand TOP scope
+    4) Select TOP.tb_top scope - variables are displayed in VarsView
+    5) Select first 3 variables
+    6) Click 'i' shortcut to add selected variables to WaveScoutWidget
+    7) Save session to yaml
+    8) Verify that yaml file has 3 root nodes with variables we've added
+    """
+    from scout import WaveScoutMainWindow
+    from PySide6.QtCore import QModelIndex, Qt, QItemSelectionModel
+    from wavescout.design_tree_view import DesignTreeViewMode
+    import tempfile
+    import yaml
+    from pathlib import Path
+    
+    # Create the main window
+    window = WaveScoutMainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    
+    # Load the test VCD file
+    test_vcd = Path(__file__).parent.parent / "test_inputs" / "swerv1.vcd"
+    assert test_vcd.exists(), f"Test VCD file not found: {test_vcd}"
+    
+    window.load_file(str(test_vcd))
+    
+    # Wait for the file to load
+    def _loaded():
+        return (
+            window.wave_widget.session is not None
+            and window.wave_widget.session.waveform_db is not None
+            and window.design_tree_view.design_tree_model is not None
+        )
+    qtbot.waitUntil(_loaded, timeout=5000)
+    
+    # Switch to split mode
+    window.design_tree_view.set_mode(DesignTreeViewMode.SPLIT)
+    qtbot.wait(100)
+    
+    # Wait for split mode to be ready
+    def _split_ready():
+        return (
+            window.design_tree_view.scope_tree_model is not None
+            and window.design_tree_view.vars_view is not None
+        )
+    qtbot.waitUntil(_split_ready, timeout=2000)
+    
+    scope_tree = window.design_tree_view.scope_tree
+    scope_model = window.design_tree_view.scope_tree_model
+    
+    # Get and expand TOP scope
+    top_index = scope_model.index(0, 0, QModelIndex())
+    assert top_index.isValid(), "TOP scope not found"
+    assert scope_model.data(top_index) == "TOP", "First scope should be TOP"
+    
+    scope_tree.expand(top_index)
+    qtbot.wait(100)
+    
+    # Get and select tb_top scope (first child of TOP)
+    tb_top_index = scope_model.index(0, 0, top_index)
+    assert tb_top_index.isValid(), "tb_top scope not found"
+    assert scope_model.data(tb_top_index) == "tb_top", "First child should be tb_top"
+    
+    scope_tree.selectionModel().setCurrentIndex(
+        tb_top_index,
+        QItemSelectionModel.ClearAndSelect
+    )
+    qtbot.wait(100)
+    
+    # Check that variables are loaded in VarsView
+    vars_view = window.design_tree_view.vars_view
+    vars_table = vars_view.table_view
+    
+    def _vars_loaded():
+        return len(vars_view.vars_model.variables) > 0
+    qtbot.waitUntil(_vars_loaded, timeout=2000)
+    
+    var_count = len(vars_view.vars_model.variables)
+    assert var_count > 3, f"Expected more than 3 variables, got {var_count}"
+    print(f"Found {var_count} variables in tb_top scope")
+    
+    # Select first 3 variables
+    selected_vars = []
+    for row in range(3):
+        var_index = vars_view.filter_proxy.index(row, 0)
+        assert var_index.isValid(), f"Variable at row {row} not valid"
+        
+        # Get variable name for verification
+        source_index = vars_view.filter_proxy.mapToSource(var_index)
+        var_data = vars_view.vars_model.variables[source_index.row()]
+        selected_vars.append(var_data['full_path'])
+        
+        # Select the row (use Ctrl for multi-select)
+        modifier = Qt.ControlModifier if row > 0 else Qt.NoModifier
+        vars_table.selectionModel().setCurrentIndex(
+            var_index,
+            QItemSelectionModel.Select | QItemSelectionModel.Rows
+        )
+    
+    qtbot.wait(100)
+    
+    # Verify selection
+    selected_count = len(vars_table.selectionModel().selectedRows())
+    assert selected_count == 3, f"Expected 3 selected rows, got {selected_count}"
+    print(f"Selected variables: {selected_vars}")
+    
+    # Press 'i' key to add selected variables
+    from PySide6.QtTest import QTest
+    QTest.keyPress(vars_table, Qt.Key.Key_I)
+    qtbot.wait(200)
+    
+    # Check that signals were added to the waveform widget
+    # The session should have signals added
+    session = window.wave_widget.session
+    assert session is not None, "Session should exist"
+    assert hasattr(session, 'root_nodes'), "Session should have root_nodes"
+    signal_count = len(session.root_nodes) if session.root_nodes else 0
+    assert signal_count >= 3, f"Expected at least 3 signals, got {signal_count}"
+    
+    # Save session to temporary YAML file
+    temp_yaml = tempfile.NamedTemporaryFile(suffix='.yaml', delete=False, mode='w')
+    temp_yaml.close()
+    
+    try:
+        from wavescout import save_session
+        save_session(session, Path(temp_yaml.name))
+        qtbot.wait(100)
+        
+        # Load and verify YAML content
+        with open(temp_yaml.name, 'r') as f:
+            yaml_data = yaml.safe_load(f)
+        
+        # The session structure saves signals as 'root_nodes'
+        assert 'root_nodes' in yaml_data, "YAML should have 'root_nodes' section"
+        yaml_nodes = yaml_data['root_nodes']
+        
+        # Check that we have at least 3 root nodes (signals)
+        assert len(yaml_nodes) >= 3, f"Expected at least 3 root nodes in YAML, got {len(yaml_nodes)}"
+        
+        # Check that our selected variables are in the YAML
+        yaml_signal_names = [node.get('name') for node in yaml_nodes]
+        for var_path in selected_vars[:3]:
+            assert var_path in yaml_signal_names, f"Variable '{var_path}' not found in YAML root_nodes"
+        
+        print(f"✓ Test passed: All 3 selected variables from tb_top are in the YAML")
+        
+    finally:
+        # Clean up temp file
+        Path(temp_yaml.name).unlink(missing_ok=True)
+    
+    # Close the window
     window.close()
