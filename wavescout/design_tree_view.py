@@ -225,22 +225,17 @@ class DesignTreeView(QWidget):
         if handle is None:
             return None
         
-        # Determine render type
-        render_type = RenderType.BOOL
-        is_multi_bit = False
-        if node.bit_range:
-            render_type = RenderType.BUS
-            is_multi_bit = True
-        if hasattr(node, 'var_type') and 'real' in node.var_type.lower():
-            render_type = RenderType.ANALOG
-        
+        # Determine render type using helper
+        var_obj = node.var if hasattr(node, 'var') else None
+        is_single_bit = self._is_single_bit(var_obj, handle)
+        render_type = RenderType.BOOL if is_single_bit else RenderType.BUS
         format = DisplayFormat(render_type=render_type)
         
         return SignalNode(
             name=full_path,
             handle=handle,
             format=format,
-            is_multi_bit=is_multi_bit
+            is_multi_bit=not is_single_bit
         )
     
     def _find_signal_handle(self, full_path: str) -> Optional[SignalHandle]:
@@ -382,6 +377,28 @@ class DesignTreeView(QWidget):
             self.signals_selected.emit(signal_nodes)
             self.status_message.emit(f"Added {len(signal_nodes)} signal(s)")
     
+    def _is_single_bit(self, var_obj: Any, handle: Optional[SignalHandle]) -> bool:
+        """Determine if a variable/signal is single-bit using pywellen API.
+        
+        Tries the provided var object first; if not available, attempts to fetch
+        it from the waveform_db using the handle. Falls back to True on errors
+        to keep behavior safe by default.
+        """
+        is_single_bit = True
+        # Ensure we have a var object
+        if var_obj is None and hasattr(self.waveform_db, 'get_var') and handle is not None:
+            try:
+                var_obj = self.waveform_db.get_var(handle)
+            except Exception:
+                var_obj = None
+        # Use pywellen is_1bit if available
+        if var_obj is not None and hasattr(var_obj, 'is_1bit'):
+            try:
+                is_single_bit = bool(var_obj.is_1bit())
+            except Exception:
+                is_single_bit = True
+        return is_single_bit
+    
     def _create_signal_node_from_var(self, var_data: dict) -> Optional[SignalNode]:
         """Create a SignalNode from variable data."""
         if not var_data or not self.waveform_db:
@@ -406,23 +423,14 @@ class DesignTreeView(QWidget):
         if handle is None:
             return None
         
-        # Determine render type
-        render_type = RenderType.BOOL
-        is_multi_bit = False
-        bit_range = var_data.get('bit_range', '')
-        if bit_range:
-            render_type = RenderType.BUS
-            is_multi_bit = True
-        
-        var_type = var_data.get('var_type', '')
-        if 'real' in var_type.lower():
-            render_type = RenderType.ANALOG
-        
+        # Determine render type using the helper
+        is_single_bit = self._is_single_bit(var, handle)
+        render_type = RenderType.BOOL if is_single_bit else RenderType.BUS
         format = DisplayFormat(render_type=render_type)
         
         return SignalNode(
             name=full_path,
             handle=handle,
             format=format,
-            is_multi_bit=is_multi_bit
+            is_multi_bit=not is_single_bit
         )
