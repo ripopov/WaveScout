@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import time
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -108,28 +109,30 @@ def test_height_scaling(qtbot):
     assert prdata_node.height_scaling != 8
     names_view._set_height_scaling(prdata_node, 8)
 
-    # Snapshot of application (the WaveScout widget)
-    snap_path = repo_root / "snap01.png"
-    pixmap = widget.grab()
-    pixmap.save(str(snap_path))
-    assert snap_path.exists(), "Snapshot was not saved"
+    # Use temporary directory for output files
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Snapshot of application (the WaveScout widget)
+        snap_path = Path(tmpdir) / "snap01.png"
+        pixmap = widget.grab()
+        pixmap.save(str(snap_path))
+        assert snap_path.exists(), "Snapshot was not saved"
 
-    # Save session via API (equivalent to File -> Save Session...)
-    yaml_path = repo_root / "test_height_scaling.yaml"
-    save_session(session, yaml_path)
-    assert yaml_path.exists(), "Session YAML was not saved"
+        # Save session via API (equivalent to File -> Save Session...)
+        yaml_path = Path(tmpdir) / "test_height_scaling.yaml"
+        save_session(session, yaml_path)
+        assert yaml_path.exists(), "Session YAML was not saved"
 
-    # Verify that YAML has height_scaling 8 for apb_testbench.prdata
-    with open(yaml_path, "r") as f:
-        data = yaml.safe_load(f)
-    nodes = data.get("root_nodes", [])
-    prdata_yaml = None
-    for n in nodes:
-        if n.get("name", "").endswith("apb_testbench.prdata"):
-            prdata_yaml = n
-            break
-    assert prdata_yaml is not None, "prdata node not found in saved YAML"
-    assert prdata_yaml.get("height_scaling") == 8, f"Expected height_scaling 8, got {prdata_yaml.get('height_scaling')}"
+        # Verify that YAML has height_scaling 8 for apb_testbench.prdata
+        with open(yaml_path, "r") as f:
+            data = yaml.safe_load(f)
+        nodes = data.get("root_nodes", [])
+        prdata_yaml = None
+        for n in nodes:
+            if n.get("name", "").endswith("apb_testbench.prdata"):
+                prdata_yaml = n
+                break
+        assert prdata_yaml is not None, "prdata node not found in saved YAML"
+        assert prdata_yaml.get("height_scaling") == 8, f"Expected height_scaling 8, got {prdata_yaml.get('height_scaling')}"
 
     # Wait for 2 seconds then close application
     # qtbot.wait(2000)
@@ -238,29 +241,31 @@ def test_height_scaling_ui(qtbot):
     # Verify the node height scaling changed
     assert prdata_node.height_scaling == 8, f"Expected height_scaling 8, got {prdata_node.height_scaling}"
 
-    # Snapshot of the whole application window
-    snap_path = repo_root / "snap01.png"
-    pixmap = window.grab()
-    pixmap.save(str(snap_path))
-    assert snap_path.exists(), "Snapshot was not saved"
+    # Use temporary directory for output files
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Snapshot of the whole application window
+        snap_path = Path(tmpdir) / "snap01.png"
+        pixmap = window.grab()
+        pixmap.save(str(snap_path))
+        assert snap_path.exists(), "Snapshot was not saved"
 
-    # Save session via API and validate YAML
-    yaml_path = repo_root / "test_height_scaling.yaml"
-    save_session(session, yaml_path)
-    assert yaml_path.exists(), "Session YAML was not saved"
+        # Save session via API and validate YAML
+        yaml_path = Path(tmpdir) / "test_height_scaling.yaml"
+        save_session(session, yaml_path)
+        assert yaml_path.exists(), "Session YAML was not saved"
 
-    with open(yaml_path, "r") as f:
-        data = yaml.safe_load(f)
-    nodes = data.get("root_nodes", [])
-    prdata_yaml = None
-    for n in nodes:
-        if n.get("name", "").endswith("apb_testbench.prdata"):
-            prdata_yaml = n
-            break
-    assert prdata_yaml is not None, "prdata node not found in saved YAML"
-    assert prdata_yaml.get("height_scaling") == 8, (
-        f"Expected height_scaling 8, got {prdata_yaml.get('height_scaling')}"
-    )
+        with open(yaml_path, "r") as f:
+            data = yaml.safe_load(f)
+        nodes = data.get("root_nodes", [])
+        prdata_yaml = None
+        for n in nodes:
+            if n.get("name", "").endswith("apb_testbench.prdata"):
+                prdata_yaml = n
+                break
+        assert prdata_yaml is not None, "prdata node not found in saved YAML"
+        assert prdata_yaml.get("height_scaling") == 8, (
+            f"Expected height_scaling 8, got {prdata_yaml.get('height_scaling')}"
+        )
 
     # Wait for 2 seconds then close application
     # qtbot.wait(2000)
@@ -351,22 +356,24 @@ def test_height_scaling_for_analog_sines(qtbot):
     assert sine1_node.height_scaling == 8
     assert sine2_node.height_scaling == 3
 
-    # Save session to YAML and verify contents
-    yaml_path = repo_root / "test_height_scaling_analog.yaml"
-    save_session(session, yaml_path)
-    assert yaml_path.exists(), "Session YAML was not saved"
+    # Use temporary directory for output files
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Save session to YAML and verify contents
+        yaml_path = Path(tmpdir) / "test_height_scaling_analog.yaml"
+        save_session(session, yaml_path)
+        assert yaml_path.exists(), "Session YAML was not saved"
 
-    with open(yaml_path, "r") as f:
-        data = yaml.safe_load(f)
-    nodes = data.get("root_nodes", [])
+        with open(yaml_path, "r") as f:
+            data = yaml.safe_load(f)
+        nodes = data.get("root_nodes", [])
 
-    s1_yaml = next((n for n in nodes if n.get("name", "").endswith("top.sine_1mhz")), None)
-    s2_yaml = next((n for n in nodes if n.get("name", "").endswith("top.sine_2mhz")), None)
+        s1_yaml = next((n for n in nodes if n.get("name", "").endswith("top.sine_1mhz")), None)
+        s2_yaml = next((n for n in nodes if n.get("name", "").endswith("top.sine_2mhz")), None)
 
-    assert s1_yaml is not None, "top.sine_1mhz node not found in saved YAML"
-    assert s2_yaml is not None, "top.sine_2mhz node not found in saved YAML"
-    assert s1_yaml.get("height_scaling") == 8, f"Expected 8x for sine_1mhz, got {s1_yaml.get('height_scaling')}"
-    assert s2_yaml.get("height_scaling") == 3, f"Expected 3x for sine_2mhz, got {s2_yaml.get('height_scaling')}"
+        assert s1_yaml is not None, "top.sine_1mhz node not found in saved YAML"
+        assert s2_yaml is not None, "top.sine_2mhz node not found in saved YAML"
+        assert s1_yaml.get("height_scaling") == 8, f"Expected 8x for sine_1mhz, got {s1_yaml.get('height_scaling')}"
+        assert s2_yaml.get("height_scaling") == 3, f"Expected 3x for sine_2mhz, got {s2_yaml.get('height_scaling')}"
 
     # # wait 2 sec
     # qtbot.wait(2000)
@@ -492,47 +499,49 @@ def test_names_panel_dragging_grouping(qtbot):
     assert group_node is not None, "Group node not found among root nodes"
     assert len(group_node.children) == 3, f"Expected 3 nodes in group, got {len(group_node.children)}"
 
-    # Save session to YAML and verify structure
-    yaml_path1 = repo_root / "test_grouping_dragging_step1.yaml"
-    save_session(session, yaml_path1)
-    assert yaml_path1.exists()
+    # Use temporary directory for output files
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Save session to YAML and verify structure
+        yaml_path1 = Path(tmpdir) / "test_grouping_dragging_step1.yaml"
+        save_session(session, yaml_path1)
+        assert yaml_path1.exists()
 
-    with open(yaml_path1, "r") as f:
-        data1 = yaml.safe_load(f)
-    rn1 = data1.get("root_nodes", [])
-    # Verify: one group with 3 children and 2 independent nodes at root
-    groups = [n for n in rn1 if n.get("is_group")]
-    non_groups = [n for n in rn1 if not n.get("is_group")]
-    assert len(groups) == 1, f"Expected 1 group in root, got {len(groups)}"
-    assert len(non_groups) >= 2, f"Expected at least 2 non-group root nodes, got {len(non_groups)}"
-    assert len(groups[0].get("children", [])) == 3, "Group should contain 3 children"
+        with open(yaml_path1, "r") as f:
+            data1 = yaml.safe_load(f)
+        rn1 = data1.get("root_nodes", [])
+        # Verify: one group with 3 children and 2 independent nodes at root
+        groups = [n for n in rn1 if n.get("is_group")]
+        non_groups = [n for n in rn1 if not n.get("is_group")]
+        assert len(groups) == 1, f"Expected 1 group in root, got {len(groups)}"
+        assert len(non_groups) >= 2, f"Expected at least 2 non-group root nodes, got {len(non_groups)}"
+        assert len(groups[0].get("children", [])) == 3, "Group should contain 3 children"
 
-    # Drag group between the two independent nodes at root
-    # Find current root ordering and compute desired insert position: 1 (between first and second independent)
-    # Build mime data for dragging the group index
-    group_index = names_view._find_node_index(group_node)
-    assert group_index.isValid(), "Could not find group index in names view"
-    mime = model_waves.mimeData([group_index])
-    # Perform drop at root, row=1
-    ok = model_waves.dropMimeData(mime, Qt.MoveAction, 1, 0, QModelIndex())
-    assert ok, "dropMimeData returned False"
-    qtbot.wait(10)
+        # Drag group between the two independent nodes at root
+        # Find current root ordering and compute desired insert position: 1 (between first and second independent)
+        # Build mime data for dragging the group index
+        group_index = names_view._find_node_index(group_node)
+        assert group_index.isValid(), "Could not find group index in names view"
+        mime = model_waves.mimeData([group_index])
+        # Perform drop at root, row=1
+        ok = model_waves.dropMimeData(mime, Qt.MoveAction, 1, 0, QModelIndex())
+        assert ok, "dropMimeData returned False"
+        qtbot.wait(10)
 
-    # Save session again and verify root order: independent -> group -> independent
-    yaml_path2 = repo_root / "test_grouping_dragging_step2.yaml"
-    save_session(session, yaml_path2)
-    assert yaml_path2.exists()
+        # Save session again and verify root order: independent -> group -> independent
+        yaml_path2 = Path(tmpdir) / "test_grouping_dragging_step2.yaml"
+        save_session(session, yaml_path2)
+        assert yaml_path2.exists()
 
-    with open(yaml_path2, "r") as f:
-        data2 = yaml.safe_load(f)
-    rn2 = data2.get("root_nodes", [])
+        with open(yaml_path2, "r") as f:
+            data2 = yaml.safe_load(f)
+        rn2 = data2.get("root_nodes", [])
 
-    # Collect the types in order (False for signal, True for group)
-    types = [n.get("is_group", False) for n in rn2[:3]]
-    # Expect exactly: [False, True, False] for first three root entries
-    assert types[0] is False and types[1] is True and types[2] is False, (
-        f"Unexpected root order types: {types}"
-    )
+        # Collect the types in order (False for signal, True for group)
+        types = [n.get("is_group", False) for n in rn2[:3]]
+        # Expect exactly: [False, True, False] for first three root entries
+        assert types[0] is False and types[1] is True and types[2] is False, (
+            f"Unexpected root order types: {types}"
+        )
 
     window.close()
 
@@ -642,24 +651,26 @@ def test_split_mode_i_shortcut(qtbot):
     print(f"Signal appears {signal_count} times in session")
     assert signal_count == 3, f"Expected signal to appear 3 times, but found {signal_count}"
     
-    # Save session to YAML
-    yaml_path = repo_root / "test_split_mode_i_shortcut.yaml"
-    save_session(session, yaml_path)
-    assert yaml_path.exists(), "Session YAML was not saved"
-    
-    # Verify YAML contains the signal 3 times
-    with open(yaml_path, "r") as f:
-        data = yaml.safe_load(f)
-    
-    root_nodes = data.get("root_nodes", [])
-    yaml_signal_count = sum(1 for node in root_nodes 
-                           if node.get("name", "").endswith(signal_name))
-    
-    assert yaml_signal_count == 3, (
-        f"Expected signal to appear 3 times in YAML, but found {yaml_signal_count}"
-    )
-    
-    print(f"✓ Test passed: Signal '{signal_name}' appears 3 times in YAML")
+    # Use temporary directory for output files
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Save session to YAML
+        yaml_path = Path(tmpdir) / "test_split_mode_i_shortcut.yaml"
+        save_session(session, yaml_path)
+        assert yaml_path.exists(), "Session YAML was not saved"
+        
+        # Verify YAML contains the signal 3 times
+        with open(yaml_path, "r") as f:
+            data = yaml.safe_load(f)
+        
+        root_nodes = data.get("root_nodes", [])
+        yaml_signal_count = sum(1 for node in root_nodes 
+                               if node.get("name", "").endswith(signal_name))
+        
+        assert yaml_signal_count == 3, (
+            f"Expected signal to appear 3 times in YAML, but found {yaml_signal_count}"
+        )
+        
+        print(f"✓ Test passed: Signal '{signal_name}' appears 3 times in YAML")
     
     # Close the window
     window.close()
@@ -681,9 +692,7 @@ def test_inner_scope_variable_selection(qtbot):
     from scout import WaveScoutMainWindow
     from PySide6.QtCore import QModelIndex, Qt, QItemSelectionModel
     from wavescout.design_tree_view import DesignTreeViewMode
-    import tempfile
     import yaml
-    from pathlib import Path
     
     # Create the main window
     window = WaveScoutMainWindow()

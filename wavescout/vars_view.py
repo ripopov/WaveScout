@@ -179,8 +179,10 @@ class VarsView(QWidget):
         header = self.table_view.horizontalHeader()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)  # Name column stretches
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)  # Type column
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Bit Range column
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)  # Type column interactive
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)  # Bit Range column interactive
+        # Micro-optimization: faster measurements
+        self.table_view.setWordWrap(False)
         
         layout.addWidget(self.table_view)
     
@@ -218,9 +220,36 @@ class VarsView(QWidget):
             self.variables_selected.emit([var_data])
     
     def set_variables(self, variables: List[Dict[str, Any]]):
-        """Set the variables to display."""
+        """Set the variables to display.
+        Performs a one-time resize-to-contents for secondary columns after data changes,
+        then restores interactive mode to avoid expensive recalculations during layout changes.
+        """
         self.vars_model.set_variables(variables)
         self.filter_input.clear()
+
+        # One-time resize-to-contents for Type and Bit Range columns
+        header = self.table_view.horizontalHeader()
+        # Temporarily switch to ResizeToContents to measure
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        # Trigger measurements
+        self.table_view.resizeColumnsToContents()
+        
+        # Clamp widths to avoid overly wide columns
+        try:
+            max_type_width = 200
+            max_range_width = 200
+            if header.sectionSize(1) > max_type_width:
+                header.resizeSection(1, max_type_width)
+            if header.sectionSize(2) > max_range_width:
+                header.resizeSection(2, max_range_width)
+        except Exception:
+            # Be robust in environments without a running event loop during tests
+            pass
+        
+        # Restore Interactive to prevent continuous recomputation
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
     
     def get_selected_variables(self) -> List[Dict[str, Any]]:
         """Get the currently selected variables."""
