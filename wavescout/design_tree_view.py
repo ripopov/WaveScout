@@ -225,10 +225,24 @@ class DesignTreeView(QWidget):
         if handle is None:
             return None
         
-        # Determine render type using helper
+        # Determine render type using helper and var_type if available
         var_obj = node.var if hasattr(node, 'var') else None
         is_single_bit = self._is_single_bit(var_obj, handle)
-        render_type = RenderType.BOOL if is_single_bit else RenderType.BUS
+        var_type_str = None
+        if var_obj is None and hasattr(self.waveform_db, 'get_var') and handle is not None:
+            try:
+                var_obj = self.waveform_db.get_var(handle)
+            except Exception:
+                var_obj = None
+        if var_obj is not None and hasattr(var_obj, 'var_type'):
+            try:
+                var_type_str = str(var_obj.var_type())
+            except Exception:
+                var_type_str = None
+        if var_type_str == "Event":
+            render_type = RenderType.EVENT
+        else:
+            render_type = RenderType.BOOL if is_single_bit else RenderType.BUS
         format = DisplayFormat(render_type=render_type)
         
         return SignalNode(
@@ -423,9 +437,22 @@ class DesignTreeView(QWidget):
         if handle is None:
             return None
         
-        # Determine render type using the helper
+        # Determine render type using the helper and var_type if available
         is_single_bit = self._is_single_bit(var, handle)
-        render_type = RenderType.BOOL if is_single_bit else RenderType.BUS
+        var_type_str = None
+        # Try get var_type from var_data first
+        vt = var_data.get('var_type')
+        if vt is not None:
+            var_type_str = str(vt)
+        elif var is not None and hasattr(var, 'var_type'):
+            try:
+                var_type_str = str(var.var_type())
+            except Exception:
+                var_type_str = None
+        if var_type_str == "Event":
+            render_type = RenderType.EVENT
+        else:
+            render_type = RenderType.BOOL if is_single_bit else RenderType.BUS
         format = DisplayFormat(render_type=render_type)
         
         return SignalNode(
