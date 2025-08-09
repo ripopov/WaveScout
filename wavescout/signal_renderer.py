@@ -1,7 +1,24 @@
-"""Signal rendering functions for waveform display.
+"""Waveform signal renderer.
 
-This module contains all signal drawing logic extracted from waveform_canvas.py.
-It provides Qt-independent rendering functions for different signal types.
+Purpose
+- Provide concise, reusable drawing routines for different signal kinds used by the
+  WaveScout viewer (digital, bus, analog, and event) plus a benchmark pattern.
+- Keep higher-level widgets thin: callers assemble inputs (sampling results and
+  render params), this module turns them into QPainter primitives.
+
+Key ideas
+- X axis is time mapped to pixels by the caller. Each routine consumes pre-sampled
+  drawing_data with samples laid out along the X axis as (x_px, sample) pairs.
+- Y axis is the row allocated to the signal. Helper calculate_signal_bounds returns
+  top/bottom/middle Y coordinates inside that row with small margins.
+- params is a dict with, at minimum: width, start_time, end_time; optionally
+  waveform_max_time (to clip drawing outside the recorded time range),
+  signal_range_cache and waveform_db (for analog scaling).
+- Rendering adapts to density: some routines switch to simplified strokes when many
+  regions/transitions fall into the viewport to keep drawing fast and legible.
+
+This module depends only on QPainter and small data types from the local data model
+and sampling code; it contains no widget logic.
 """
 
 from typing import Dict, List, Tuple, Optional, Any
@@ -15,16 +32,18 @@ import math
 
 def calculate_signal_bounds(y: int, row_height: int, margin_top: int = RENDERING.SIGNAL_MARGIN_TOP, 
                           margin_bottom: int = RENDERING.SIGNAL_MARGIN_BOTTOM) -> Tuple[int, int, int]:
-    """Calculate signal drawing bounds within a row.
+    """Compute vertical drawing band inside a row.
+    
+    The returned values are used by all renderers to keep strokes away from row borders.
     
     Args:
-        y: Top y-coordinate of the row
-        row_height: Height of the row
-        margin_top: Top margin in pixels
-        margin_bottom: Bottom margin in pixels
+        y: Top Y coordinate of the row in pixels.
+        row_height: Row height in pixels.
+        margin_top: Top inner margin.
+        margin_bottom: Bottom inner margin.
     
     Returns:
-        Tuple of (y_top, y_bottom, y_middle)
+        (y_top, y_bottom, y_middle): Y coordinates delimiting usable area and its center.
     """
     y_top = y + margin_top
     y_bottom = y + row_height - margin_bottom
@@ -34,16 +53,19 @@ def calculate_signal_bounds(y: int, row_height: int, margin_top: int = RENDERING
 
 def calculate_valid_pixel_range(start_time: Time, end_time: Time, width: int, 
                                waveform_max_time: Optional[Time]) -> Tuple[float, float]:
-    """Calculate pixel boundaries for valid time range.
+    """Map waveform time bounds to X-pixel clipping boundaries.
+    
+    This prevents drawing outside recorded data (before time 0 or after last timestamp)
+    while still allowing partial segments at the edges.
     
     Args:
-        start_time: Start time of viewport
-        end_time: End time of viewport
-        width: Canvas width in pixels
-        waveform_max_time: Maximum valid time in waveform (None if unbounded)
+        start_time: Viewport start time (inclusive) in waveform time units.
+        end_time: Viewport end time (exclusive) in waveform time units.
+        width: Current canvas width in pixels.
+        waveform_max_time: Last valid sample time in the waveform, or None if unknown.
     
     Returns:
-        Tuple of (min_valid_pixel, max_valid_pixel)
+        (min_valid_pixel, max_valid_pixel): Float X bounds used to clip strokes.
     """
     time_per_pixel = (end_time - start_time) / width if width > 0 else 1
     min_valid_pixel = -1.0  # Default: draw everything
@@ -64,15 +86,23 @@ def calculate_valid_pixel_range(start_time: Time, end_time: Time, width: int,
 
 def draw_digital_signal(painter: QPainter, node_info: dict, drawing_data: SignalDrawingData, 
                        y: int, row_height: int, params: dict) -> None:
-    """Draw a digital (boolean) signal.
+    """Render a boolean waveform as step lines.
+    
+    Logic overview
+    - Samples are (x_px, sample). Each region is drawn as a horizontal run at y_high (1),
+      y_low (0), or y_middle (X/unknown). Vertical lines mark transitions at region starts.
+    - Drawing is clipped to valid pixel range computed from start/end time and
+      waveform_max_time to avoid strokes past recorded data.
+    - If a sample indicates has_multiple_transitions, draw a double vertical marker to
+      signal aliasing within that pixel column.
     
     Args:
-        painter: QPainter instance
-        node_info: Node information dictionary
-        drawing_data: Signal sampling data
-        y: Top y-coordinate of the row
-        row_height: Height of the row
-        params: Rendering parameters including width, start_time, end_time, etc.
+        painter: Active QPainter to draw into.
+        node_info: Dict with at least format.color.
+        drawing_data: Pre-sampled waveform data along X.
+        y: Row top Y in pixels.
+        row_height: Row height in pixels.
+        params: Dict with width, start_time, end_time, optional waveform_max_time.
     """
     color = QColor(node_info['format'].color)
     painter.setPen(QPen(color, 1))
@@ -146,15 +176,22 @@ def draw_digital_signal(painter: QPainter, node_info: dict, drawing_data: Signal
 
 def draw_bus_signal(painter: QPainter, node_info: dict, drawing_data: SignalDrawingData, 
                    y: int, row_height: int, params: dict) -> None:
-    """Draw a bus (multi-bit) signal.
+    """Render a multi-bit bus as boxed regions with optional value text.
+    
+    Logic overview
+    - For low transition density, each region becomes a box; diagonal strokes visualize
+      left/right transitions; value text is centered when region is wide enough.
+    - For high density (num_regions > threshold), fall back to lightweight strokes:
+      verticals at transitions, plus top/bottom horizontals across the viewport.
+    - Clipping to valid pixel range avoids drawing beyond recorded data.
     
     Args:
-        painter: QPainter instance
-        node_info: Node information dictionary
-        drawing_data: Signal sampling data
-        y: Top y-coordinate of the row
-        row_height: Height of the row
-        params: Rendering parameters
+        painter: Active QPainter.
+        node_info: Dict with format.color.
+        drawing_data: Pre-sampled bus regions with value_str for captions.
+        y: Row top Y in pixels.
+        row_height: Row height in pixels.
+        params: Dict with width, start_time, end_time, optional waveform_max_time.
     """
     color = QColor(node_info['format'].color)
     
@@ -262,15 +299,21 @@ def draw_bus_signal(painter: QPainter, node_info: dict, drawing_data: SignalDraw
 
 
 def compute_signal_range(drawing_data: SignalDrawingData, start_time: Optional[Time] = None, end_time: Optional[Time] = None) -> Tuple[float, float]:
-    """Compute min/max range for analog signal values.
+    """Compute min/max of numeric sample values for analog rendering.
+    
+    Notes
+    - Scans drawing_data.samples and considers sample.value_float values, ignoring NaN/None.
+    - Optional start_time/end_time are placeholders; drawing_data is already pixel-sampled,
+      so we currently use all provided samples.
+    - If no valid values exist, returns (0.0, 1.0). If min==max, expand by a small margin.
     
     Args:
-        drawing_data: Signal drawing data with samples
-        start_time: Optional start time for range computation
-        end_time: Optional end time for range computation
-        
+        drawing_data: Samples prepared for drawing.
+        start_time: Optional viewport start (unused at the moment).
+        end_time: Optional viewport end (unused at the moment).
+    
     Returns:
-        Tuple of (min_val, max_val)
+        (min_val, max_val) suitable for mapping to Y coordinates.
     """
     min_val = float('inf')
     max_val = float('-inf')
@@ -300,17 +343,19 @@ def compute_signal_range(drawing_data: SignalDrawingData, start_time: Optional[T
 
 
 def compute_global_signal_range(handle: SignalHandle, waveform_db) -> Tuple[float, float]:
-    """Compute min/max range for entire signal from waveform database.
+    """Estimate global min/max from the waveform database.
     
-    This function queries ALL transitions in the signal's history to find
-    the global min/max values, not just the visible viewport.
+    Rationale
+    - Some scaling modes need the range across the entire recording. Since the backend
+      may not expose all transitions directly, we sample the signal uniformly across the
+      time table to approximate min/max.
     
     Args:
-        handle: Signal handle
-        waveform_db: Waveform database instance
-        
+        handle: Signal handle used to query the DB.
+        waveform_db: Waveform database facade providing get_signal() and get_time_table().
+    
     Returns:
-        Tuple of (min_val, max_val)
+        (min_val, max_val) over the full recording; defaults to (0.0, 1.0) on failure.
     """
     if not waveform_db:
         return 0.0, 1.0
@@ -376,20 +421,26 @@ def get_signal_range(instance_id: SignalNodeID, handle: SignalHandle,
                     signal_range_cache: Dict[SignalNodeID, Any],
                     waveform_db = None,
                     start_time: Optional[Time] = None, end_time: Optional[Time] = None) -> Tuple[float, float]:
-    """Get signal range from cache or compute it.
+    """Return analog Y-range using a small cache keyed by signal instance.
+    
+    Behavior
+    - SCALE_TO_ALL_DATA: compute once per instance across the full recording (via DB if
+      available, otherwise from visible samples) and cache as cache.min/max.
+    - Other scaling: compute per viewport (start_time, end_time) and memoize in
+      cache.viewport_ranges.
     
     Args:
-        instance_id: SignalNode instance ID
-        handle: Signal handle for database queries
-        drawing_data: Signal drawing data
-        scaling_mode: Analog scaling mode
-        signal_range_cache: Cache dictionary
-        waveform_db: Waveform database instance (for global range computation)
-        start_time: Start time for viewport range
-        end_time: End time for viewport range
-        
+        instance_id: Unique SignalNode ID used as cache key.
+        handle: DB handle used for global queries (may be None).
+        drawing_data: Samples for the current paint pass.
+        scaling_mode: AnalogScalingMode enum controlling how the range is chosen.
+        signal_range_cache: Dict[SignalNodeID, SignalRangeCache] owned by the canvas.
+        waveform_db: Optional database facade for global-range computation.
+        start_time: Viewport start time.
+        end_time: Viewport end time.
+    
     Returns:
-        Tuple of (min_val, max_val)
+        (min_val, max_val) range for mapping values to Y.
     """
     from .waveform_canvas import SignalRangeCache
     
@@ -428,15 +479,25 @@ def get_signal_range(instance_id: SignalNodeID, handle: SignalHandle,
 
 def draw_analog_signal(painter: QPainter, node_info: dict, drawing_data: SignalDrawingData, 
                       y: int, row_height: int, params: dict) -> None:
-    """Draw an analog signal with amplitude-based visualization.
+    """Render an analog waveform as a polyline with optional min/max labels.
+    
+    Logic overview
+    - Determine vertical range from scaling mode via get_signal_range (uses cache and
+      may consult the waveform DB). Add 10% headroom to avoid clamped tops/bottoms.
+    - Map each sample.value_float to Y; break the polyline when values are undefined or
+      high-impedance; draw aliasing markers (dashed verticals) where multiple transitions
+      happened within the same pixel column.
+    - Clip drawing to valid pixel range derived from viewport times and waveform_max_time.
     
     Args:
-        painter: QPainter instance
-        node_info: Node information dictionary
-        drawing_data: Signal sampling data
-        y: Top y-coordinate of the row
-        row_height: Height of the row
-        params: Rendering parameters (includes signal_range_cache, start_time, end_time)
+        painter: Active QPainter.
+        node_info: Dict with format.color, format.analog_scaling_mode, optional instance_id,
+            handle, and height_scaling.
+        drawing_data: Pre-sampled numeric values along X (value_float).
+        y: Row top Y in pixels.
+        row_height: Row height in pixels.
+        params: Dict with width, start_time, end_time, optional waveform_max_time,
+            optional signal_range_cache and waveform_db.
     """
     color = QColor(node_info['format'].color)
     painter.setPen(QPen(color, 1))
@@ -564,15 +625,19 @@ def draw_analog_signal(painter: QPainter, node_info: dict, drawing_data: SignalD
 
 def draw_event_signal(painter: QPainter, node_info: dict, drawing_data: SignalDrawingData, 
                      y: int, row_height: int, params: dict) -> None:
-    """Draw an event signal as upward-pointing arrow pulses.
+    """Render timestamped events as thin upward arrows.
+    
+    Logic overview
+    - For each (x_px, sample) event, draw a 1px vertical shaft and a 3px-wide arrow head
+      near the top of the row. Clip to valid pixel range like other renderers.
     
     Args:
-        painter: QPainter instance
-        node_info: Node information dictionary
-        drawing_data: Signal sampling data containing event timestamps
-        y: Top y-coordinate of the row
-        row_height: Height of the row
-        params: Rendering parameters
+        painter: Active QPainter.
+        node_info: Dict with format.color.
+        drawing_data: Event positions along X (values are not displayed).
+        y: Row top Y in pixels.
+        row_height: Row height in pixels.
+        params: Dict with width, start_time, end_time, optional waveform_max_time.
     """
     color = QColor(node_info['format'].color)
     painter.setPen(QPen(color, 1))
@@ -619,12 +684,15 @@ def draw_event_signal(painter: QPainter, node_info: dict, drawing_data: SignalDr
 
 
 def draw_benchmark_pattern(painter: QPainter, width: int, height: int) -> None:
-    """Draw benchmark pattern - rainbow pixel pattern for performance testing.
+    """Fill the canvas with a rainbow pattern to test paint throughput.
+    
+    Uses a vectorized NumPy pipeline to generate an RGB888 image covering the entire
+    viewport, then draws it as a single QImage. Also overlays a centered title.
     
     Args:
-        painter: QPainter instance
-        width: Canvas width
-        height: Canvas height
+        painter: Active QPainter.
+        width: Canvas width in pixels.
+        height: Canvas height in pixels.
     """
     import numpy as np
     from PySide6.QtGui import QImage
