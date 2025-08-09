@@ -25,35 +25,38 @@ class VCDDesignGenerator:
     Requirements implemented:
     - 10 levels of nested scopes (a single chain of nested modules).
     - At each level: include clocks of differing frequencies, digital signals, buses of various sizes, and real (analog) signals.
-    - Total variable count across all scopes: 1,000,000.
+    - Total variable count across all scopes: 100,000.
     - No aliases (we keep all unique; aliasing would be allowed for clocks, but not required).
     - Command-line options:
         - -o / --output: output filename (default: gpt_design.vcd)
         - -clocks: number of clock signals to generate (default: 10000)
+        - -limit: simulation end time in picoseconds (default: 100000 ps)
     - Base clock frequency reference: 1 GHz (period 1000 ps). Generated clocks vary relative to this.
 
     The generator writes:
     - Standard VCD header with timescale 1ps.
     - 10 nested scopes under a top module.
-    - Variable declarations to reach exactly 1,000,000 variables including clocks.
+    - Variable declarations to reach exactly 100,000 variables including clocks.
     - $dumpvars with initial values.
-    - Minimal activity: for clocks, two edges are emitted (rise/fall) at their first half/whole periods to reflect different frequencies.
+    - Continuous activity: clocks toggle every half-period and selected data signals toggle periodically until the end time.
     """
 
-    TARGET_VARIABLES = 1_000_000
+    TARGET_VARIABLES = 100_000
     LEVELS = 10
     SCOPE_VAR_LIMIT = 1000
     BASE_FREQ_HZ = 1_000_000_000  # 1 GHz
     BASE_PERIOD_PS = 1_000  # 1 ns = 1000 ps
 
-    def __init__(self, output: str = "gpt_design.vcd", clocks: int = 10_000):
+    def __init__(self, output: str = "gpt_design.vcd", clocks: int = 10_000, limit_ps: int = 100_000):
         self.output = output
         self.clock_count = int(clocks)
+        self.sim_end_ps = int(limit_ps)
         self.file = None
         self.var_index = 0  # For generating unique VCD identifiers
         # Minimal metadata storage
         self.all_vars: List[Tuple[str, str, int]] = []  # (id, var_type, bitwidth)
         self.clock_events: List[Tuple[int, str, int]] = []  # (time_ps, id, new_val)
+        self.clock_ids = set()
 
     # --------------------- low-level I/O ---------------------
     def open(self):
@@ -118,11 +121,17 @@ class VCDDesignGenerator:
             for i in range(clocks_for_level):
                 clk_global_idx = clock_base_index + i
                 vid = self.new_var("wire", 1, f"clk_l{level}_{clk_global_idx}")
+                self.clock_ids.add(vid)
                 factor = (level + 1) * ((clk_global_idx % 16) + 1)
                 period_ps = self.BASE_PERIOD_PS * factor
                 half_ps = period_ps // 2
-                self.clock_events.append((half_ps, vid, 1))
-                self.clock_events.append((period_ps, vid, 0))
+                # Generate continuous toggles up to sim_end_ps
+                t = half_ps
+                val = 1
+                while t <= self.sim_end_ps:
+                    self.clock_events.append((t, vid, val))
+                    t += half_ps
+                    val ^= 1
             # Emit fillers
             for i in range(fill_to_go):
                 self.new_var("reg", 1, f"lvl{level}_bit_{i}")
@@ -165,11 +174,17 @@ class VCDDesignGenerator:
         for i in range(clocks_for_level):
             clk_global_idx = clock_base_index + i
             vid = add_var("wire", 1, f"clk_l{level}_{clk_global_idx}")
+            self.clock_ids.add(vid)
             factor = (level + 1) * ((clk_global_idx % 16) + 1)
             period_ps = self.BASE_PERIOD_PS * factor
             half_ps = period_ps // 2
-            self.clock_events.append((half_ps, vid, 1))
-            self.clock_events.append((period_ps, vid, 0))
+            # Generate continuous toggles up to sim_end_ps
+            t = half_ps
+            val = 1
+            while t <= self.sim_end_ps:
+                self.clock_events.append((t, vid, val))
+                t += half_ps
+                val ^= 1
 
         # Emit fillers (streamed across buckets)
         for i in range(fill_to_go):
@@ -214,7 +229,7 @@ class VCDDesignGenerator:
         self.w("$enddefinitions $end")
 
     # --------------------- initial values and minimal activity ---------------------
-    def write_initial_and_clocks(self):
+    def write_initial_and_activity(self):
         # Initial values
         self.w("#0")
         self.w("$dumpvars")
@@ -228,12 +243,25 @@ class VCDDesignGenerator:
                 # Not all viewers require zero-padded width during dumpvars
                 self.w(f"b0 {vid}")
         self.w("$end")
-        # Clock events: sort and emit time-ordered changes
+        # If no events, nothing else to do
         if not self.clock_events:
             return
-        self.clock_events.sort(key=lambda e: e[0])
+        # Build a combined list of events: clocks + sparse data toggles
+        events = list(self.clock_events)
+        # Sparse data toggles: pick every 1000th 1-bit non-clock signal and toggle periodically
+        data_toggle_period = self.BASE_PERIOD_PS * 10  # 10 ns by default
+        for idx, (vid, vtype, bw) in enumerate(self.all_vars):
+            if bw == 1 and vid not in self.clock_ids and vtype != "real" and (idx % 1000 == 0):
+                t = data_toggle_period
+                val = 1
+                while t <= self.sim_end_ps:
+                    events.append((t, vid, val))
+                    t += data_toggle_period
+                    val ^= 1
+        # Sort and emit
+        events.sort(key=lambda e: e[0])
         current_time = -1
-        for t, vid, val in self.clock_events:
+        for t, vid, val in events:
             if t != current_time:
                 self.w(f"#{t}")
                 current_time = t
@@ -245,7 +273,7 @@ class VCDDesignGenerator:
             self.open()
             self.write_header()
             self.write_design()
-            self.write_initial_and_clocks()
+            self.write_initial_and_activity()
         finally:
             self.close()
 
@@ -254,18 +282,20 @@ def parse_args():
     ap = argparse.ArgumentParser(description="Generate a large hierarchical VCD for benchmarking.")
     ap.add_argument("-o", "--output", default="design-gpt5.vcd", help="Output VCD filename (default: design.vcd)")
     ap.add_argument("-clocks", type=int, default=10_000, help="Number of clock signals to generate (default: 10000)")
+    ap.add_argument("-limit", type=int, default=100_000, help="Simulation end time in picoseconds (default: 100000)")
     return ap.parse_args()
 
 
 def main():
     args = parse_args()
-    gen = VCDDesignGenerator(output=args.output, clocks=args.clocks)
+    gen = VCDDesignGenerator(output=args.output, clocks=args.clocks, limit_ps=args.limit)
     gen.generate()
     print(f"Generated VCD: {args.output}")
     print(f"Total variables (declared): {gen.var_index}")
     print(f"Clocks generated: {gen.clock_count}")
     print("Hierarchy levels: 10")
     print("Timescale: 1ps; Base clock: 1 GHz")
+    print(f"Simulation end: {gen.sim_end_ps} ps")
 
 
 if __name__ == "__main__":
