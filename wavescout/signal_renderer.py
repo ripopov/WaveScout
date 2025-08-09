@@ -105,7 +105,9 @@ def draw_digital_signal(painter: QPainter, node_info: dict, drawing_data: Signal
         params: Dict with width, start_time, end_time, optional waveform_max_time.
     """
     color = QColor(node_info['format'].color)
-    painter.setPen(QPen(color, 1))
+    pen = QPen(color)
+    pen.setWidth(0)  # cosmetic 1 device-pixel for crisp HiDPI lines
+    painter.setPen(pen)
     
     # Calculate signal bounds
     y_high, y_low, y_middle = calculate_signal_bounds(y, row_height)
@@ -223,7 +225,9 @@ def draw_bus_signal(painter: QPainter, node_info: dict, drawing_data: SignalDraw
     painter.setFont(font)
     fm = painter.fontMetrics()
     
-    painter.setPen(QPen(color, 1))
+    pen = QPen(color)
+    pen.setWidth(0)  # cosmetic 1 device-pixel
+    painter.setPen(pen)
     
     # Unified rendering loop - handles all density levels
     for i in range(num_regions):
@@ -530,7 +534,9 @@ def draw_analog_signal(painter: QPainter, node_info: dict, drawing_data: SignalD
             optional signal_range_cache and waveform_db.
     """
     color = QColor(node_info['format'].color)
-    painter.setPen(QPen(color, 1))
+    pen = QPen(color)
+    pen.setWidth(0)  # cosmetic 1 device-pixel for crisp lines
+    painter.setPen(pen)
     
     # Get waveform max time from params
     waveform_max_time = params.get('waveform_max_time')
@@ -575,7 +581,9 @@ def draw_analog_signal(painter: QPainter, node_info: dict, drawing_data: SignalD
         font = QFont("Monospace", 8)
         painter.setFont(font)
         text_color = QColor(COLORS.TEXT_MUTED)
-        painter.setPen(QPen(text_color, 1))
+        text_pen = QPen(text_color)
+        text_pen.setWidth(0)
+        painter.setPen(text_pen)
         
         # Format and draw max value at top
         max_text = f"{max_val:.2f}"
@@ -641,7 +649,8 @@ def draw_analog_signal(painter: QPainter, node_info: dict, drawing_data: SignalD
             aliasing_color = aliasing_color.lighter(150)  # 150% lighter
         
         # Use dashed pen style with the adjusted color
-        aliasing_pen = QPen(aliasing_color, 1, Qt.PenStyle.DashLine)
+        aliasing_pen = QPen(aliasing_color, 0, Qt.PenStyle.DashLine)
+        aliasing_pen.setWidth(0)
         painter.setPen(aliasing_pen)
         
         for x_pos in aliasing_regions:
@@ -670,7 +679,9 @@ def draw_event_signal(painter: QPainter, node_info: dict, drawing_data: SignalDr
         params: Dict with width, start_time, end_time, optional waveform_max_time.
     """
     color = QColor(node_info['format'].color)
-    painter.setPen(QPen(color, 1))
+    pen = QPen(color)
+    pen.setWidth(0)  # cosmetic 1 device-pixel
+    painter.setPen(pen)
     
     # Calculate signal bounds
     y_top, y_bottom, y_middle = calculate_signal_bounds(y, row_height)

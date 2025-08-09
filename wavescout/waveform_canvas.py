@@ -359,6 +359,9 @@ class WaveformCanvas(QWidget):
         self._paint_frame_counter += 1
         
         painter = QPainter(self)
+        # Enable high-quality rendering for overlays and text
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         
         # Check if this is a partial update
         is_partial_update = self._should_do_partial_update(event)
@@ -459,7 +462,9 @@ class WaveformCanvas(QWidget):
             # Only draw cursor if it's in the update region (or full update)
             if not is_partial_update or (x >= update_rect.left() - RENDERING.CURSOR_PADDING and 
                                         x <= update_rect.right() + RENDERING.CURSOR_PADDING):
-                painter.setPen(QPen(QColor(COLORS.CURSOR), RENDERING.CURSOR_WIDTH))
+                pen = QPen(QColor(COLORS.CURSOR))
+                pen.setWidth(0)  # cosmetic 1 device-pixel
+                painter.setPen(pen)
                 painter.drawLine(x, 0, x, self.height())
     
     def _paint_debug_info(self, painter: QPainter, is_partial_update: bool):
@@ -474,6 +479,7 @@ class WaveformCanvas(QWidget):
         key_params = [
             params['width'],
             params['height'],
+            params.get('dpr', 1.0),
             params['start_time'],
             params['end_time'],
             # Don't include cursor_time - cursor is drawn separately
@@ -515,6 +521,7 @@ class WaveformCanvas(QWidget):
             return {
                 'width': self.width(),
                 'height': self.height(),
+                'dpr': float(self.devicePixelRatioF()),
                 'start_time': self._start_time,
                 'end_time': self._end_time,
                 'cursor_time': self._cursor_time,
@@ -547,6 +554,7 @@ class WaveformCanvas(QWidget):
         return {
             'width': self.width(),
             'height': self.height(),
+            'dpr': float(self.devicePixelRatioF()),
             'start_time': self._start_time,
             'end_time': self._end_time,
             'cursor_time': self._cursor_time,
@@ -591,14 +599,19 @@ class WaveformCanvas(QWidget):
         # Timing for image creation and painting
         paint_start = time_module.time()
         
-        # Create image
-        image = QImage(params['width'], params['height'], QImage.Format.Format_ARGB32_Premultiplied)
+        # Create image at device-pixel resolution
+        dpr = float(params.get('dpr', 1.0))
+        w_px = max(1, int(math.ceil(params['width'] * dpr)))
+        h_px = max(1, int(math.ceil(params['height'] * dpr)))
+        image = QImage(w_px, h_px, QImage.Format.Format_ARGB32_Premultiplied)
+        image.setDevicePixelRatio(dpr)
         # Use darker background color by default (for invalid ranges)
         image.fill(QColor(COLORS.BACKGROUND_INVALID))
         
-        # Create painter
+        # Create painter with high-quality hints
         painter = QPainter(image)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)  # Faster rendering
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         
         try:
             if params['benchmark_mode']:
@@ -779,21 +792,25 @@ class WaveformCanvas(QWidget):
         
         # Draw ruler background
         painter.fillRect(0, 0, self.width(), self._header_height, QColor(COLORS.HEADER_BACKGROUND))
-        painter.setPen(QPen(QColor(COLORS.RULER_LINE), 1))
+        pen = QPen(QColor(COLORS.RULER_LINE))
+        pen.setWidth(0)  # cosmetic 1 device-pixel
+        painter.setPen(pen)
         painter.drawLine(0, self._header_height - 1, self.width(), self._header_height - 1)
         
         # Draw ticks and labels
         font = QFont(RENDERING.FONT_FAMILY_MONO, config.text_size)
         painter.setFont(font)
-        painter.setPen(QColor(COLORS.TEXT))
         
         # Get font metrics for accurate text measurement
         fm = QFontMetrics(font)
         
         for time_value, pixel_x in tick_positions:
             if 0 <= pixel_x <= self.width():
-                # Draw tick mark
-                painter.drawLine(pixel_x, self._header_height - 6, pixel_x, self._header_height - 1)
+                # Draw tick mark with cosmetic pen
+                tick_pen = QPen(QColor(COLORS.RULER_LINE))
+                tick_pen.setWidth(0)
+                painter.setPen(tick_pen)
+                painter.drawLine(int(pixel_x), self._header_height - 6, int(pixel_x), self._header_height - 1)
                 
                 # Format and draw label
                 # Use the session's timescale unit if available, otherwise fall back to config
@@ -808,10 +825,11 @@ class WaveformCanvas(QWidget):
                 text_height = text_rect.height()
                 
                 # Calculate position to center text above tick
-                text_x = pixel_x - text_width // 2
+                text_x = int(pixel_x) - text_width // 2
                 text_y = 5  # Increased margin from top for better spacing
                 
                 # Draw text using simpler drawText overload
+                painter.setPen(QColor(COLORS.TEXT))
                 painter.drawText(text_x, text_y + fm.ascent(), label)
     
     def _calculate_time_ruler_ticks(self, config) -> Tuple[List[Tuple[float, int]], float]:
@@ -895,8 +913,9 @@ class WaveformCanvas(QWidget):
     
     def _draw_grid_lines(self, painter, tick_positions: List[Tuple[Time, int]], config):
         """Draw vertical grid lines at tick positions."""
-        # Set up grid line style
+        # Set up grid line style (cosmetic for crispness)
         pen = QPen(QColor(config.grid_color))
+        pen.setWidth(0)  # cosmetic 1 device-pixel
         if config.grid_style == "dashed":
             pen.setStyle(Qt.PenStyle.DashLine)
         elif config.grid_style == "dotted":
@@ -906,7 +925,7 @@ class WaveformCanvas(QWidget):
         # Draw vertical lines from below ruler to bottom
         for _, pixel_x in tick_positions:
             if 0 <= pixel_x <= self.width():
-                painter.drawLine(pixel_x, RENDERING.DEFAULT_HEADER_HEIGHT, pixel_x, self.height())
+                painter.drawLine(int(pixel_x), RENDERING.DEFAULT_HEADER_HEIGHT, int(pixel_x), self.height())
     
     def _format_time_label(self, time: float, unit: TimeUnit, step_size: Optional[float] = None) -> str:
         """Format time value according to preferred unit.
@@ -1061,8 +1080,10 @@ class WaveformCanvas(QWidget):
         if self._waveform_max_time is None:
             return
         
-        # Set up pen for boundary lines
-        painter.setPen(QPen(QColor(COLORS.BOUNDARY_LINE), 2))
+        # Set up pen for boundary lines (cosmetic for HiDPI)
+        pen = QPen(QColor(COLORS.BOUNDARY_LINE))
+        pen.setWidth(0)  # 1 device pixel
+        painter.setPen(pen)
         
         # Draw line at time 0 if visible
         if self._waveform_min_time >= self._start_time and self._waveform_min_time <= self._end_time:
