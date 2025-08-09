@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, QModelIndex, QAbstractItemModel, QPersistentModel
 from typing import overload, List, Optional, Union, Tuple
 import json
 from .data_model import WaveformSession, SignalNode, SignalNameDisplayMode, RenderType
+from .signal_sampling import parse_signal_value
 
 
 class WaveformItemModel(QAbstractItemModel):
@@ -149,22 +150,30 @@ class WaveformItemModel(QAbstractItemModel):
         return node.name  # fallback
     
     def _value_at_cursor(self, node: SignalNode) -> str:
-        # Query WaveformDB for signal value at cursor time
+        # Query WaveformDB for signal value at cursor time and format it according to node.format.data_format
         if node.is_group or not self._session.waveform_db or node.handle is None:
             return ""
         
+        db = self._session.waveform_db
         try:
-            value = self._session.waveform_db.sample(node.handle, self._session.cursor_time)
+            # Get raw value via query_signal to preserve type (int/float/str/None)
+            signal_obj = db.get_signal(node.handle)
+            if not signal_obj:
+                return ""
+            query = signal_obj.query_signal(max(0, self._session.cursor_time))
+            raw_value = query.value
             
-            # Format value based on display format
-            if node.format.render_type == RenderType.ANALOG:
-                # For analog, just return the value
-                return str(value)
-            # For digital signals, the value should already be formatted by signal_sampling
-            # based on the data_format, so just return it as-is
+            # Determine bit width similar to rendering logic
+            bit_width = 32
+            if hasattr(db, '_var_map') and node.handle in db._var_map:
+                var_list = db._var_map[node.handle]
+                if var_list and hasattr(var_list[0], 'bitwidth'):
+                    bit_width = var_list[0].bitwidth()
             
-            return str(value)
-        except:
+            # Use the same parser as waveform_canvas to get formatted string
+            value_str, _, _ = parse_signal_value(raw_value, node.format.data_format, bit_width)
+            return value_str or ""
+        except Exception:
             return ""
     
     def _analysis_value(self, node: SignalNode) -> str:
