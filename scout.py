@@ -651,9 +651,33 @@ class WaveScoutMainWindow(QMainWindow):
                 if sel_model and self.wave_widget.session:
                     # Use only the first column indexes
                     indexes = sel_model.selectedRows(0)
-                    # Preserve current order; add in the order as selectedRows returns
-                    for idx in indexes:
+                    # Show progress dialog for bulk additions
+                    from PySide6.QtWidgets import QProgressDialog, QApplication
+                    count = len(indexes)
+                    if count == 0:
+                        return True
+                    # Determinate progress when adding multiple signals; allow cancel
+                    progress = QProgressDialog(
+                        f"Adding {count} signal(s)...",
+                        "Cancel",
+                        0,
+                        count,
+                        self
+                    )
+                    progress.setWindowTitle("Adding Signals")
+                    progress.setWindowModality(Qt.WindowModal)
+                    progress.setMinimumDuration(0)
+                    progress.show()
+                    QApplication.processEvents()
+
+                    for i, idx in enumerate(indexes, start=1):
+                        if progress.wasCanceled():
+                            break
                         self._on_design_tree_double_click(idx)
+                        progress.setValue(i)
+                        QApplication.processEvents()
+
+                    progress.close()
                     return True
         return super().eventFilter(watched, event)
     
