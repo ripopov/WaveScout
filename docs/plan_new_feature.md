@@ -9,7 +9,7 @@ When a user provides a new feature or bugfix description, create a comprehensive
 ## Step-by-Step Planning Process
 
 ### 1. Requirements Analysis
-- Extract and preserve ALL specific details from the user's prompt verbatim
+- Extract and preserve ALL specific details from the user's prompt
 - Identify the core functionality being requested
 - Note any performance, UI/UX, or compatibility requirements mentioned
 - If requirements are unclear, ask up to 5 clarifying questions before proceeding
@@ -40,7 +40,6 @@ The data model (`data_model.py`) is the single source of truth. Plan changes car
 - New enums for modes/states
 - New dataclasses if needed
 - Persistence implications (YAML serialization)
-- Backward compatibility strategy
 
 #### Example Data Model Addition:
 ```python
@@ -60,11 +59,7 @@ For each file that needs modification, specify:
 - **Integration Points**: How it connects with other components
 
 #### Algorithm Descriptions:
-If the feature involves complex logic:
-1. Break down into numbered steps
-2. Specify input/output data types
-3. Note performance considerations
-4. Identify caching opportunities
+If the feature involves complex logic: Write informal algorithm descriptions step-by-step.
 
 ### 5. UI Integration
 If the feature has UI components:
@@ -79,15 +74,8 @@ If the feature has UI components:
 - Custom delegates if needed
 - Synchronization across panels
 
-### 6. Testing Strategy
-Include a testing approach:
-- Unit tests for pure logic
-- Integration tests with sample waveforms
-- UI interaction tests with pytest-qt
-- Performance benchmarks if applicable
-
 ### 7. Performance Considerations
-Address these aspects:
+Address these aspects if changes are expected to have a significant impact on performance (for example reading all signal values, or multiple signals at once):
 - Cache invalidation triggers
 - Rendering optimization needs
 - Memory usage implications
@@ -99,62 +87,6 @@ Break into phases ONLY if the feature is genuinely complex:
 - **Phase 2**: UI integration
 - **Phase 3**: Optimizations
 Each phase should be independently testable and deployable.
-
-## Document Structure Template
-
-```markdown
-# Feature: [Feature Name]
-
-## Introduction
-[2-3 sentences setting context and describing the feature's purpose]
-
-## Requirements
-[Verbatim list of user requirements, preserving all specific details]
-
-## Data Model Changes
-### Modified Classes
-- `ClassName`: [specific fields/enums to add with types and defaults]
-
-### New Classes/Enums
-[If applicable]
-
-## Implementation
-
-### 1. [Component Name] Changes
-**File**: `path/to/file.py`
-**Functions**: `function_name()`, `class_name.method()`
-**Changes**:
-- [Specific change description]
-- [Integration with other components]
-
-### 2. [Next Component]...
-
-## Algorithms
-[Step-by-step descriptions if complex logic is involved]
-
-## UI Integration
-[How users will access/use the feature]
-
-## Testing Approach
-[Specific test scenarios]
-
-## Performance Impact
-[Analysis of performance implications]
-
-## [Optional] Implementation Phases
-[Only if genuinely needed for complex features]
-```
-
-## Quality Checklist
-Before finalizing the plan, ensure:
-- [ ] All user requirements are addressed verbatim
-- [ ] Data model changes are fully specified with types and defaults
-- [ ] All affected files and functions are identified by exact name
-- [ ] Algorithms are described step-by-step
-- [ ] UI integration points are clear
-- [ ] Testing strategy is defined
-- [ ] Performance implications are considered
-- [ ] The plan is concise but complete
 
 ## Output
 Write the plan to: `docs/features/<N>_<BRIEF>_plan.md`
