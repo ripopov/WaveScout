@@ -88,7 +88,7 @@ class FuzzyFilterProxyModel(QSortFilterProxyModel):
         super().__init__(parent)
         self.filter_text = ""
         self.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        self.score_threshold = 60  # Minimum score to show results
+        self.score_threshold = 50  # Minimum score to show results (lowered for partial_ratio)
         
         # Import rapidfuzz (mandatory dependency)
         from rapidfuzz import fuzz
@@ -115,9 +115,21 @@ class FuzzyFilterProxyModel(QSortFilterProxyModel):
         if not name:
             return False
         
-        # Use rapidfuzz for fuzzy matching
-        # WRatio gives better results for partial matches
-        score = self.fuzz.WRatio(self.filter_text, name.lower())
+        # First check if all characters in filter appear in order (subsequence matching)
+        name_lower = name.lower()
+        filter_chars = list(self.filter_text)
+        
+        pos = 0
+        for char in filter_chars:
+            pos = name_lower.find(char, pos)
+            if pos == -1:
+                return False
+            pos += 1
+        
+        # If subsequence check passes, use rapidfuzz for scoring/ranking
+        # This ensures we only show results where characters appear in order
+        # but still get good fuzzy scoring for ranking
+        score = self.fuzz.partial_ratio(self.filter_text, name_lower)
         return score >= self.score_threshold
 
 
