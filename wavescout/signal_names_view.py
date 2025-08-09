@@ -84,6 +84,27 @@ class SignalNamesView(BaseColumnView):
             self.setDropIndicatorShown(True)
             self.setDragEnabled(True)
 
+    def _get_selected_signal_nodes(self):
+        """Return a list of selected SignalNode items (excluding groups)."""
+        nodes = []
+        sel_model = self.selectionModel()
+        if not sel_model:
+            return nodes
+        for idx in sel_model.selectedRows(0):
+            n = self.model().data(idx, Qt.ItemDataRole.UserRole)
+            if isinstance(n, SignalNode) and not n.is_group:
+                nodes.append(n)
+        return nodes
+
+    def _apply_to_selected_signals(self, apply_fn, predicate=None):
+        """Apply a function to all selected signal nodes.
+        - apply_fn: callable taking a SignalNode
+        - predicate: optional callable taking a SignalNode and returning bool
+        """
+        for n in self._get_selected_signal_nodes():
+            if predicate is None or predicate(n):
+                apply_fn(n)
+
     def _show_context_menu(self, position):
         """Show context menu at the given position."""
         # Get the index at the position
@@ -121,7 +142,7 @@ class SignalNamesView(BaseColumnView):
             action.setCheckable(True)
             action.setChecked(node.format.data_format == format_value)
             action.setData(format_value)
-            action.triggered.connect(lambda checked, f=format_value: self._set_data_format(node, f))
+            action.triggered.connect(lambda checked, f=format_value: self._apply_to_selected_signals(lambda n: self._set_data_format(n, f)))
             format_group.addAction(action)
             format_menu.addAction(action)
         
@@ -145,7 +166,7 @@ class SignalNamesView(BaseColumnView):
                 action.setCheckable(True)
                 action.setChecked(node.format.render_type == render_value)
                 action.setData(render_value)
-                action.triggered.connect(lambda checked, r=render_value: self._set_render_type(node, r))
+                action.triggered.connect(lambda checked, r=render_value: self._apply_to_selected_signals(lambda n: self._set_render_type(n, r), predicate=lambda n: getattr(n, 'is_multi_bit', False)))
                 render_group.addAction(action)
                 render_menu.addAction(action)
             
@@ -169,7 +190,7 @@ class SignalNamesView(BaseColumnView):
                     action.setCheckable(True)
                     action.setChecked(node.format.analog_scaling_mode == scaling_value)
                     action.setData(scaling_value)
-                    action.triggered.connect(lambda checked, s=scaling_value: self._set_analog_scaling(node, s))
+                    action.triggered.connect(lambda checked, s=scaling_value: self._apply_to_selected_signals(lambda n: self._set_analog_scaling(n, s), predicate=lambda n: getattr(n, 'format', None) and n.format.render_type == RenderType.ANALOG))
                     analog_group.addAction(action)
                     analog_menu.addAction(action)
         
@@ -189,7 +210,7 @@ class SignalNamesView(BaseColumnView):
             action.setCheckable(True)
             action.setChecked(node.height_scaling == height_value)
             action.setData(height_value)
-            action.triggered.connect(lambda checked, h=height_value: self._set_height_scaling(node, h))
+            action.triggered.connect(lambda checked, h=height_value: self._apply_to_selected_signals(lambda n: self._set_height_scaling(n, h)))
             height_group.addAction(action)
             height_menu.addAction(action)
         
