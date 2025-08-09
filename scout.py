@@ -92,9 +92,6 @@ class WaveScoutMainWindow(QMainWindow):
         # Create menu bar
         self._create_menus()
         
-        # Apply dark theme to design tree
-        self._apply_design_tree_theme()
-        
         # Initialize status bar
         self.statusBar().showMessage("Ready")
         
@@ -755,9 +752,6 @@ def main():
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     
     app = QApplication(sys.argv)
-    
-    # Apply dark theme
-    app.setStyle("Fusion")
     
     # Create main window with optional session or wave file
     window = WaveScoutMainWindow(session_file=args.load_session, wave_file=args.load_wave, exit_after_load=args.exit_after_load)

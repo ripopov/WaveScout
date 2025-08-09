@@ -778,9 +778,9 @@ class WaveformCanvas(QWidget):
             _, step_size = self._calculate_time_ruler_ticks(config)
         
         # Draw ruler background
-        painter.fillRect(0, 0, self.width(), RENDERING.DEFAULT_HEADER_HEIGHT, QColor(COLORS.HEADER_BACKGROUND))
+        painter.fillRect(0, 0, self.width(), self._header_height, QColor(COLORS.HEADER_BACKGROUND))
         painter.setPen(QPen(QColor(COLORS.RULER_LINE), 1))
-        painter.drawLine(0, RENDERING.DEFAULT_HEADER_HEIGHT - 1, self.width(), RENDERING.DEFAULT_HEADER_HEIGHT - 1)
+        painter.drawLine(0, self._header_height - 1, self.width(), self._header_height - 1)
         
         # Draw ticks and labels
         font = QFont(RENDERING.FONT_FAMILY_MONO, config.text_size)
@@ -793,7 +793,7 @@ class WaveformCanvas(QWidget):
         for time_value, pixel_x in tick_positions:
             if 0 <= pixel_x <= self.width():
                 # Draw tick mark
-                painter.drawLine(pixel_x, RENDERING.DEFAULT_HEADER_HEIGHT - 6, pixel_x, RENDERING.DEFAULT_HEADER_HEIGHT - 1)
+                painter.drawLine(pixel_x, self._header_height - 6, pixel_x, self._header_height - 1)
                 
                 # Format and draw label
                 # Use the session's timescale unit if available, otherwise fall back to config

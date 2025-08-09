@@ -12,7 +12,7 @@ from .waveform_canvas import WaveformCanvas
 from .data_model import WaveformSession, SignalNode, GroupRenderMode
 from .waveform_controller import WaveformController
 from .signal_names_view import SignalNamesView, BaseColumnView
-from .config import RENDERING, COLORS, UI
+from .config import RENDERING, UI
 
 
 
@@ -98,8 +98,8 @@ class WaveScoutWidget(QWidget):
         # Connect signals
         self._canvas.cursorMoved.connect(self._on_cursor_moved)
         
-        # Apply dark theme
-        self._apply_theme()
+        # Sync header heights across panels
+        self._sync_header_heights()
         
     def _setup_shared_scrollbar(self):
         """Set up the shared vertical scrollbar for row locking."""
@@ -206,10 +206,24 @@ class WaveScoutWidget(QWidget):
         if self._selection_model:
             self._selection_model.selectionChanged.connect(self._on_selection_changed)
     
+    def _sync_header_heights(self):
+        """Ensure all panel headers have the same height using system theme value."""
+        try:
+            height = RENDERING.DEFAULT_HEADER_HEIGHT
+            for view in [self._names_view, self._values_view, self._analysis_view]:
+                if view and view.header():
+                    view.header().setFixedHeight(height)
+        except Exception:
+            # Fail-safe: ignore if headers are not yet available
+            pass
+    
     def _restore_ui_state(self):
         """Restore UI state including scrollbar and expansion states."""
         # Force the tree view to calculate sizes by processing events
         QApplication.processEvents()
+
+        # Make sure headers are in sync before computing ranges
+        self._sync_header_heights()
         
         # Update scrollbar range (this also sets header height)
         self._update_scrollbar_range()
@@ -239,6 +253,9 @@ class WaveScoutWidget(QWidget):
             self._shared_scrollbar.setRange(0, max(0, total_content_height - viewport_height))
             self._shared_scrollbar.setPageStep(viewport_height)
             self._shared_scrollbar.setSingleStep(row_height)
+
+        # Ensure consistent header heights across panels
+        self._sync_header_heights()
 
         # Synchronize header and row heights with the canvas
         header_height = self._names_view.header().height()
@@ -368,37 +385,6 @@ class WaveScoutWidget(QWidget):
         if self._canvas:
             self._canvas.update()
             
-    def _apply_theme(self):
-        """Apply dark theme to the widget."""
-        # Set widget stylesheet
-        self.setStyleSheet(f"""
-            QWidget {{
-                background-color: {COLORS.BACKGROUND};
-                color: {COLORS.TEXT};
-            }}
-            QTreeView {{
-                background-color: #252526;
-                alternate-background-color: {COLORS.ALTERNATE_ROW};
-                border: 1px solid {COLORS.BORDER};
-            }}
-            QTreeView::item:selected {{
-                background-color: {COLORS.SELECTION};
-            }}
-            QHeaderView::section {{
-                background-color: {COLORS.HEADER_BACKGROUND};
-                padding: 4px;
-                border: 1px solid {COLORS.BORDER};
-            }}
-            QSplitter::handle {{
-                background-color: {COLORS.SPLITTER_HANDLE};
-                width: {UI.SPLITTER_HANDLE_WIDTH}px;
-            }}
-            QLabel {{
-                background-color: {COLORS.HEADER_BACKGROUND};
-                padding: 4px;
-            }}
-        """)
-        
     def _on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection):
         """Handle selection changes and update the data model."""
         if self._updating_selection or not self.session or not self._selection_model or not self.model:
