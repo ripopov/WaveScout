@@ -176,14 +176,14 @@ def draw_digital_signal(painter: QPainter, node_info: dict, drawing_data: Signal
 
 def draw_bus_signal(painter: QPainter, node_info: dict, drawing_data: SignalDrawingData, 
                    y: int, row_height: int, params: dict) -> None:
-    """Render a multi-bit bus as boxed regions with optional value text.
+    """Render a multi-bit bus with smooth dynamic transitions.
     
-    Logic overview
-    - For low transition density, each region becomes a box; diagonal strokes visualize
-      left/right transitions; value text is centered when region is wide enough.
-    - For high density (num_regions > threshold), fall back to lightweight strokes:
-      verticals at transitions, plus top/bottom horizontals across the viewport.
-    - Clipping to valid pixel range avoids drawing beyond recorded data.
+    Logic overview:
+    - All transitions are rendered as "><" style across all zoom levels
+    - Transition slopes steepen smoothly as density increases
+    - When transitions occur on every pixel, they collapse to vertical lines
+    - No abrupt visual switch between rendering modes
+    - Slopes are symmetric on both sides of transitions
     
     Args:
         painter: Active QPainter.
@@ -208,94 +208,124 @@ def draw_bus_signal(painter: QPainter, node_info: dict, drawing_data: SignalDraw
     height = y_bottom - y_top
     
     num_regions = len(drawing_data.samples)
-    is_high_density = num_regions > RENDERING.HIGH_DENSITY_THRESHOLD
     
-    if is_high_density:
-        # For high-density signals, just draw lines at transitions
-        painter.setPen(QPen(color, 1))
-        for i in range(num_regions):
-            current_x, _ = drawing_data.samples[i]
-            if current_x < min_valid_pixel:
-                continue
-            if current_x > max_valid_pixel:
-                break
-            # Draw vertical line at transition
-            painter.drawLine(int(current_x), y_top, int(current_x), y_bottom)
-        # Draw horizontal lines to connect (respecting valid boundaries)
-        left_bound = max(0, int(min_valid_pixel)) if min_valid_pixel > 0 else 0
-        right_bound = min(params['width'], int(max_valid_pixel))
-        painter.drawLine(left_bound, y_top, right_bound, y_top)
-        painter.drawLine(left_bound, y_bottom, right_bound, y_bottom)
-    else:
-        # For low-density signals, use the detailed rendering
-        font = QFont(RENDERING.FONT_FAMILY, RENDERING.FONT_SIZE_SMALL)
-        painter.setFont(font)
-        fm = painter.fontMetrics()
+    # Calculate transition density (average pixels per transition)
+    viewport_width = max_valid_pixel - min_valid_pixel
+    density = viewport_width / num_regions if num_regions > 0 else float('inf')
+    
+    # Calculate dynamic transition width based on density
+    # Starts at max width for low density, decreases smoothly to near-zero for high density
+    transition_width = min(RENDERING.BUS_TRANSITION_MAX_WIDTH, 
+                          density * RENDERING.BUS_TRANSITION_SLOPE_FACTOR)
+    
+    # Set up font for text rendering
+    font = QFont(RENDERING.FONT_FAMILY, RENDERING.FONT_SIZE_SMALL)
+    painter.setFont(font)
+    fm = painter.fontMetrics()
+    
+    painter.setPen(QPen(color, 1))
+    
+    # Unified rendering loop - handles all density levels
+    for i in range(num_regions):
+        current_x, current_sample = drawing_data.samples[i]
         
-        painter.setPen(QPen(color, 1))
+        if current_x < min_valid_pixel:
+            continue
+        if current_x > max_valid_pixel:
+            break
         
-        for i in range(num_regions):
-            current_x, current_sample = drawing_data.samples[i]
+        if i + 1 < len(drawing_data.samples):
+            next_x, _ = drawing_data.samples[i + 1]
+        else:
+            next_x = params['width']
+        
+        next_x = min(next_x, max_valid_pixel)
+        
+        region_width = next_x - current_x
+        
+        x_start = int(current_x)
+        x_end = int(next_x)
+        
+        # Determine if THIS specific region should be drawn as high density (vertical line only)
+        # A region is high density if it's very narrow, regardless of overall density
+        is_high_density_region = (region_width < 2)
+        
+        # When this specific region is too narrow, just draw vertical line
+        if is_high_density_region:
+            painter.drawLine(x_start, y_top, x_start, y_bottom)
+            # For very narrow regions, also draw the end line
+            if region_width < 2 and i == num_regions - 1:
+                painter.drawLine(x_end, y_top, x_end, y_bottom)
+        else:
+            # This is a low-density region - draw as a box with transitions
+            # Calculate actual transition width, capped by region width
+            actual_trans_width = min(transition_width, region_width / 2)
             
-            if current_x < min_valid_pixel:
-                continue
-            if current_x > max_valid_pixel:
-                break
+            # Check if we need to skip transitions
+            skip_left_transition = (i == 0)
+            skip_right_transition = (i == num_regions - 1)
             
-            if i + 1 < len(drawing_data.samples):
-                next_x, _ = drawing_data.samples[i + 1]
-            else:
-                next_x = params['width']
-            
-            next_x = min(next_x, max_valid_pixel)
-            
-            region_width = next_x - current_x
-            
-            x_start = int(current_x)
-            x_end = int(next_x)
-            
-            if region_width < 2:
-                painter.drawLine(x_start, y_top, x_start, y_bottom)
-            else:
-                if region_width < RENDERING.BUS_TRANSITION_WIDTH * 2:
-                    painter.drawLine(x_start, y_top, x_end, y_top)
-                    painter.drawLine(x_end, y_top, x_end, y_bottom)
-                    painter.drawLine(x_end, y_bottom, x_start, y_bottom)
-                    painter.drawLine(x_start, y_bottom, x_start, y_top)
-                else:
-                    x_left_trans = x_start + RENDERING.BUS_TRANSITION_WIDTH
-                    x_right_trans = x_end - RENDERING.BUS_TRANSITION_WIDTH
-                    
-                    skip_left_transition = (i == 0)
-                    skip_right_transition = (i == num_regions - 1)
-                    
-                    if skip_left_transition:
-                        painter.drawLine(x_start, y_top, x_start, y_bottom)
-                        x_left_trans = x_start
+            # Check if next region will be drawn as vertical lines only
+            next_is_vertical = False
+            if i + 1 < num_regions:
+                if i + 1 < len(drawing_data.samples):
+                    _, _ = drawing_data.samples[i + 1]
+                    if i + 2 < len(drawing_data.samples):
+                        next_next_x, _ = drawing_data.samples[i + 2]
                     else:
-                        painter.drawLine(x_start, y_middle, x_left_trans, y_top)
-                        painter.drawLine(x_start, y_middle, x_left_trans, y_bottom)
-                    
-                    if skip_right_transition:
-                        painter.drawLine(x_end, y_top, x_end, y_bottom)
-                        x_right_trans = x_end
-                    else:
-                        painter.drawLine(x_right_trans, y_top, x_end, y_middle)
-                        painter.drawLine(x_right_trans, y_bottom, x_end, y_middle)
-                    
-                    # Top and bottom horizontal lines
-                    painter.drawLine(x_left_trans, y_top, x_right_trans, y_top)
-                    painter.drawLine(x_left_trans, y_bottom, x_right_trans, y_bottom)
+                        next_next_x = params['width']
+                    next_region_width = next_next_x - next_x
+                    # Next region is vertical-only if it's very narrow OR overall density is very high
+                    next_is_vertical = (next_region_width < 2) or (transition_width < 1.0 and next_region_width < 4)
+            
+            # Force vertical close if next region is high density or overall density is very high
+            force_vertical_close = next_is_vertical or (transition_width < 0.5)
+            
+            if region_width < actual_trans_width * 2:
+                # Region too narrow for transitions - draw simple box
+                painter.drawLine(x_start, y_top, x_end, y_top)
+                painter.drawLine(x_end, y_top, x_end, y_bottom)
+                painter.drawLine(x_end, y_bottom, x_start, y_bottom)
+                painter.drawLine(x_start, y_bottom, x_start, y_top)
+            else:
+                x_left_trans = x_start + actual_trans_width
+                x_right_trans = x_end - actual_trans_width
                 
-                # Get value text (use value_str)
-                value_text = current_sample.value_str if hasattr(current_sample, 'value_str') else str(current_sample.value) if hasattr(current_sample, 'value') else ""
-                if region_width > RENDERING.MIN_BUS_TEXT_WIDTH and value_text:
-                    text = value_text
-                    text_width = fm.horizontalAdvance(text)
-                    if text_width < region_width - 10:
-                        painter.drawText(int(current_x + 5), y_top, 
-                                       int(region_width - 10), height,
-                                       Qt.AlignmentFlag.AlignCenter, text)
+                # Draw left transition (symmetric slopes)
+                if skip_left_transition:
+                    painter.drawLine(x_start, y_top, x_start, y_bottom)
+                    x_left_trans = x_start
+                else:
+                    painter.drawLine(int(x_start), y_middle, int(x_left_trans), y_top)
+                    painter.drawLine(int(x_start), y_middle, int(x_left_trans), y_bottom)
+                
+                # Draw right transition (symmetric slopes)
+                # Force vertical line if we're in high-density mode overall
+                if skip_right_transition or force_vertical_close:
+                    painter.drawLine(x_end, y_top, x_end, y_bottom)
+                    x_right_trans = x_end
+                else:
+                    painter.drawLine(int(x_right_trans), y_top, int(x_end), y_middle)
+                    painter.drawLine(int(x_right_trans), y_bottom, int(x_end), y_middle)
+                
+                # Top and bottom horizontal lines
+                painter.drawLine(int(x_left_trans), y_top, int(x_right_trans), y_top)
+                painter.drawLine(int(x_left_trans), y_bottom, int(x_right_trans), y_bottom)
+            
+            # Interior width for text calculation (accounting for dynamic transitions)
+            interior_width = region_width - (actual_trans_width * 2) if region_width > actual_trans_width * 2 else 0
+            
+            # Get value text (use value_str)
+            value_text = current_sample.value_str if hasattr(current_sample, 'value_str') else str(current_sample.value) if hasattr(current_sample, 'value') else ""
+            if interior_width > RENDERING.MIN_BUS_TEXT_WIDTH and value_text:
+                text = value_text
+                text_width = fm.horizontalAdvance(text)
+                if text_width < interior_width - 10:
+                    text_x_start = int(current_x + actual_trans_width + 5)
+                    text_width_available = int(interior_width - 10)
+                    painter.drawText(text_x_start, y_top, 
+                                   text_width_available, height,
+                                   Qt.AlignmentFlag.AlignCenter, text)
 
 
 def compute_signal_range(drawing_data: SignalDrawingData, start_time: Optional[Time] = None, end_time: Optional[Time] = None) -> Tuple[float, float]:
