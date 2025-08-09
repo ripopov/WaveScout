@@ -400,7 +400,7 @@ class DesignTreeView(QWidget):
         """
         is_single_bit = True
         # Ensure we have a var object
-        if var_obj is None and hasattr(self.waveform_db, 'get_var') and handle is not None:
+        if var_obj is None and self.waveform_db is not None and hasattr(self.waveform_db, 'get_var') and handle is not None:
             try:
                 var_obj = self.waveform_db.get_var(handle)
             except Exception:
