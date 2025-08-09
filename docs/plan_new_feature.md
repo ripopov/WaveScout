@@ -4,7 +4,7 @@
 WaveScout is a Digital/Mixed signal waveform viewer similar to GtkWave, Verdi, ModelSim Waveform Viewer, etc. It uses a Model-View architecture with Qt6/PySide6 for UI and a Rust backend (pywellen) for waveform data processing.
 
 ## Your Task
-When a user provides a new feature or bugfix description, create a comprehensive technical plan following this guide.
+When a user provides a new feature or bugfix description, create a comprehensive technical plan following this guide. This plan will be used by AI Coding agent to implement the feature. And it will be reviewed by the team for clairity and correctness. Do not write empty sections or uninformative sections (for example, if UI has no changes, do not write "UI Integration" section. If algorithms are trival, do not write them.) 
 
 ## Step-by-Step Planning Process
 
@@ -33,7 +33,7 @@ Research the following areas based on feature requirements:
 - Signal/slot communication between components
 
 ### 3. Data Model Design
-The data model (`data_model.py`) is the single source of truth. Plan changes carefully:
+The data model (`data_model.py`) is the single source of truth for viewport configuration. Plan changes carefully:
 
 #### Required Specifications:
 - New fields for existing dataclasses (with types and defaults)
@@ -57,6 +57,7 @@ For each file that needs modification, specify:
 - **Functions/Classes to Modify**: Exact names
 - **Nature of Changes**: What needs to be added/modified (NOT the actual code)
 - **Integration Points**: How it connects with other components
+Do not include any code changes here.
 
 #### Algorithm Descriptions:
 If the feature involves complex logic: Write informal algorithm descriptions step-by-step.
