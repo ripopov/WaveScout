@@ -50,7 +50,7 @@ class DesignTreeView(QWidget):
         self.current_mode = DesignTreeViewMode.UNIFIED
         
         # Settings
-        self.settings = QSettings("WaveScout", "Demo")
+        self.settings = QSettings("WaveScout", "Scout")
         
         # Setup UI
         self._setup_ui()

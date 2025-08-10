@@ -35,7 +35,7 @@ Mode preference persisted in QSettings, with a toggle button in the header to sw
 ### Current Implementation
 - **Design tree model**: `wavescout/design_tree_model.py` - Core tree model with DesignTreeNode and DesignTreeModel classes
 - **Integration**: `scout.py` lines 66-81, 199-223, 301-426 - Design tree setup and signal handling
-- **QSettings usage**: Already established pattern with `QSettings("WaveScout", "Demo")`
+- **QSettings usage**: Already established pattern with `QSettings("WaveScout", "Scout")`
 - **No existing filtering**: Will need to implement fuzzy filtering from scratch
 
 ### Key Classes to Refactor
@@ -233,7 +233,7 @@ For visual feedback like VSCode/IDEA:
 ### Settings Persistence
 ```python
 # In DesignTreeView.__init__
-self.settings = QSettings("WaveScout", "Demo")
+self.settings = QSettings("WaveScout", "Scout")
 saved_mode = self.settings.value("design_tree_view_mode", "unified")
 self.set_mode(DesignTreeViewMode(saved_mode))
 

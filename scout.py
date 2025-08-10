@@ -43,11 +43,11 @@ class LoaderRunnable(QRunnable):
 
 
 class WaveScoutMainWindow(QMainWindow):
-    """Main window for WaveScout demo."""
+    """Main window for WaveScout App."""
     
     def __init__(self, session_file=None, wave_file: str | None = None, exit_after_load: bool = False):
         super().__init__()
-        self.setWindowTitle("WaveScout - Waveform Viewer Demo")
+        self.setWindowTitle("WaveScout - Waveform Viewer")
         self.resize(1400, 800)
         
         # Initialize thread pool and progress dialog
@@ -55,7 +55,7 @@ class WaveScoutMainWindow(QMainWindow):
         self.progress_dialog = None
         
         # Initialize settings
-        self.settings = QSettings("WaveScout", "Demo")
+        self.settings = QSettings("WaveScout", "Scout")
         
         # Store current UI scale
         self.current_ui_scale = self.settings.value("ui_scale", 1.0, type=float)
@@ -594,7 +594,7 @@ def main():
     args = parser.parse_args()
     
     # Load saved UI scale and apply it before creating QApplication
-    settings = QSettings("WaveScout", "Demo")
+    settings = QSettings("WaveScout", "Scout")
     saved_scale = settings.value("ui_scale", 1.0, type=float)
     
     # Set the QT_SCALE_FACTOR environment variable

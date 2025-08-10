@@ -1,28 +1,27 @@
-# WaveScout Project Guide
+# Project Guidelines
+
+This document provides an overview of the WaveScout project and concrete guidelines for 
+CLAUDE, Junie, and other coding agents when making changes.
 
 ## Overview
+- WaveScout is a PySide6 (Qt6) digital/mixed-signal waveform viewer with a Rust-accelerated backend (Wellen via pywellen) for fast waveform processing.
+- Primary goals: performant waveform viewing, clean dataclass-based model layer, and an efficient Qt Model/View bridge.
 
-WaveScout is a waveform viewer widget for digital design verification. It is built with PySide6 for the GUI and uses a
-Rust backend (Wellen library: https://github.com/ekiwi/wellen) for processing waveform databases.
+## Project Structure (high level)
+- wavescout/ — main Python package (widgets, models, rendering, canvas, etc.)
+- wellen/ — Wellen library submodule with Rust sources and Python bindings (pywellen)
+- scout.py — main application entry point
+- tests/ — pytest suite
+- scripts/ — helper scripts (incl. build_pywellen)
+- docs/, README.md — documentation and usage
+- Makefile — common developer commands
+- pyproject.toml — Poetry configuration
+- pytest.ini, mypy.ini — testing and type-checking settings
 
-Project must use modern Python 3.12 features and use Poetry for dependency management.
-
-## Project Structure
-```
-WaveScout/
-├── wavescout/          # Main package
-│   ├── __init__.py
-│   ├── waveform_db.py  # Waveform database interface using pywellen
-│   ├── data_model.py   # Core data structures
-│   └── ...
-├── wellen/             # Wellen waveform library submodule
-│   └── pywellen/       # Python bindings
-├── scout.py            # Demo application
-└── tests/              # Test directory with various test files
-```
+For a detailed tree, see the Project Structure section in README.md.
 
 ## Key Dependencies
-- Poetry
+- Poetry  (uses in-project virtualenv .venv)
 - Python 3.12
 - PySide6 (Qt6 for Python)
 - pywellen (Python bindings for Wellen waveform library)
@@ -41,6 +40,10 @@ poetry config virtualenvs.in-project true
 poetry install
 poetry run build-pywellen
 ```
+
+## Running
+- Demo application: make dev
+  - Equivalent: poetry run python scout.py
 
 ### Virtual Environment
 The project uses Poetry with a local virtual environment (.venv) in the project directory.
@@ -68,28 +71,17 @@ poetry run build-pywellen
 make build
 ```
 
-### Running tests
-```bash
-# Run all tests
-make test
+## Tests
+- Run all tests: make test
+  - Equivalent: poetry run pytest tests/ --ignore=wellen/
+- Pytest is configured via pytest.ini with testpaths = tests
 
-# Run specific test
-poetry run python test_<name>.py
+## Type Checking and Linting
+- Type checking (strict): make typecheck
+  - Equivalent: poetry run mypy wavescout/ --strict --config-file mypy.ini
+- mypy.ini includes exceptions for pywellen and specific PySide6 import behaviors.
+- There is no separate linter configured in this repo; follow readable, PEP8-ish style and keep type annotations accurate.
 
-# Run demo
-make dev
-# or
-poetry run python scout.py
-```
-
-### Linting and Type Checking
-```bash
-# Run mypy type checker
-make typecheck
-
-# Or directly with poetry
-poetry run mypy wavescout/
-```
 
 ## Key Classes
 - `WaveScoutWidget`: Main waveform viewer widget
@@ -151,4 +143,3 @@ For PySide6/Qt types:
 ## Notes
 - The pywellen module provides access to VCD/FST waveform files
 - Rendering is optimized using Rust-based pixel region generation
-- The project uses single-threaded rendering for simplicity
