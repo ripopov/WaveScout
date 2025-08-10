@@ -1,156 +1,76 @@
-# WaveformDB Protocol Implementation Plan
+# WaveformDB Protocol – Minimal, Clear Implementation Plan
 
-## Requirements Analysis
+## Objective
+Decouple UI from WaveformDB internals by introducing a small typed protocol and refactoring the few remaining direct `_var_map` usages. Limit behavior discovery to the protocol and avoid risky changes around hierarchy/persistence.
 
-### Core Problem
-The codebase violates encapsulation principles with 8 locations directly accessing the private `_var_map` attribute of WaveformDB. Additionally, 17+ locations use fragile `hasattr` checks to discover database behavior at runtime, creating tight coupling between UI components and the database implementation.
+## Protocol
+- File: wavescout/protocols.py (NEW)
+- Type: typing.Protocol named WaveformDBProtocol
+- Methods (exact signatures):
+  - find_handle_by_path(name: str) -> Optional[int]
+  - find_handle_by_name(name: str) -> Optional[int]
+  - get_handle_for_var(var: Any) -> Optional[int]
+  - get_var(handle: int) -> Any
+  - get_all_vars_for_handle(handle: int) -> list[Any]
+  - iter_handles_and_vars() -> Iterable[tuple[int, list[Any]]]
+  - get_var_bitwidth(handle: int) -> int
+  - get_time_table() -> Any
+  - get_timescale() -> Timescale
 
-### Specific Requirements
-1. Define a typed Protocol interface for WaveformDB operations
-2. Replace all `_var_map` direct access with proper API calls  
-3. Remove `hasattr` branches throughout the codebase
-4. Maintain backward compatibility during migration
-5. Enable proper unit testing with mockable interfaces
+Notes:
+- Iteration return type is Iterable[...] so existing List return conforms.
+- Optionally expose has_handle(handle: int) -> bool if needed later; not required for this refactor.
 
-### Performance Requirements
-- No performance degradation from additional abstraction layer
-- Maintain O(1) lookup performance for handle-based operations
-- Preserve existing caching mechanisms
+## Minimal WaveformDB additions
+- File: wavescout/waveform_db.py
+- Add helpers that wrap existing mappings (O(1)):
+  - find_handle_by_path(path: str) -> Optional[int]
+    - Implementation: try find_handle_by_name(path); if None and no dot in path, try "TOP." + path; return Optional[int].
+  - get_var_bitwidth(handle: int) -> int
+    - Implementation: use first var from get_all_vars_for_handle(handle); if var has bitwidth(), return it; else 32.
+  - (Optional) has_handle(handle: int) -> bool: return handle in _var_map.
 
-## Codebase Research
+## Refactors (direct and limited)
+- wavescout/design_tree_view.py
+  - _find_signal_handle: replace private lookups with waveform_db.find_handle_by_path(full_path).
+  - Where handle-by-var is needed, call waveform_db.get_handle_for_var(var) (the protocol guarantees it). Remove hasattr guards for these protocol methods only.
 
-### Files Requiring Direct Refactoring
-- **`wavescout/design_tree_view.py`** (lines 261-269): Direct `_var_map` access for signal lookup
-- **`wavescout/waveform_item_model.py`** (lines 168-169): Direct `_var_map` access for bitwidth
-- **`wavescout/signal_sampling.py`** (lines 180-181): Direct `_var_map` access for bitwidth
-- **`tests/test_data_format.py`** (line 210): Test accessing private `_var_map`
+- wavescout/waveform_item_model.py
+  - _value_at_cursor: replace `_var_map` bitwidth logic with db.get_var_bitwidth(node.handle).
 
-### Files with hasattr Checks
-- **`wavescout/persistence.py`**: 6 hasattr checks
-- **`wavescout/design_tree_view.py`**: 5 hasattr checks  
-- **`wavescout/scope_tree_model.py`**: 3 hasattr checks
-- **`wavescout/design_tree_model.py`**: 2 hasattr checks
-- **`scout.py`**: 1 hasattr check
+- wavescout/signal_sampling.py
+  - generate_signal_draw_commands: replace `_var_map` bitwidth logic with waveform_db.get_var_bitwidth(signal.handle).
 
-### Current WaveformDB Public API
-Already provides most needed methods:
-- `find_handle_by_name(name)` - Find handle by signal name
-- `get_handle_for_var(var)` - Get handle for a variable
-- `get_var(handle)` - Get first variable for handle
-- `get_all_vars_for_handle(handle)` - Get all variables (aliases)
-- `iter_handles_and_vars()` - Iterate handle/var pairs
-- `get_time_table()` - Get time table
-- `get_timescale()` - Get timescale information
+- wavescout/design_tree_model.py
+  - _build_hierarchy: rely on iter_handles_and_vars() without hasattr guard; it is required by the protocol. Do not change hierarchy-related logic.
 
-## Data Model Design
+## Do NOT change (explicitly out of scope)
+- Do not remove hasattr checks that protect hierarchy traversal or optional persistence helpers (e.g., add_var_with_handle) in persistence.py, scope_tree_model.py, or elsewhere. These concerns are not part of this UI-facing protocol.
 
-No changes required to `data_model.py` - this feature focuses on the database interface layer, not the view model.
+## Type hints
+- Where UI components accept a DB, type them as WaveformDBProtocol (import from wavescout.protocols). Concrete WaveformDB will conform.
 
-## Implementation Planning
+## Algorithms (concise)
+- find_handle_by_path
+  - First try _var_name_to_handle via find_handle_by_name(path).
+  - If not found and path lacks a dot, try "TOP." + path.
+  - Return Optional[int].
+- get_var_bitwidth
+  - vars = get_all_vars_for_handle(handle); if vars and hasattr(vars[0], "bitwidth"), return vars[0].bitwidth(); else 32.
 
-### File-by-File Changes
+## Tests
+- Update tests/test_data_format.py: stop reading db._var_map; instead iterate via db.iter_handles_and_vars() and use db.get_var_bitwidth(handle).
+- Add tests/test_waveformdb_protocol.py to cover:
+  - WaveformDB provides all protocol methods.
+  - find_handle_by_path behavior with and without TOP prefix.
+  - get_var_bitwidth defaults and normal cases.
 
-#### 1. Create Protocol Definition
-**File Path**: `wavescout/protocols.py` (NEW)
-- **Classes to Add**: `WaveformDBProtocol` 
-- **Nature of Changes**: Define Protocol class with all required method signatures
-- **Integration Points**: Will be imported by all components that accept WaveformDB
+## Performance
+- All helpers delegate to existing O(1) maps and caches. No extra data structures. Overhead is a single method call.
 
-#### 2. Enhance WaveformDB Public API
-**File Path**: `wavescout/waveform_db.py`
-- **Functions to Add**:
-  - `has_handle(handle) -> bool` - Check if handle exists
-  - `find_handle_by_path(path) -> Optional[SignalHandle]` - Find by full path with TOP prefix handling
-  - `get_var_bitwidth(handle) -> int` - Get signal bitwidth with default
-- **Nature of Changes**: Add public methods that encapsulate `_var_map` access patterns
-- **Integration Points**: Used by UI components to replace direct access
-
-#### 3. Refactor Direct Access Points
-**File Path**: `wavescout/design_tree_view.py`
-- **Functions to Modify**: `_find_signal_handle()`
-- **Nature of Changes**: Replace `self.waveform_db._var_map[path]` with `self.waveform_db.find_handle_by_path(path)`
-- **Integration Points**: Called during signal selection and drag-drop operations
-
-**File Path**: `wavescout/waveform_item_model.py`  
-- **Functions to Modify**: `data()` method in Qt model
-- **Nature of Changes**: Replace `db._var_map[node.handle]` with `db.get_var_bitwidth(node.handle)`
-- **Integration Points**: Used for displaying signal values in the waveform view
-
-**File Path**: `wavescout/signal_sampling.py`
-- **Functions to Modify**: `sample_analog_signal()`
-- **Nature of Changes**: Replace `waveform_db._var_map[signal.handle]` with `waveform_db.get_var_bitwidth(signal.handle)`
-- **Integration Points**: Used during analog signal rendering
-
-#### 4. Remove hasattr Checks
-**File Path**: `wavescout/persistence.py`
-- **Functions to Modify**: `save_session()`, `load_session()`
-- **Nature of Changes**: Remove all hasattr checks, rely on protocol methods existing
-- **Integration Points**: Session save/load functionality
-
-**File Path**: `wavescout/design_tree_view.py`
-- **Functions to Modify**: `_create_signal_from_node()`, `_drop_selected_items()`
-- **Nature of Changes**: Remove hasattr checks for `get_handle_for_var`, `iter_handles_and_vars`, `get_var`
-- **Integration Points**: Signal creation and drag-drop operations
-
-**File Path**: `wavescout/scope_tree_model.py`
-- **Functions to Modify**: `set_waveform_db()`, `rowCount()`, `_rebuild_cache()`
-- **Nature of Changes**: Remove hasattr checks for `hierarchy` attribute
-- **Integration Points**: Scope tree population
-
-**File Path**: `wavescout/design_tree_model.py`
-- **Functions to Modify**: `_rebuild_model()`
-- **Nature of Changes**: Remove hasattr checks for `hierarchy` and `iter_handles_and_vars`
-- **Integration Points**: Design tree model population
-
-#### 5. Update Type Hints
-**File Path**: Multiple files using WaveformDB
-- **Nature of Changes**: Update type hints from `WaveformDB` to `WaveformDBProtocol` where appropriate
-- **Integration Points**: Improves type checking and IDE support
-
-### Algorithm Descriptions
-
-#### Handle Lookup Algorithm (find_handle_by_path)
-1. Check if the path exists directly in `_var_map`
-2. If not found, prepend "TOP." and check again
-3. Return the handle if found, None otherwise
-4. This preserves existing behavior while encapsulating the implementation
-
-#### Bitwidth Extraction Algorithm (get_var_bitwidth)
-1. Get all variables for the given handle
-2. If variables exist and first has bitwidth() method, call it
-3. Otherwise return default value of 32
-4. This standardizes bitwidth retrieval across the codebase
-
-## Performance Considerations
-
-### Cache Preservation
-- All existing caching mechanisms remain unchanged
-- Protocol adds no overhead beyond a virtual function call
-- Direct dictionary lookups in `_var_map` replaced with method calls that do the same lookup
-
-### Memory Usage
-- Protocol definition adds minimal memory overhead (class definition only)
-- No additional data structures or caching layers introduced
-
-## Testing Strategy
-
-### Unit Tests
-1. Create `tests/test_waveformdb_protocol.py`:
-   - Test WaveformDB implements all protocol methods
-   - Test new public methods with edge cases
-   - Test handle lookup with and without TOP prefix
-
-2. Create mock implementation:
-   - `tests/mocks/mock_waveformdb.py` implementing protocol
-   - Use for testing UI components in isolation
-
-### Integration Tests
-1. Update existing tests to use public API:
-   - `tests/test_data_format.py` - Remove `_var_map` access
-   - Add tests for refactored components
-
-2. Edge case testing:
-   - Missing signals
-   - Invalid handles  
-   - Empty database
-   - Aliased signals
+## Rollout steps
+1) Add wavescout/protocols.py with WaveformDBProtocol.  
+2) Implement find_handle_by_path and get_var_bitwidth in WaveformDB (plus optional has_handle).  
+3) Refactor the three direct `_var_map` usages and limited hasattr checks as listed above.  
+4) Update type hints to WaveformDBProtocol in UI entry points.  
+5) Fix tests to use public API and add protocol coverage.
