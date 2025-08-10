@@ -1099,3 +1099,91 @@ def test_signal_rename_and_persistence(qtbot):
             f"Expected loaded nickname 'SignalB', got {loaded_paddr.nickname}"
     
     widget.close()
+
+
+def test_group_rename_functionality(qtbot):
+    """
+    Test that groups can be renamed via context menu.
+    
+    This test verifies that:
+    1. Groups can be renamed with a nickname
+    2. Group nicknames persist in session YAML
+    3. Group nicknames are restored when loading sessions
+    """
+    helper = WaveScoutTestHelper()
+    vcd_path = TestPaths.APB_SIM_VCD
+    assert vcd_path.exists(), f"VCD not found: {vcd_path}"
+    
+    # Create session and widget
+    session = create_sample_session(str(vcd_path))
+    widget = WaveScoutWidget()
+    widget.resize(1200, 800)
+    widget.setSession(session)
+    qtbot.addWidget(widget)
+    widget.show()
+    qtbot.waitExposed(widget)
+    
+    # Add signals to session
+    db = session.waveform_db
+    assert db is not None and db.hierarchy is not None
+    
+    signal_patterns = {
+        "prdata": ("apb_testbench.prdata", None),
+        "paddr": ("apb_testbench.paddr", None),
+    }
+    
+    found_nodes = helper.add_signals_to_session(db, session, db.hierarchy, signal_patterns)
+    assert "prdata" in found_nodes
+    assert "paddr" in found_nodes
+    
+    # Create a group node
+    from wavescout.data_model import SignalNode
+    group_node = SignalNode(
+        name="Test Group",
+        is_group=True,
+        children=[found_nodes["prdata"], found_nodes["paddr"]]
+    )
+    
+    # Set parent references
+    found_nodes["prdata"].parent = group_node
+    found_nodes["paddr"].parent = group_node
+    
+    # Replace individual nodes with group in session
+    session.root_nodes = [group_node]
+    
+    # Notify model about changes
+    if widget.model:
+        widget.model.layoutChanged.emit()
+    qtbot.wait(50)
+    
+    # Set nickname for the group
+    group_node.nickname = "MyCustomGroup"
+    
+    # Verify nickname is set
+    assert group_node.nickname == "MyCustomGroup"
+    
+    # Verify persistence in YAML
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yaml_path = Path(tmpdir) / "test_group_rename.yaml"
+        
+        def verify_group_nickname(data):
+            nodes = data.get("root_nodes", [])
+            assert len(nodes) > 0, "No root nodes found in YAML"
+            
+            group_yaml = nodes[0]  # Should be our group
+            assert group_yaml.get("is_group") is True, "First node should be a group"
+            assert group_yaml.get("nickname") == "MyCustomGroup", \
+                f"Expected group nickname 'MyCustomGroup', got {group_yaml.get('nickname')}"
+        
+        helper.save_and_verify_yaml(session, yaml_path, verify_group_nickname)
+        
+        # Load session and verify nickname is restored
+        loaded_session = load_session(yaml_path)
+        assert len(loaded_session.root_nodes) > 0, "No root nodes in loaded session"
+        
+        loaded_group = loaded_session.root_nodes[0]
+        assert loaded_group.is_group, "First node should be a group"
+        assert loaded_group.nickname == "MyCustomGroup", \
+            f"Expected loaded group nickname 'MyCustomGroup', got {loaded_group.nickname}"
+    
+    widget.close()

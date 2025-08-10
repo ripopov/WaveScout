@@ -128,12 +128,23 @@ class SignalNamesView(BaseColumnView):
             
         # Get the signal node
         node = self.model().data(index, Qt.ItemDataRole.UserRole)
-        if not isinstance(node, SignalNode) or node.is_group:
+        if not isinstance(node, SignalNode):
             return
             
         # Create context menu
         menu = QMenu(self)
         
+        # For groups, only show rename action
+        if node.is_group:
+            rename_action = QAction("Rename", self)
+            rename_action.triggered.connect(self._rename_selected_signal)
+            menu.addAction(rename_action)
+            
+            # Show the menu at the cursor position
+            menu.exec(self.viewport().mapToGlobal(position))
+            return
+        
+        # For signals, show all options
         # Add data format submenu
         format_menu = menu.addMenu("Data Format")
         
