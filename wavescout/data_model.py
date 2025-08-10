@@ -36,7 +36,7 @@ Displayed signals can be grouped into a tree structure. So WaveformSession is a 
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Any, ClassVar
+from typing import List, Optional, Any, ClassVar, Dict, Tuple
 from enum import Enum
 
 Time = int  # In Timescale units
@@ -246,6 +246,13 @@ class AnalysisMode:
     mode: str = "none"  # 'none' | 'min' | 'max' | 'avg' | 'range_min' | 'range_max' | 'cursor_delta'
     range_start: Optional[Time] = None  # For range-based analysis
     range_end: Optional[Time] = None
+
+@dataclass
+class SignalRangeCache:
+    """Cache for analog signal min/max ranges."""
+    min: float  # Min value across all time
+    max: float  # Max value across all time
+    viewport_ranges: Dict[Tuple[Time, Time], Tuple[float, float]] = field(default_factory=dict)  # Cached viewport ranges
 
 @dataclass
 class WaveformSession:

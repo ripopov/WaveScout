@@ -24,12 +24,11 @@ and sampling code; it contains no widget logic.
 from typing import Dict, Tuple, Optional, Union, TypedDict
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPolygonF
 from PySide6.QtCore import Qt, QPointF
-from .data_model import RenderType, Time, AnalogScalingMode, SignalHandle, SignalNodeID, DisplayFormat, SignalNode
+from .data_model import RenderType, Time, AnalogScalingMode, SignalHandle, SignalNodeID, DisplayFormat, SignalNode, SignalRangeCache
 from .signal_sampling import SignalDrawingData, ValueKind
 from .config import RENDERING, COLORS
 import math
 from .protocols import WaveformDBProtocol
-from .waveform_canvas import SignalRangeCache
 
 # Type definitions for node_info and params dictionaries
 class NodeInfo(TypedDict):
@@ -526,8 +525,6 @@ def get_signal_range(instance_id: SignalNodeID, handle: SignalHandle,
     Returns:
         (min_val, max_val) range for mapping values to Y.
     """
-    from .waveform_canvas import SignalRangeCache
-    
     # Get or create cache entry for this signal instance
     if instance_id not in signal_range_cache:
         signal_range_cache[instance_id] = SignalRangeCache(

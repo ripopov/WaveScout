@@ -1,9 +1,10 @@
 """Optimized waveform canvas widget with offline rendering pipeline."""
 
 from PySide6.QtWidgets import QWidget, QScrollBar
-from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer, QRectF
-from PySide6.QtGui import QPainter, QPen, QColor, QFont, QFontMetrics, QImage
-from typing import List, Tuple, Dict, Optional, Any, Union
+from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer, QRectF, QRect
+from PySide6.QtGui import QPainter, QPen, QColor, QFont, QFontMetrics, QImage, QResizeEvent, QPaintEvent, QShowEvent, QMouseEvent, QCloseEvent
+from typing import List, Tuple, Dict, Optional, Union
+from .waveform_item_model import WaveformItemModel
 from dataclasses import dataclass, field
 from .data_model import SignalNode, SignalHandle, SignalNodeID, Time, TimeUnit, TimeRulerConfig, RenderType
 from .signal_sampling import (
@@ -18,14 +19,7 @@ from .config import RENDERING, COLORS
 import time as time_module
 import math
 from .protocols import WaveformDBProtocol
-
-
-@dataclass
-class SignalRangeCache:
-    """Cache for analog signal min/max ranges."""
-    min: float  # Min value across all time
-    max: float  # Max value across all time
-    viewport_ranges: Dict[Tuple[Time, Time], Tuple[float, float]] = field(default_factory=dict)  # Cached viewport ranges
+from .data_model import SignalRangeCache
 
 @dataclass
 class CachedWaveDrawData:
@@ -80,7 +74,7 @@ class WaveformCanvas(QWidget):
 
     cursorMoved = Signal(object)  # Emitted when cursor is moved (using object to handle large integers)
 
-    def __init__(self, model: Any, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, model: Optional[WaveformItemModel], parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._model = model
         self._row_height = RENDERING.DEFAULT_ROW_HEIGHT  # Default/base row height
@@ -195,7 +189,7 @@ class WaveformCanvas(QWidget):
             # Full update needed
             self.update()
         
-    def setModel(self, model: Any) -> None:
+    def setModel(self, model: WaveformItemModel) -> None:
         """Set the data model and connect to its signals."""
         # Disconnect from old model if exists
         if self._model:
@@ -266,15 +260,18 @@ class WaveformCanvas(QWidget):
         
         # Update waveform time boundaries
         self._update_waveform_bounds()
+        
+        # Store model in local variable for type narrowing
+        model = self._model
 
         def add_visible_nodes(parent_index: QModelIndex = QModelIndex(), row_offset: int = 0) -> int:
             """Recursively add visible nodes."""
-            rows = self._model.rowCount(parent_index)
+            rows = model.rowCount(parent_index)
             current_row = row_offset
 
             for row in range(rows):
-                index = self._model.index(row, 0, parent_index)
-                node = self._model.data(index, Qt.ItemDataRole.UserRole)
+                index = model.index(row, 0, parent_index)
+                node = model.data(index, Qt.ItemDataRole.UserRole)
 
                 if node:
                     self._visible_nodes.append(node)
@@ -284,7 +281,7 @@ class WaveformCanvas(QWidget):
                     current_row += 1
 
                     # Add children if expanded
-                    if self._model.hasChildren(index):
+                    if model.hasChildren(index):
                         # Check if node is expanded (from data model)
                         is_expanded = node.is_group and node.is_expanded
 
@@ -323,7 +320,7 @@ class WaveformCanvas(QWidget):
         else:
             self._time_scale = 1.0
 
-    def resizeEvent(self, event: Any) -> None:
+    def resizeEvent(self, event: QResizeEvent) -> None:
         """Handle widget resize with deferred update."""
         super().resizeEvent(event)
         old_width = event.oldSize().width()
@@ -338,7 +335,7 @@ class WaveformCanvas(QWidget):
         self._update_timer.stop()
         self._update_timer.start(RENDERING.UPDATE_TIMER_DELAY)  # delay for smoother resize
         
-    def showEvent(self, event: Any) -> None:
+    def showEvent(self, event: QShowEvent) -> None:
         """Handle widget show event."""
         super().showEvent(event)
         # Trigger initial render when widget is shown
@@ -351,7 +348,7 @@ class WaveformCanvas(QWidget):
             self._pending_update = False
             self.update()
 
-    def paintEvent(self, event: Any) -> None:
+    def paintEvent(self, event: QPaintEvent) -> None:
         """Paint the waveforms with caching."""
         # Start timing
         paint_start_time = time_module.time()
@@ -381,7 +378,7 @@ class WaveformCanvas(QWidget):
         # Draw debug info if enabled
         self._paint_debug_info(painter, is_partial_update)
     
-    def _should_do_partial_update(self, event: Any) -> bool:
+    def _should_do_partial_update(self, event: QPaintEvent) -> bool:
         """Determine if this is a partial update (cursor only)."""
         update_rect = event.rect()
         cursor_region_width = RENDERING.CURSOR_WIDTH + 2 * RENDERING.CURSOR_PADDING + 1
@@ -389,7 +386,7 @@ class WaveformCanvas(QWidget):
                     self._rendered_image and 
                     not self._rendered_image.isNull())
     
-    def _paint_partial_update(self, painter: QPainter, update_rect: Any) -> None:
+    def _paint_partial_update(self, painter: QPainter, update_rect: QRect) -> None:
         """Handle partial update by redrawing only the affected region."""
         if self._rendered_image is not None:
             painter.drawImage(update_rect, self._rendered_image, update_rect)
@@ -441,7 +438,7 @@ class WaveformCanvas(QWidget):
         if self._rendered_image and not self._rendered_image.isNull():
             painter.drawImage(0, 0, self._rendered_image)
     
-    def _paint_overlays(self, painter: QPainter, update_rect: Any, is_partial_update: bool) -> None:
+    def _paint_overlays(self, painter: QPainter, update_rect: QRect, is_partial_update: bool) -> None:
         """Paint overlays on top of waveforms (boundary lines, ruler, cursor)."""
         # Draw boundary lines
         if not is_partial_update:
@@ -454,7 +451,7 @@ class WaveformCanvas(QWidget):
         # Draw cursor
         self._paint_cursor(painter, update_rect, is_partial_update)
     
-    def _paint_cursor(self, painter: QPainter, update_rect: Any, is_partial_update: bool) -> None:
+    def _paint_cursor(self, painter: QPainter, update_rect: QRect, is_partial_update: bool) -> None:
         """Draw the cursor if it's visible."""
         if self._cursor_time >= self._start_time and self._cursor_time <= self._end_time:
             x = int((self._cursor_time - self._start_time) * self.width() / 
@@ -1056,7 +1053,7 @@ class WaveformCanvas(QWidget):
         """Convert x coordinate to time."""
         return int(x / self._time_scale + self._start_time)
         
-    def mousePressEvent(self, event: Any) -> None:
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         """Handle mouse clicks to set cursor."""
         if event.button() == Qt.MouseButton.LeftButton:
             time = self._x_to_time(int(event.position().x()))
@@ -1139,6 +1136,6 @@ class WaveformCanvas(QWidget):
         # Restore painter state
         painter.restore()
     
-    def closeEvent(self, event: Any) -> None:
+    def closeEvent(self, event: QCloseEvent) -> None:
         """Clean up resources when closing."""
         super().closeEvent(event)
