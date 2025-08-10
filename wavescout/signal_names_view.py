@@ -279,8 +279,16 @@ class SignalNamesView(BaseColumnView):
                     self.model().layoutChanged.emit()
                     
     def _set_render_type_with_scaling(self, node: SignalNode, render_type: RenderType, scaling_mode: AnalogScalingMode) -> None:
-        """Set both render type and analog scaling mode for the given signal node."""
+        """Set both render type and analog scaling mode for the given signal node.
+        Additionally, when switching into Analog mode via this context action,
+        set the row height scaling to 3 by default for better analog visibility.
+        This auto-adjustment happens only when transitioning from a non-Analog
+        render type to Analog; users can still change height scaling later.
+        """
         changed = False
+
+        # Track whether we're transitioning into Analog from a different mode
+        entering_analog = (render_type == RenderType.ANALOG and node.format.render_type != RenderType.ANALOG)
         
         if node.format.render_type != render_type:
             node.format.render_type = render_type
@@ -288,6 +296,11 @@ class SignalNamesView(BaseColumnView):
             
         if node.format.analog_scaling_mode != scaling_mode:
             node.format.analog_scaling_mode = scaling_mode
+            changed = True
+        
+        # If we are entering Analog mode, set default height scaling to 3
+        if entering_analog and node.height_scaling != 3:
+            node.height_scaling = 3
             changed = True
             
         if changed:
@@ -302,7 +315,7 @@ class SignalNamesView(BaseColumnView):
                         self.model().index(index.row(), self.model().columnCount() - 1, index.parent()),
                         [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.UserRole]
                     )
-                    # Trigger layout change to refresh rendering
+                    # Trigger layout change to refresh rendering (also updates row heights)
                     self.model().layoutChanged.emit()
     
     def _set_analog_scaling(self, node: SignalNode, scaling_mode: AnalogScalingMode) -> None:
