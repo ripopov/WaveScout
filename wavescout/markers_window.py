@@ -9,7 +9,7 @@ from PySide6.QtCore import Qt, Signal, QModelIndex, QPersistentModelIndex
 from PySide6.QtGui import QColor, QKeyEvent, QCloseEvent, QCursor, QPainter
 from typing import Optional
 from .waveform_controller import WaveformController
-from .config import MARKER_LABELS, COLORS
+from .config import MARKER_LABELS, COLORS, RENDERING
 from .data_model import Marker
 
 
@@ -67,7 +67,7 @@ class MarkersWindow(QDialog):
         layout = QVBoxLayout(self)
         
         # Create table widget
-        self.table = QTableWidget(9, 3)  # 9 rows (A-I), 3 columns
+        self.table = QTableWidget(RENDERING.MAX_MARKERS, 3)  # MAX_MARKERS rows, 3 columns
         self.table.setHorizontalHeaderLabels(["Marker", "Color", "Timestamp"])
         
         # Set custom delegate for color column to prevent selection highlighting
@@ -112,7 +112,7 @@ class MarkersWindow(QDialog):
         """Load markers from controller into table."""
         self.table.blockSignals(True)  # Prevent triggering itemChanged
         
-        for i in range(9):
+        for i in range(RENDERING.MAX_MARKERS):
             # Marker name (read-only)
             name_item = QTableWidgetItem(MARKER_LABELS[i])
             name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)

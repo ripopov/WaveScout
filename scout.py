@@ -14,6 +14,7 @@ from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 # QtAsyncio and asyncio removed - using single-threaded execution
 from wavescout import WaveScoutWidget, create_sample_session, save_session, load_session
 from wavescout.design_tree_view import DesignTreeView
+from wavescout.config import RENDERING
 
 
 class LoaderSignals(QObject):
@@ -701,7 +702,7 @@ class WaveScoutMainWindow(QMainWindow):
         """Add a marker at the current cursor position."""
         if self.wave_widget.controller and self.wave_widget.session:
             # Find the first available marker slot
-            for i in range(9):
+            for i in range(RENDERING.MAX_MARKERS):
                 marker = self.wave_widget.controller.get_marker(i)
                 if not marker:
                     self.wave_widget.controller.add_marker(i, self.wave_widget.session.cursor_time)

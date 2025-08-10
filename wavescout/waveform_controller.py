@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Iterable, Set
 
 from .data_model import WaveformSession, Viewport, SignalNode, Marker, Time
-from .config import COLORS, MARKER_LABELS
+from .config import COLORS, MARKER_LABELS, RENDERING
 
 
 Callback = Callable[[], None]
@@ -197,14 +197,18 @@ class WaveformController:
         else:
             self.add_marker(index, cursor_time)
     
-    def navigate_to_marker(self, index: int, pixel_offset: int = 10, canvas_width: int = 1000) -> None:
+    def navigate_to_marker(self, index: int, pixel_offset: Optional[int] = None, canvas_width: Optional[int] = None) -> None:
         """Navigate viewport to show marker at specified pixel offset from left edge.
         
         Args:
             index: Marker index (0-8)
-            pixel_offset: Distance in pixels from left edge of viewport (default 10)
-            canvas_width: Current canvas width in pixels for accurate offset calculation
+            pixel_offset: Distance in pixels from left edge of viewport (uses MARKER_NAVIGATION_OFFSET if None)
+            canvas_width: Current canvas width in pixels for accurate offset calculation (uses DEFAULT_CANVAS_WIDTH if None)
         """
+        if pixel_offset is None:
+            pixel_offset = RENDERING.MARKER_NAVIGATION_OFFSET
+        if canvas_width is None:
+            canvas_width = RENDERING.DEFAULT_CANVAS_WIDTH
         if not self.session or index < 0 or index >= len(MARKER_LABELS):
             return
         

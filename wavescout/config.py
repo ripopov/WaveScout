@@ -31,6 +31,7 @@ class RenderingConfig:
     
     # Canvas settings
     MIN_CANVAS_WIDTH: int = 400
+    DEFAULT_CANVAS_WIDTH: int = 1000  # Default width for calculations when canvas not yet initialized
     UPDATE_TIMER_DELAY: int = 100  # milliseconds
     MAX_ITERATIONS_SAFETY: int = 10  # multiplier for canvas width
     
@@ -44,6 +45,7 @@ class RenderingConfig:
     # Marker settings
     MARKER_WIDTH: int = 1
     MAX_MARKERS: int = 9
+    MARKER_NAVIGATION_OFFSET: int = 10  # Pixels from left edge when navigating to marker
     
     # Debug display settings
     DEBUG_FONT_FAMILY: str = "Consolas"

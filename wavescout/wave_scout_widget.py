@@ -505,9 +505,9 @@ class WaveScoutWidget(QWidget):
             marker_index = event.key() - Qt.Key.Key_1  # Convert to 0-based index
             if self.controller:
                 # Get actual canvas width for accurate pixel offset calculation
-                canvas_width = self._canvas.width() if self._canvas else 1000
-                # Navigate with 10 pixel offset from left edge
-                self.controller.navigate_to_marker(marker_index, 10, canvas_width)
+                canvas_width = self._canvas.width() if self._canvas else RENDERING.DEFAULT_CANVAS_WIDTH
+                # Navigate with default pixel offset from left edge
+                self.controller.navigate_to_marker(marker_index, None, canvas_width)
             event.accept()
         else:
             super().keyPressEvent(event)
