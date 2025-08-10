@@ -151,6 +151,9 @@ class WaveScoutWidget(QWidget):
             self._selection_model.deleteLater()
             self._selection_model = None
         if hasattr(self, 'model') and self.model:
+            # Call cleanup explicitly before deletion
+            if hasattr(self.model, '_cleanup'):
+                self.model._cleanup()
             self.model.deleteLater()
             self.model = None
     

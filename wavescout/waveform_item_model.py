@@ -19,10 +19,24 @@ class WaveformItemModel(QAbstractItemModel):
         self._session = session
         self._controller = controller
         self._headers = ["Signal", "Value", "Waveform", "Analysis"]
+        self._cleanup_done = False
         
         # Subscribe to controller events
         self._controller.event_bus.subscribe(StructureChangedEvent, self._on_structure_changed)
         self._controller.event_bus.subscribe(FormatChangedEvent, self._on_format_changed)
+        
+        # Connect to destroyed signal for cleanup
+        self.destroyed.connect(self._cleanup)
+    
+    def _cleanup(self) -> None:
+        """Clean up event subscriptions before deletion."""
+        if not self._cleanup_done:
+            self._cleanup_done = True
+            try:
+                self._controller.event_bus.unsubscribe(StructureChangedEvent, self._on_structure_changed)
+                self._controller.event_bus.unsubscribe(FormatChangedEvent, self._on_format_changed)
+            except Exception:
+                pass  # Ignore errors during cleanup
 
     # -- overriding row/column API --
     def columnCount(self, _parent: Union[QModelIndex, QPersistentModelIndex] = QModelIndex()) -> int:
@@ -183,25 +197,39 @@ class WaveformItemModel(QAbstractItemModel):
     
     def _on_structure_changed(self, event: StructureChangedEvent) -> None:
         """Handle structure change events from controller."""
-        # For now, do a full reset. Later we can optimize with fine-grained updates
-        self.beginResetModel()
-        self.endResetModel()
+        # Check if model is still valid before processing
+        if self._cleanup_done:
+            return
+        try:
+            # For now, do a full reset. Later we can optimize with fine-grained updates
+            self.beginResetModel()
+            self.endResetModel()
+        except RuntimeError:
+            # Model already deleted, ignore
+            pass
     
     def _on_format_changed(self, event: FormatChangedEvent) -> None:
         """Handle format change events from controller."""
-        # Find the node and emit dataChanged for it
-        node = self._find_node_by_id(event.node_id)
-        if node:
-            # Check if height changed - if so, we need layoutChanged to update canvas row heights
-            if 'height' in event.changes:
-                # Height changed, need full layout update for canvas to recalculate row positions
-                self.layoutChanged.emit()
-            else:
-                # Find the model index for this node
-                index = self._create_index_for_node(node)
-                if index.isValid():
-                    # Emit dataChanged for all columns
-                    self.dataChanged.emit(index, self.index(index.row(), 3, index.parent()))
+        # Check if model is still valid before processing
+        if self._cleanup_done:
+            return
+        try:
+            # Find the node and emit dataChanged for it
+            node = self._find_node_by_id(event.node_id)
+            if node:
+                # Check if height changed - if so, we need layoutChanged to update canvas row heights
+                if 'height' in event.changes:
+                    # Height changed, need full layout update for canvas to recalculate row positions
+                    self.layoutChanged.emit()
+                else:
+                    # Find the model index for this node
+                    index = self._create_index_for_node(node)
+                    if index.isValid():
+                        # Emit dataChanged for all columns
+                        self.dataChanged.emit(index, self.index(index.row(), 3, index.parent()))
+        except RuntimeError:
+            # Model already deleted, ignore
+            pass
     
     def _find_node_by_id(self, node_id: int) -> Optional[SignalNode]:
         """Find a node by its instance ID."""
