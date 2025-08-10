@@ -8,6 +8,7 @@ from typing import Optional, Any, Union, overload, List, Dict
 from PySide6.QtCore import QAbstractItemModel, QModelIndex, QPersistentModelIndex, Qt, Signal, QObject
 from PySide6.QtGui import QIcon
 from .protocols import WaveformDBProtocol
+from .vars_view import VariableData
 
 from .design_tree_model import DesignTreeNode
 
@@ -126,7 +127,7 @@ class ScopeTreeModel(QAbstractItemModel):
         
         return current_parent
     
-    def get_variables_for_scope(self, scope_node: DesignTreeNode) -> List[Dict[str, Any]]:
+    def get_variables_for_scope(self, scope_node: DesignTreeNode) -> List[VariableData]:
         """Get all variables for a given scope node."""
         if not self.waveform_db or not self.waveform_db.hierarchy:
             return []
@@ -147,16 +148,17 @@ class ScopeTreeModel(QAbstractItemModel):
             return []
         
         # Get variables in this scope
-        variables = []
+        variables: List[VariableData] = []
         if hasattr(scope, 'vars'):
             for var in scope.vars(hierarchy):
-                variables.append({
+                var_data: VariableData = {
                     'name': var.name(hierarchy),
                     'full_path': var.full_name(hierarchy),
                     'var_type': var.var_type() if hasattr(var, 'var_type') else '',
                     'bit_range': self._format_bit_range(var),
                     'var': var
-                })
+                }
+                variables.append(var_data)
         
         return variables
     

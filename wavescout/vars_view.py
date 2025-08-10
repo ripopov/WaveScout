@@ -4,27 +4,35 @@ Variables view widget for split mode in DesignTreeView.
 This widget displays variables in a table format with filtering support.
 """
 
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Union, TypedDict, Any
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QTableView, QLineEdit,
     QAbstractItemView, QHeaderView
 )
 from PySide6.QtCore import (
     Qt, QAbstractTableModel, QModelIndex, QPersistentModelIndex,
-    QSortFilterProxyModel, Signal, QTimer
+    QSortFilterProxyModel, Signal, QTimer, QObject
 )
 from PySide6.QtGui import QKeySequence
+
+# Type definition for variable data dictionary
+class VariableData(TypedDict):
+    name: str
+    full_path: str
+    var_type: str
+    bit_range: str
+    var: Any  # pywellen Var object
 
 
 class VarsModel(QAbstractTableModel):
     """Table model for displaying variables with Name, Type, and Bit Range columns."""
     
-    def __init__(self, parent: Optional[Any] = None) -> None:
+    def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
-        self.variables: List[Dict[str, Any]] = []
+        self.variables: List[VariableData] = []
         self.columns = ["Name", "Type", "Bit Range"]
     
-    def set_variables(self, variables: List[Dict[str, Any]]) -> None:
+    def set_variables(self, variables: List[VariableData]) -> None:
         """Set the list of variables to display."""
         self.beginResetModel()
         self.variables = variables
@@ -42,7 +50,7 @@ class VarsModel(QAbstractTableModel):
             return 0
         return len(self.columns)
     
-    def data(self, index: Union[QModelIndex, QPersistentModelIndex], role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def data(self, index: Union[QModelIndex, QPersistentModelIndex], role: int = Qt.ItemDataRole.DisplayRole) -> Optional[Union[str, VariableData]]:
         """Get data for the given index and role."""
         if not index.isValid() or index.row() >= len(self.variables):
             return None
@@ -67,7 +75,7 @@ class VarsModel(QAbstractTableModel):
         return None
     
     def headerData(self, section: int, orientation: Qt.Orientation,
-                   role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+                   role: int = Qt.ItemDataRole.DisplayRole) -> Optional[str]:
         """Get header data."""
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             if 0 <= section < len(self.columns):
@@ -84,7 +92,7 @@ class VarsModel(QAbstractTableModel):
 class FuzzyFilterProxyModel(QSortFilterProxyModel):
     """Proxy model implementing fuzzy filtering for variables using rapidfuzz."""
     
-    def __init__(self, parent: Optional[Any] = None) -> None:
+    def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self.filter_text = ""
         self.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -139,7 +147,7 @@ class VarsView(QWidget):
     # Signal emitted when variables are selected for addition
     variables_selected = Signal(list)  # List of variable dictionaries
     
-    def __init__(self, parent: Optional[Any] = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         
         self._setup_ui()
@@ -219,7 +227,7 @@ class VarsView(QWidget):
         if var_data:
             self.variables_selected.emit([var_data])
     
-    def set_variables(self, variables: List[Dict[str, Any]]) -> None:
+    def set_variables(self, variables: List[VariableData]) -> None:
         """Set the variables to display.
         Performs a one-time resize-to-contents for secondary columns after data changes,
         then restores interactive mode to avoid expensive recalculations during layout changes.
@@ -251,9 +259,9 @@ class VarsView(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
     
-    def get_selected_variables(self) -> List[Dict[str, Any]]:
+    def get_selected_variables(self) -> List[VariableData]:
         """Get the currently selected variables."""
-        selected: List[Dict[str, Any]] = []
+        selected: List[VariableData] = []
         selection = self.table_view.selectionModel()
         
         if not selection:
@@ -266,7 +274,7 @@ class VarsView(QWidget):
                     self.vars_model.index(source_index.row(), 0),
                     Qt.ItemDataRole.UserRole
                 )
-                if var_data:
+                if var_data and isinstance(var_data, dict):  # Type guard for VariableData
                     selected.append(var_data)
         
         return selected

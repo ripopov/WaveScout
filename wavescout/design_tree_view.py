@@ -7,7 +7,7 @@ A standalone widget providing two viewing modes for the design hierarchy:
 """
 
 from enum import Enum
-from typing import Optional, List, Any, cast, TYPE_CHECKING, Dict
+from typing import Optional, List, Any, cast, TYPE_CHECKING
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeView, QPushButton,
     QLabel, QStackedWidget, QSplitter, QLineEdit, QTableView,
@@ -21,8 +21,8 @@ from .data_model import SignalNode, RenderType, DisplayFormat, SignalHandle
 from .scope_tree_model import ScopeTreeModel
 from .vars_view import VarsView
 
-if TYPE_CHECKING:
-    from .protocols import WaveformDBProtocol
+from .protocols import WaveformDBProtocol
+from .vars_view import VariableData
 
 
 class DesignTreeViewMode(Enum):
@@ -366,7 +366,7 @@ class DesignTreeView(QWidget):
         if self.vars_view:
             self.vars_view.set_variables(variables)
     
-    def _on_variables_selected(self, var_data_list: List[Dict[str, Any]]) -> None:
+    def _on_variables_selected(self, var_data_list: List[VariableData]) -> None:
         """Handle variables selected from VarsView."""
         signal_nodes = []
         for var_data in var_data_list:
@@ -400,7 +400,7 @@ class DesignTreeView(QWidget):
                 is_single_bit = True
         return is_single_bit
     
-    def _create_signal_node_from_var(self, var_data: Dict[str, Any]) -> Optional[SignalNode]:
+    def _create_signal_node_from_var(self, var_data: 'VariableData') -> Optional[SignalNode]:
         """Create a SignalNode from variable data."""
         if not var_data or not self.waveform_db:
             return None
