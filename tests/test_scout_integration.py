@@ -10,15 +10,16 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional, List, Tuple, Callable
+from unittest.mock import patch, MagicMock
 
 import pytest
 import yaml
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QInputDialog
 from PySide6.QtCore import Qt, QModelIndex, QItemSelection
 from PySide6.QtCore import QItemSelectionModel
 from PySide6.QtTest import QTest
 
-from wavescout import create_sample_session, WaveScoutWidget, save_session
+from wavescout import create_sample_session, WaveScoutWidget, save_session, load_session
 from wavescout.waveform_loader import create_signal_node_from_wellen
 from wavescout.design_tree_view import DesignTreeViewMode
 
@@ -946,5 +947,155 @@ def test_analog_scale_visible_menu_integration(qtbot):
                 f"Expected analog_scaling_mode 'scale_to_visible', got {format_data.get('analog_scaling_mode')}"
         
         helper.save_and_verify_yaml(session, yaml_path, verify_analog_scale_visible)
+
+
+def test_signal_rename_and_persistence(qtbot):
+    """
+    Test signal renaming functionality and persistence in session YAML.
     
-    window.close()
+    This test verifies that:
+    1. Signals can be renamed with a nickname through the UI
+    2. Nicknames are displayed in the SignalNames view
+    3. Nicknames persist when saving sessions to YAML
+    4. Nicknames are restored correctly when loading sessions
+    
+    Test scenario:
+    1. Create WaveScoutWidget and load apb_sim.vcd
+    2. Add two signals to the wave widget
+    3. Rename signals with nicknames using the API
+    4. Save session to YAML file
+    5. Verify YAML contains the nicknames
+    6. Load the saved session
+    7. Verify nicknames are displayed correctly
+    """
+    helper = WaveScoutTestHelper()
+    vcd_path = TestPaths.APB_SIM_VCD
+    assert vcd_path.exists(), f"VCD not found: {vcd_path}"
+    
+    # Create session and widget
+    session = create_sample_session(str(vcd_path))
+    widget = WaveScoutWidget()
+    widget.resize(1200, 800)
+    widget.setSession(session)
+    qtbot.addWidget(widget)
+    widget.show()
+    qtbot.waitExposed(widget)
+    
+    # Add specific signals to session
+    db = session.waveform_db
+    assert db is not None and db.hierarchy is not None
+    
+    signal_patterns = {
+        "prdata": ("apb_testbench.prdata", None),
+        "paddr": ("apb_testbench.paddr", None),
+    }
+    
+    found_nodes = helper.add_signals_to_session(db, session, db.hierarchy, signal_patterns)
+    assert "prdata" in found_nodes, "apb_testbench.prdata not found in VCD"
+    assert "paddr" in found_nodes, "apb_testbench.paddr not found in VCD"
+    
+    # Notify model about changes
+    if widget.model:
+        widget.model.layoutChanged.emit()
+    qtbot.wait(50)
+    
+    # Set nicknames for the signals
+    prdata_node = found_nodes["prdata"]
+    paddr_node = found_nodes["paddr"]
+    
+    # Test direct nickname assignment
+    prdata_node.nickname = "SignalA"
+    paddr_node.nickname = "SignalB"
+    
+    # Verify nicknames are set
+    assert prdata_node.nickname == "SignalA"
+    assert paddr_node.nickname == "SignalB"
+    
+    # Notify model about changes
+    if widget.model:
+        widget.model.dataChanged.emit(
+            widget.model.index(0, 0),
+            widget.model.index(widget.model.rowCount() - 1, widget.model.columnCount() - 1),
+            [Qt.ItemDataRole.DisplayRole]
+        )
+    qtbot.wait(50)
+    
+    # Test rename through UI with mocked dialog
+    names_view = widget._names_view
+    
+    # Select the first signal
+    sel_model = names_view.selectionModel()
+    if sel_model and widget.model:
+        # Find index for prdata_node
+        prdata_index = None
+        for row in range(widget.model.rowCount()):
+            idx = widget.model.index(row, 0)
+            node = widget.model.data(idx, Qt.ItemDataRole.UserRole)
+            if node == prdata_node:
+                prdata_index = idx
+                break
+        
+        if prdata_index:
+            # Select the signal
+            sel_model.select(prdata_index, QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows)
+            
+            # Mock QInputDialog to return a new nickname automatically
+            with patch.object(QInputDialog, 'getText', return_value=("TestNickname", True)):
+                # Test keyboard shortcut (R key)
+                QTest.keyClick(names_view, Qt.Key.Key_R)
+                qtbot.wait(50)
+            
+            # Verify that the rename was applied through the dialog
+            assert prdata_node.nickname == "TestNickname", "Nickname should be updated via dialog"
+            
+            # Reset nickname back to "SignalA" for YAML verification
+            prdata_node.nickname = "SignalA"
+    
+    # Verify persistence in YAML
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yaml_path = Path(tmpdir) / "test_rename_signals.yaml"
+        
+        def verify_nicknames(data):
+            nodes = data.get("root_nodes", [])
+            
+            # Find prdata node
+            prdata_yaml = next(
+                (n for n in nodes if n.get("name", "").endswith("apb_testbench.prdata")),
+                None
+            )
+            assert prdata_yaml is not None, "prdata node not found in saved YAML"
+            assert prdata_yaml.get("nickname") == "SignalA", \
+                f"Expected nickname 'SignalA', got {prdata_yaml.get('nickname')}"
+            
+            # Find paddr node
+            paddr_yaml = next(
+                (n for n in nodes if n.get("name", "").endswith("apb_testbench.paddr")),
+                None
+            )
+            assert paddr_yaml is not None, "paddr node not found in saved YAML"
+            assert paddr_yaml.get("nickname") == "SignalB", \
+                f"Expected nickname 'SignalB', got {paddr_yaml.get('nickname')}"
+        
+        helper.save_and_verify_yaml(session, yaml_path, verify_nicknames)
+        
+        # Now test loading the session and verifying nicknames are restored
+        loaded_session = load_session(yaml_path)
+        
+        # Check that nicknames are present in loaded session
+        loaded_prdata = next(
+            (n for n in loaded_session.root_nodes if n.name.endswith("apb_testbench.prdata")),
+            None
+        )
+        assert loaded_prdata is not None, "prdata node not found in loaded session"
+        assert loaded_prdata.nickname == "SignalA", \
+            f"Expected loaded nickname 'SignalA', got {loaded_prdata.nickname}"
+        
+        loaded_paddr = next(
+            (n for n in loaded_session.root_nodes if n.name.endswith("apb_testbench.paddr")),
+            None
+        )
+        assert loaded_paddr is not None, "paddr node not found in loaded session"
+        assert loaded_paddr.nickname == "SignalB", \
+            f"Expected loaded nickname 'SignalB', got {loaded_paddr.nickname}"
+    
+    widget.close()

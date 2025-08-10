@@ -1,8 +1,8 @@
 """Signal names tree view for the WaveScout widget."""
 
-from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate, QWidget, QStyleOptionViewItem
+from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate, QWidget, QStyleOptionViewItem, QInputDialog
 from PySide6.QtCore import Qt, Signal, QModelIndex, QAbstractItemModel, QPoint, QSize
-from PySide6.QtGui import QAction, QActionGroup
+from PySide6.QtGui import QAction, QActionGroup, QKeyEvent
 from typing import List, Optional, Callable, Union
 from PySide6.QtCore import QPersistentModelIndex
 from .data_model import SignalNode, RenderType, AnalogScalingMode, DataFormat
@@ -95,6 +95,18 @@ class SignalNamesView(BaseColumnView):
         for idx in sel_model.selectedRows(0):
             n = self.model().data(idx, Qt.ItemDataRole.UserRole)
             if isinstance(n, SignalNode) and not n.is_group:
+                nodes.append(n)
+        return nodes
+
+    def _get_all_selected_nodes(self) -> List[SignalNode]:
+        """Return a list of all selected SignalNode items (including groups)."""
+        nodes: List[SignalNode] = []
+        sel_model = self.selectionModel()
+        if not sel_model:
+            return nodes
+        for idx in sel_model.selectedRows(0):
+            n = self.model().data(idx, Qt.ItemDataRole.UserRole)
+            if isinstance(n, SignalNode):
                 nodes.append(n)
         return nodes
 
@@ -194,6 +206,14 @@ class SignalNamesView(BaseColumnView):
             ))
             render_group.addAction(analog_visible_action)
             render_menu.addAction(analog_visible_action)
+        
+        # Add separator before rename action
+        menu.addSeparator()
+        
+        # Add rename action
+        rename_action = QAction("Rename", self)
+        rename_action.triggered.connect(self._rename_selected_signal)
+        menu.addAction(rename_action)
         
         # Add height scaling submenu
         height_menu = menu.addMenu("Set Height Scaling")
@@ -358,3 +378,52 @@ class SignalNamesView(BaseColumnView):
                     return child_index
                     
         return QModelIndex()
+    
+    def _rename_selected_signal(self) -> None:
+        """Rename the first selected signal or group with a user-defined nickname."""
+        # Get all selected nodes (including groups)
+        nodes = self._get_all_selected_nodes()
+        if not nodes:
+            return
+        
+        # Take the first selected node
+        node = nodes[0]
+        
+        # Prepare dialog
+        current_nickname = node.nickname if node.nickname else ""
+        signal_name = node.name
+        
+        # Show input dialog
+        new_nickname, ok = QInputDialog.getText(
+            self,
+            "Rename Signal",
+            f"Enter nickname for '{signal_name}':",
+            text=current_nickname
+        )
+        
+        if ok:
+            # Update the nickname (empty string clears the nickname)
+            node.nickname = new_nickname if new_nickname else ""
+            
+            # Notify the model that the data has changed
+            if self.model():
+                # Find the index for this node
+                index = self._find_node_index(node)
+                if index.isValid():
+                    # Emit dataChanged for all columns to update all views
+                    self.model().dataChanged.emit(
+                        self.model().index(index.row(), 0, index.parent()),
+                        self.model().index(index.row(), self.model().columnCount() - 1, index.parent()),
+                        [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.UserRole]
+                    )
+    
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Handle key press events."""
+        # Check for 'R' or 'r' key
+        if event.key() == Qt.Key.Key_R and not event.modifiers():
+            # Trigger rename for selected signal
+            self._rename_selected_signal()
+            event.accept()
+        else:
+            # Pass to parent for default handling
+            super().keyPressEvent(event)
