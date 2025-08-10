@@ -4,9 +4,10 @@ Scope-only tree model for split mode in DesignTreeView.
 This model filters out variables and shows only scopes (modules) in the hierarchy.
 """
 
-from typing import Optional, Any, Union, overload
+from typing import Optional, Any, Union, overload, List, Dict
 from PySide6.QtCore import QAbstractItemModel, QModelIndex, QPersistentModelIndex, Qt, Signal, QObject
 from PySide6.QtGui import QIcon
+from .protocols import WaveformDBProtocol
 
 from .design_tree_model import DesignTreeNode
 
@@ -17,7 +18,7 @@ class ScopeTreeModel(QAbstractItemModel):
     # Signal emitted when scope selection changes
     scope_selected = Signal(str)  # Emits the full path of the selected scope
     
-    def __init__(self, waveform_db=None, parent=None):
+    def __init__(self, waveform_db: Optional[WaveformDBProtocol] = None, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self.waveform_db = waveform_db
         self.root_node: Optional[DesignTreeNode] = None
@@ -27,7 +28,7 @@ class ScopeTreeModel(QAbstractItemModel):
         if waveform_db:
             self.load_hierarchy(waveform_db)
     
-    def _create_icon(self):
+    def _create_icon(self) -> None:
         """Create icon for scope nodes - matching the unified mode design."""
         from PySide6.QtGui import QPixmap, QPainter, QColor
         from PySide6.QtWidgets import QApplication
@@ -55,7 +56,7 @@ class ScopeTreeModel(QAbstractItemModel):
             print(f"Failed to create scope icon: {e}")
             self._scope_icon = None
     
-    def load_hierarchy(self, waveform_db):
+    def load_hierarchy(self, waveform_db: WaveformDBProtocol) -> None:
         """Load the hierarchy from waveform database, filtering to show only scopes."""
         self.beginResetModel()
         self.waveform_db = waveform_db
@@ -66,7 +67,7 @@ class ScopeTreeModel(QAbstractItemModel):
         
         self.endResetModel()
     
-    def _build_scope_hierarchy(self):
+    def _build_scope_hierarchy(self) -> None:
         """Build the scope-only tree from the waveform database hierarchy."""
         if not self.waveform_db or not self.waveform_db.hierarchy:
             return
@@ -79,7 +80,7 @@ class ScopeTreeModel(QAbstractItemModel):
         # Build hierarchy from top scopes
         self._build_scope_recursive(hierarchy.top_scopes(), self.root_node, hierarchy)
     
-    def _build_scope_recursive(self, scopes, parent_node, hierarchy):
+    def _build_scope_recursive(self, scopes: Any, parent_node: DesignTreeNode, hierarchy: Any) -> None:
         """Recursively build scope nodes."""
         for scope in scopes:
             # Create node for this scope
@@ -99,7 +100,7 @@ class ScopeTreeModel(QAbstractItemModel):
                 if child_scopes:
                     self._build_scope_recursive(child_scopes, scope_node, hierarchy)
     
-    def _create_parent_nodes(self, path_parts, scope_map):
+    def _create_parent_nodes(self, path_parts: List[str], scope_map: Dict[str, DesignTreeNode]) -> Optional[DesignTreeNode]:
         """Create parent nodes for a given path."""
         current_parent = self.root_node
         current_path = "TOP"
@@ -125,7 +126,7 @@ class ScopeTreeModel(QAbstractItemModel):
         
         return current_parent
     
-    def get_variables_for_scope(self, scope_node):
+    def get_variables_for_scope(self, scope_node: DesignTreeNode) -> List[Dict[str, Any]]:
         """Get all variables for a given scope node."""
         if not self.waveform_db or not self.waveform_db.hierarchy:
             return []
@@ -134,7 +135,7 @@ class ScopeTreeModel(QAbstractItemModel):
         
         # Build the scope path from the node
         path_parts = []
-        current = scope_node
+        current: Optional[DesignTreeNode] = scope_node
         while current and current != self.root_node:
             path_parts.append(current.name)
             current = current.parent
@@ -159,7 +160,7 @@ class ScopeTreeModel(QAbstractItemModel):
         
         return variables
     
-    def _find_scope_by_path(self, path_parts, hierarchy):
+    def _find_scope_by_path(self, path_parts: List[str], hierarchy: Any) -> Any:
         """Find a scope by its path parts."""
         if not path_parts:
             return None
@@ -184,7 +185,7 @@ class ScopeTreeModel(QAbstractItemModel):
         
         return current_scope
     
-    def _format_bit_range(self, var) -> str:
+    def _format_bit_range(self, var: Any) -> str:
         """Format the bit range for display."""
         # Try to get bitwidth using the same method as DesignTreeModel
         if hasattr(var, 'bitwidth'):

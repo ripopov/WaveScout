@@ -1,11 +1,11 @@
 """Helper functions to load waveforms and create signal nodes."""
 
-from typing import List, Dict
+from typing import List, Dict, Any
 from .data_model import SignalNode, SignalHandle, DisplayFormat, DataFormat, WaveformSession, RenderType
 from .waveform_db import WaveformDB
 
 
-def create_signal_node_from_wellen(var, hierarchy, handle: SignalHandle) -> SignalNode:
+def create_signal_node_from_wellen(var: Any, hierarchy: Any, handle: SignalHandle) -> SignalNode:
     """Create a SignalNode from a Wellen variable."""
     # Get variable info
     full_name = var.full_name(hierarchy)
@@ -60,7 +60,9 @@ def create_sample_session(vcd_path: str) -> WaveformSession:
     db.open(vcd_path)
     session = WaveformSession()
     session.waveform_db = db
-    session.timescale = db.get_timescale()
+    timescale = db.get_timescale()
+    if timescale:
+        session.timescale = timescale
     
     # Set the total duration from the waveform's time table
     time_table = db.get_time_table()

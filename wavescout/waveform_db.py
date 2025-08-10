@@ -15,7 +15,7 @@ except ImportError:
 class WaveformDB:
     """Waveform database using Wellen library for reading VCD/FST files."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.waveform: Optional[Waveform] = None
         self.hierarchy: Optional[Hierarchy] = None
         self.uri: Optional[str] = None
@@ -27,7 +27,7 @@ class WaveformDB:
         self._handle_to_signal_ref: Dict[SignalHandle, int] = {}  # Map our handle to SignalRef
         
     @property
-    def file_path(self):
+    def file_path(self) -> Optional[str]:
         """Get the file path of the opened waveform."""
         return self.uri
         
@@ -66,7 +66,7 @@ class WaveformDB:
         seen_vars = set()
         
         # Recursively collect all variables from the hierarchy
-        def collect_vars_recursive(scope):
+        def collect_vars_recursive(scope: Hierarchy) -> None:
             # Add direct variables from this scope
             for var in scope.vars(self.hierarchy):
                 var_id = id(var)
@@ -120,7 +120,7 @@ class WaveformDB:
             
         handles = []
         # Get variables from all top scopes recursively
-        def collect_vars_recursive(scope):
+        def collect_vars_recursive(scope: Hierarchy) -> None:
             # Add direct variables
             for var in scope.vars(self.hierarchy):
                 for handle, mapped_vars in self._var_map.items():
@@ -182,7 +182,7 @@ class WaveformDB:
         
         return (value_str, query_result.next_time)
         
-    def close(self):
+    def close(self) -> None:
         """Close the waveform file."""
         self.waveform = None
         self.hierarchy = None
@@ -193,7 +193,7 @@ class WaveformDB:
         self._signal_ref_to_handle.clear()
         self._handle_to_signal_ref.clear()
         
-    def _extract_timescale(self):
+    def _extract_timescale(self) -> None:
         """Extract timescale from the hierarchy."""
         if not self.hierarchy:
             return
@@ -213,11 +213,11 @@ class WaveformDB:
                     unit=time_unit
                 )
     
-    def get_timescale(self):
+    def get_timescale(self) -> Optional[Timescale]:
         """Get the timescale of the waveform file."""
         return self._timescale
     
-    def get_metadata(self):
+    def get_metadata(self) -> Dict[str, Optional[object]]:
         """Get metadata about the waveform file."""
         if not self.hierarchy:
             return {}
@@ -278,7 +278,7 @@ class WaveformDB:
         """Get all handle IDs in the database."""
         return list(self._var_map.keys())
     
-    def get_handle_for_var(self, var) -> Optional[SignalHandle]:
+    def get_handle_for_var(self, var: Var) -> Optional[SignalHandle]:
         """Get handle for a specific variable object.
         
         Args:

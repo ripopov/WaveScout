@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import QWidget, QScrollBar
 from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer, QRectF
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QFontMetrics, QImage
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional, Any, Union
 from dataclasses import dataclass, field
 from .data_model import SignalNode, SignalHandle, SignalNodeID, Time, TimeUnit, TimeRulerConfig, RenderType
 from .signal_sampling import (
@@ -16,6 +16,7 @@ from .signal_renderer import (
 from .config import RENDERING, COLORS
 import time as time_module
 import math
+from .protocols import WaveformDBProtocol
 
 
 @dataclass
@@ -48,7 +49,7 @@ class TransitionCache:
             return self.cache[key]
         return None
 
-    def put(self, handle: SignalHandle, start_time: Time, end_time: Time, transitions: List[Tuple[Time, str]]):
+    def put(self, handle: SignalHandle, start_time: Time, end_time: Time, transitions: List[Tuple[Time, str]]) -> None:
         """Store transitions in cache."""
         # Evict old entries if cache is full
         if len(self.cache) >= self.max_entries:
@@ -58,7 +59,7 @@ class TransitionCache:
         self.cache[key] = transitions
         self.access_times[key] = time_module.time()
 
-    def _evict_lru(self):
+    def _evict_lru(self) -> None:
         """Evict least recently used entry."""
         if not self.access_times:
             return
@@ -67,7 +68,7 @@ class TransitionCache:
         del self.cache[lru_key]
         del self.access_times[lru_key]
 
-    def clear(self):
+    def clear(self) -> None:
         """Clear the cache."""
         self.cache.clear()
         self.access_times.clear()
@@ -78,25 +79,25 @@ class WaveformCanvas(QWidget):
 
     cursorMoved = Signal(object)  # Emitted when cursor is moved (using object to handle large integers)
 
-    def __init__(self, model, parent=None):
+    def __init__(self, model: Any, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._model = model
         self._row_height = RENDERING.DEFAULT_ROW_HEIGHT  # Default/base row height
         self._header_height = RENDERING.DEFAULT_HEADER_HEIGHT  # Default header height - standard QTreeView header height
         self._time_scale = 1.0  # pixels per time unit
-        self._row_heights = {}  # Dictionary to store row heights by row index
+        self._row_heights: Dict[int, int] = {}  # Dictionary to store row heights by row index
         self._start_time = 0
         self._end_time = 1000000
         self._cursor_time = 0
-        self._shared_scrollbar = None
-        self._visible_nodes = []  # Flattened list of visible nodes
-        self._row_to_node = {}   # Map row index to node
+        self._shared_scrollbar: Optional[QScrollBar] = None
+        self._visible_nodes: List[SignalNode] = []  # Flattened list of visible nodes
+        self._row_to_node: Dict[int, SignalNode] = {}   # Map row index to node
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
         self.setMinimumWidth(RENDERING.MIN_CANVAS_WIDTH)
         
         # Grid drawing state
-        self._last_tick_positions = []
-        self._last_ruler_config = None
+        self._last_tick_positions: List[Tuple[float, int]] = []
+        self._last_ruler_config: Optional[TimeRulerConfig] = None
 
         # Caching
         self._transition_cache = TransitionCache()
@@ -114,7 +115,7 @@ class WaveformCanvas(QWidget):
         # Rendered image cache
         self._rendered_image: Optional[QImage] = None
         self._render_generation = 0  # Track render requests
-        self._last_render_params_hash = None  # Track last rendered params
+        self._last_render_params_hash: Optional[int] = None  # Track last rendered params
         
         # Waveform time boundaries
         self._waveform_min_time: Time = 0
@@ -127,17 +128,17 @@ class WaveformCanvas(QWidget):
         self._last_paint_time_ms = 0.0  # Time taken by last paintEvent
         self._last_render_time_ms = 0.0  # Time taken by last render
     
-    def __del__(self):
+    def __del__(self) -> None:
         """Clean up on destruction."""
         pass
 
-    def setSharedScrollBar(self, scrollbar: QScrollBar):
+    def setSharedScrollBar(self, scrollbar: QScrollBar) -> None:
         """Set the shared vertical scrollbar."""
         self._shared_scrollbar = scrollbar
         if scrollbar:
             scrollbar.valueChanged.connect(self.update)
 
-    def setHeaderHeight(self, height: int):
+    def setHeaderHeight(self, height: int) -> None:
         """Set the header height to match the tree view's header."""
         # Ensure minimum header height
         height = max(height, RENDERING.DEFAULT_HEADER_HEIGHT)
@@ -145,14 +146,14 @@ class WaveformCanvas(QWidget):
             self._header_height = height
             self.update()  # Trigger a repaint if header height changes
 
-    def setRowHeight(self, height: int):
+    def setRowHeight(self, height: int) -> None:
         """Set the row height to match other views."""
         self._row_height = height
         self.update()
         
     
 
-    def setTimeRange(self, start_time: Time, end_time: Time):
+    def setTimeRange(self, start_time: Time, end_time: Time) -> None:
         """Set the visible time range."""
         
         # Check if viewport changed significantly
@@ -170,7 +171,7 @@ class WaveformCanvas(QWidget):
 
         self.update()
 
-    def setCursorTime(self, time: Time):
+    def setCursorTime(self, time: Time) -> None:
         """Set the cursor position."""
         old_time = self._cursor_time
         self._cursor_time = time
@@ -193,7 +194,7 @@ class WaveformCanvas(QWidget):
             # Full update needed
             self.update()
         
-    def setModel(self, model):
+    def setModel(self, model: Any) -> None:
         """Set the data model and connect to its signals."""
         # Disconnect from old model if exists
         if self._model:
@@ -219,7 +220,7 @@ class WaveformCanvas(QWidget):
             # Update visible nodes
             self.updateVisibleNodes()
     
-    def _on_model_layout_changed(self):
+    def _on_model_layout_changed(self) -> None:
         """Handle model layout changes."""
         
         # Update visible nodes (this will also update row heights)
@@ -231,14 +232,14 @@ class WaveformCanvas(QWidget):
         self._last_render_params_hash = None  # Force re-render
         self.update()
     
-    def _on_model_rows_changed(self, parent, first, last):
+    def _on_model_rows_changed(self, parent: QModelIndex, first: int, last: int) -> None:
         """Handle model row insertion/removal."""
         self.updateVisibleNodes()
         self._rendered_image = None  # Invalidate rendered image
         self._last_render_params_hash = None  # Force re-render
         self.update()
     
-    def _on_model_data_changed(self, topLeft, bottomRight, roles=None):
+    def _on_model_data_changed(self, topLeft: QModelIndex, bottomRight: QModelIndex, roles: Optional[List[int]] = None) -> None:
         """Handle model data changes."""
         # Update if display data changed or if no roles specified (assume all changed)
         if roles is None or not roles or Qt.ItemDataRole.DisplayRole in roles or Qt.ItemDataRole.UserRole in roles:
@@ -246,14 +247,14 @@ class WaveformCanvas(QWidget):
             self._last_render_params_hash = None  # Force re-render
             self.update()
     
-    def _on_model_reset(self):
+    def _on_model_reset(self) -> None:
         """Handle model reset (typically after beginResetModel/endResetModel)."""
         self.updateVisibleNodes()
         self._rendered_image = None  # Invalidate rendered image
         self._last_render_params_hash = None  # Force re-render
         self.update()
 
-    def updateVisibleNodes(self):
+    def updateVisibleNodes(self) -> None:
         """Update the list of visible nodes based on expansion state."""
         self._visible_nodes = []
         self._row_to_node = {}
@@ -265,7 +266,7 @@ class WaveformCanvas(QWidget):
         # Update waveform time boundaries
         self._update_waveform_bounds()
 
-        def add_visible_nodes(parent_index=QModelIndex(), row_offset=0):
+        def add_visible_nodes(parent_index: QModelIndex = QModelIndex(), row_offset: int = 0) -> int:
             """Recursively add visible nodes."""
             rows = self._model.rowCount(parent_index)
             current_row = row_offset
@@ -297,7 +298,7 @@ class WaveformCanvas(QWidget):
         # Don't automatically generate draw commands here - let paintEvent handle it
         # This prevents generating commands with wrong viewport before setTimeRange is called
     
-    def _update_waveform_bounds(self):
+    def _update_waveform_bounds(self) -> None:
         """Update the waveform time boundaries from the database."""
         if not self._model or not self._model._session or not self._model._session.waveform_db:
             self._waveform_max_time = None
@@ -314,14 +315,14 @@ class WaveformCanvas(QWidget):
         except:
             self._waveform_max_time = None
 
-    def _update_time_scale(self):
+    def _update_time_scale(self) -> None:
         """Update time scale based on widget width and time range."""
         if self._end_time > self._start_time and self.width() > 0:
             self._time_scale = self.width() / (self._end_time - self._start_time)
         else:
             self._time_scale = 1.0
 
-    def resizeEvent(self, event):
+    def resizeEvent(self, event: Any) -> None:
         """Handle widget resize with deferred update."""
         super().resizeEvent(event)
         old_width = event.oldSize().width()
@@ -336,20 +337,20 @@ class WaveformCanvas(QWidget):
         self._update_timer.stop()
         self._update_timer.start(RENDERING.UPDATE_TIMER_DELAY)  # delay for smoother resize
         
-    def showEvent(self, event):
+    def showEvent(self, event: Any) -> None:
         """Handle widget show event."""
         super().showEvent(event)
         # Trigger initial render when widget is shown
         if self.width() > 0 and self.height() > 0:
             self.update()
 
-    def _do_update(self):
+    def _do_update(self) -> None:
         """Perform the actual update after timer expires."""
         if self._pending_update:
             self._pending_update = False
             self.update()
 
-    def paintEvent(self, event):
+    def paintEvent(self, event: Any) -> None:
         """Paint the waveforms with caching."""
         # Start timing
         paint_start_time = time_module.time()
@@ -379,7 +380,7 @@ class WaveformCanvas(QWidget):
         # Draw debug info if enabled
         self._paint_debug_info(painter, is_partial_update)
     
-    def _should_do_partial_update(self, event) -> bool:
+    def _should_do_partial_update(self, event: Any) -> bool:
         """Determine if this is a partial update (cursor only)."""
         update_rect = event.rect()
         cursor_region_width = RENDERING.CURSOR_WIDTH + 2 * RENDERING.CURSOR_PADDING + 1
@@ -387,12 +388,12 @@ class WaveformCanvas(QWidget):
                     self._rendered_image and 
                     not self._rendered_image.isNull())
     
-    def _paint_partial_update(self, painter: QPainter, update_rect):
+    def _paint_partial_update(self, painter: QPainter, update_rect: Any) -> None:
         """Handle partial update by redrawing only the affected region."""
         if self._rendered_image is not None:
             painter.drawImage(update_rect, self._rendered_image, update_rect)
     
-    def _paint_full_update(self, painter: QPainter):
+    def _paint_full_update(self, painter: QPainter) -> None:
         """Handle full update by redrawing everything."""
         # Paint background
         self._paint_background(painter)
@@ -403,11 +404,11 @@ class WaveformCanvas(QWidget):
         # Render and draw waveforms
         self._paint_waveforms(painter)
     
-    def _paint_background(self, painter: QPainter):
+    def _paint_background(self, painter: QPainter) -> None:
         """Paint the background with different colors for valid/invalid time ranges."""
         self._paint_background_with_boundaries(painter)
     
-    def _paint_grid(self, painter: QPainter):
+    def _paint_grid(self, painter: QPainter) -> None:
         """Draw grid lines behind waveforms."""
         # Calculate time ruler positions first (needed for grid)
         self._calculate_and_store_ruler_info()
@@ -418,7 +419,7 @@ class WaveformCanvas(QWidget):
             if self._last_ruler_config.show_grid_lines and self._last_tick_positions:
                 self._draw_grid_lines(painter, self._last_tick_positions, self._last_ruler_config)
     
-    def _paint_waveforms(self, painter: QPainter):
+    def _paint_waveforms(self, painter: QPainter) -> None:
         """Render and paint the waveforms."""
         # Check if we need to render
         render_params = self._collect_render_params()
@@ -439,7 +440,7 @@ class WaveformCanvas(QWidget):
         if self._rendered_image and not self._rendered_image.isNull():
             painter.drawImage(0, 0, self._rendered_image)
     
-    def _paint_overlays(self, painter: QPainter, update_rect, is_partial_update: bool):
+    def _paint_overlays(self, painter: QPainter, update_rect: Any, is_partial_update: bool) -> None:
         """Paint overlays on top of waveforms (boundary lines, ruler, cursor)."""
         # Draw boundary lines
         if not is_partial_update:
@@ -452,7 +453,7 @@ class WaveformCanvas(QWidget):
         # Draw cursor
         self._paint_cursor(painter, update_rect, is_partial_update)
     
-    def _paint_cursor(self, painter: QPainter, update_rect, is_partial_update: bool):
+    def _paint_cursor(self, painter: QPainter, update_rect: Any, is_partial_update: bool) -> None:
         """Draw the cursor if it's visible."""
         if self._cursor_time >= self._start_time and self._cursor_time <= self._end_time:
             x = int((self._cursor_time - self._start_time) * self.width() / 
@@ -466,13 +467,13 @@ class WaveformCanvas(QWidget):
                 painter.setPen(pen)
                 painter.drawLine(x, 0, x, self.height())
     
-    def _paint_debug_info(self, painter: QPainter, is_partial_update: bool):
+    def _paint_debug_info(self, painter: QPainter, is_partial_update: bool) -> None:
         """Draw debug information if not a partial update."""
         if not is_partial_update:
             self._draw_debug_counters(painter)
     
     
-    def _hash_render_params(self, params):
+    def _hash_render_params(self, params: Dict[str, Any]) -> int:
         """Create a hash of render parameters for quick comparison."""
         # Build key params list
         key_params = [
@@ -503,7 +504,7 @@ class WaveformCanvas(QWidget):
         
         return hash(tuple(key_params))
     
-    def _collect_render_params(self):
+    def _collect_render_params(self) -> Dict[str, Any]:
         """Collect all parameters needed for rendering."""
         # Get scroll position
         scroll_value = 0
@@ -570,7 +571,7 @@ class WaveformCanvas(QWidget):
             'signal_range_cache': self._signal_range_cache  # Pass signal range cache for analog rendering
         }
     
-    def _render_to_image(self, params, generation):
+    def _render_to_image(self, params: Dict[str, Any], generation: int) -> Tuple[QImage, int, float]:
         """Render waveforms to an image (runs in thread pool)."""
         # Start timing
         render_start_time = time_module.time()
@@ -648,7 +649,7 @@ class WaveformCanvas(QWidget):
         return image, generation, render_time_ms
     
     
-    def _render_waveforms(self, painter, params):
+    def _render_waveforms(self, painter: QPainter, params: Dict[str, Any]) -> None:
         """Render waveforms (thread-safe version)."""
         import time as time_module
 
@@ -692,7 +693,7 @@ class WaveformCanvas(QWidget):
         
     
     
-    def _draw_time_ruler_simple(self, painter, params):
+    def _draw_time_ruler_simple(self, painter: QPainter, params: Dict[str, Any]) -> None:
         """Simple version of time ruler drawing."""
         # Use default config since we can't access model from thread
         config = TimeRulerConfig()
@@ -721,7 +722,7 @@ class WaveformCanvas(QWidget):
             label = f"{time}"
             painter.drawText(x - 20, 5, 40, 20, Qt.AlignmentFlag.AlignCenter, label)
     
-    def _draw_row(self, painter, node_info, draw_commands, row, y, row_height, params):
+    def _draw_row(self, painter: QPainter, node_info: Dict[str, Any], draw_commands: Dict[int, Any], row: int, y: int, row_height: int, params: Dict[str, Any]) -> None:
         """Thread-safe version of row drawing."""
         # Draw background
         if row % 2 == 0:
@@ -748,7 +749,7 @@ class WaveformCanvas(QWidget):
             elif render_type == RenderType.EVENT:
                 draw_event_signal(painter, node_info, drawing_data, y, row_height, params)
     
-    def _draw_cursor(self, painter, params):
+    def _draw_cursor(self, painter: QPainter, params: Dict[str, Any]) -> None:
         """Thread-safe version of cursor drawing."""
         if params['cursor_time'] >= params['start_time'] and params['cursor_time'] <= params['end_time']:
             x = int((params['cursor_time'] - params['start_time']) * params['width'] / 
@@ -758,7 +759,7 @@ class WaveformCanvas(QWidget):
             painter.drawLine(x, 0, x, params['height'])
 
 
-    def _calculate_and_store_ruler_info(self):
+    def _calculate_and_store_ruler_info(self) -> None:
         """Calculate and store ruler information for grid drawing."""
         # Get configuration from session if available
         if self._model and self._model._session:
@@ -774,7 +775,7 @@ class WaveformCanvas(QWidget):
         self._last_tick_positions = tick_positions
         self._last_ruler_config = config
         
-    def _draw_time_ruler(self, painter):
+    def _draw_time_ruler(self, painter: QPainter) -> None:
         """Draw the time ruler according to spec 4.11."""
 
         # If model not loaded, don't draw ruler
@@ -789,6 +790,8 @@ class WaveformCanvas(QWidget):
         else:
             # Fallback: calculate now
             self._calculate_and_store_ruler_info()
+            if self._last_ruler_config is None:
+                return  # Cannot proceed without config
             config = self._last_ruler_config
             tick_positions = self._last_tick_positions
             _, step_size = self._calculate_time_ruler_ticks(config)
@@ -835,7 +838,7 @@ class WaveformCanvas(QWidget):
                 painter.setPen(QColor(COLORS.TEXT))
                 painter.drawText(text_x, text_y + fm.ascent(), label)
     
-    def _calculate_time_ruler_ticks(self, config) -> Tuple[List[Tuple[float, int]], float]:
+    def _calculate_time_ruler_ticks(self, config: TimeRulerConfig) -> Tuple[List[Tuple[float, int]], float]:
         """Calculate optimal tick positions according to spec 4.11.2.
         
         Returns:
@@ -914,7 +917,7 @@ class WaveformCanvas(QWidget):
             
         return tick_positions, step_size
     
-    def _draw_grid_lines(self, painter, tick_positions: List[Tuple[Time, int]], config):
+    def _draw_grid_lines(self, painter: QPainter, tick_positions: List[Tuple[float, int]], config: TimeRulerConfig) -> None:
         """Draw vertical grid lines at tick positions."""
         # Set up grid line style (cosmetic for crispness)
         pen = QPen(QColor(config.grid_color))
@@ -1015,7 +1018,7 @@ class WaveformCanvas(QWidget):
 
 
     
-    def _generate_all_draw_commands(self, signal_nodes: List[SignalNode], start_time: Time, end_time: Time, canvas_width: int, waveform_db) -> CachedWaveDrawData:
+    def _generate_all_draw_commands(self, signal_nodes: List[SignalNode], start_time: Time, end_time: Time, canvas_width: int, waveform_db: WaveformDBProtocol) -> CachedWaveDrawData:
         """Generate drawing commands for all signals (runs in thread pool)."""
         result = CachedWaveDrawData()
         result.viewport_hash = f"{start_time}_{end_time}_{canvas_width}"
@@ -1051,7 +1054,7 @@ class WaveformCanvas(QWidget):
         """Convert x coordinate to time."""
         return int(x / self._time_scale + self._start_time)
         
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event: Any) -> None:
         """Handle mouse clicks to set cursor."""
         if event.button() == Qt.MouseButton.LeftButton:
             time = self._x_to_time(int(event.position().x()))
@@ -1059,7 +1062,7 @@ class WaveformCanvas(QWidget):
             self.cursorMoved.emit(self._cursor_time)
             self.update()
     
-    def _paint_background_with_boundaries(self, painter):
+    def _paint_background_with_boundaries(self, painter: QPainter) -> None:
         """Paint background with different colors for valid/invalid time ranges."""
         # Default background color for entire canvas
         painter.fillRect(self.rect(), QColor(COLORS.BACKGROUND_DARK))  # Darker for invalid ranges
@@ -1078,7 +1081,7 @@ class WaveformCanvas(QWidget):
             if x_max > x_min:
                 painter.fillRect(x_min, 0, x_max - x_min, self.height(), QColor(COLORS.BACKGROUND))
     
-    def _draw_boundary_lines(self, painter):
+    def _draw_boundary_lines(self, painter: QPainter) -> None:
         """Draw vertical lines at waveform time boundaries."""
         if self._waveform_max_time is None:
             return
@@ -1099,7 +1102,7 @@ class WaveformCanvas(QWidget):
             x_max = self._time_to_x(boundary_time)
             painter.drawLine(x_max, 0, x_max, self.height())
     
-    def _draw_debug_counters(self, painter):
+    def _draw_debug_counters(self, painter: QPainter) -> None:
         """Draw debug counters in bottom right corner."""
         # Save painter state
         painter.save()
@@ -1134,6 +1137,6 @@ class WaveformCanvas(QWidget):
         # Restore painter state
         painter.restore()
     
-    def closeEvent(self, event):
+    def closeEvent(self, event: Any) -> None:
         """Clean up resources when closing."""
         super().closeEvent(event)

@@ -7,7 +7,7 @@ A standalone widget providing two viewing modes for the design hierarchy:
 """
 
 from enum import Enum
-from typing import Optional, List, Any, cast, TYPE_CHECKING
+from typing import Optional, List, Any, cast, TYPE_CHECKING, Dict
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeView, QPushButton,
     QLabel, QStackedWidget, QSplitter, QLineEdit, QTableView,
@@ -40,7 +40,7 @@ class DesignTreeView(QWidget):
     signals_selected = Signal(list)  # List of SignalNode objects
     status_message = Signal(str)
     
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[Any] = None) -> None:
         super().__init__(parent)
         
         self.waveform_db: Optional['WaveformDBProtocol'] = None
@@ -59,7 +59,7 @@ class DesignTreeView(QWidget):
         saved_mode = self.settings.value("design_tree_view_mode", "unified")
         self.set_mode(DesignTreeViewMode(saved_mode))
     
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         """Create the UI structure"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -115,7 +115,7 @@ class DesignTreeView(QWidget):
         
         self.content_stack.addWidget(self.split_widget)
     
-    def set_waveform_db(self, waveform_db: Optional['WaveformDBProtocol']):
+    def set_waveform_db(self, waveform_db: Optional['WaveformDBProtocol']) -> None:
         """Set the waveform database and initialize models"""
         self.waveform_db = waveform_db
         
@@ -135,7 +135,7 @@ class DesignTreeView(QWidget):
         if self.current_mode == DesignTreeViewMode.SPLIT:
             self._update_split_mode_models()
     
-    def set_mode(self, mode: DesignTreeViewMode):
+    def set_mode(self, mode: DesignTreeViewMode) -> None:
         """Switch between unified and split viewing modes"""
         self.current_mode = mode
         
@@ -152,14 +152,14 @@ class DesignTreeView(QWidget):
         # Save preference
         self.settings.setValue("design_tree_view_mode", mode.value)
     
-    def _on_mode_toggled(self, checked: bool):
+    def _on_mode_toggled(self, checked: bool) -> None:
         """Handle mode toggle button click"""
         if checked:
             self.set_mode(DesignTreeViewMode.SPLIT)
         else:
             self.set_mode(DesignTreeViewMode.UNIFIED)
     
-    def _update_split_mode_models(self):
+    def _update_split_mode_models(self) -> None:
         """Update models for split mode."""
         if not self.waveform_db:
             return
@@ -177,7 +177,7 @@ class DesignTreeView(QWidget):
         if self.vars_view:
             self.vars_view.set_variables([])
     
-    def _on_tree_double_click(self, index: QModelIndex):
+    def _on_tree_double_click(self, index: QModelIndex) -> None:
         """Handle double-click on tree item in unified mode"""
         if not index.isValid() or not self.design_tree_model:
             return
@@ -257,7 +257,7 @@ class DesignTreeView(QWidget):
         handle = self.waveform_db.find_handle_by_path(full_path)
         return handle
     
-    def add_selected_signals(self):
+    def add_selected_signals(self) -> None:
         """Add currently selected signals to waveform (called by 'I' shortcut)"""
         signal_nodes: List[SignalNode] = []
         
@@ -342,14 +342,14 @@ class DesignTreeView(QWidget):
         
         return super().eventFilter(obj, event)
     
-    def install_event_filters(self):
+    def install_event_filters(self) -> None:
         """Install event filters on tree views"""
         self.unified_tree.installEventFilter(self)
         self.scope_tree.installEventFilter(self)
         if self.vars_view:
             self.vars_view.table_view.installEventFilter(self)
     
-    def _on_scope_selection_changed(self, current: QModelIndex, previous: QModelIndex):
+    def _on_scope_selection_changed(self, current: QModelIndex, previous: QModelIndex) -> None:
         """Handle scope selection change in split mode."""
         if not current.isValid() or not self.scope_tree_model:
             return
@@ -366,7 +366,7 @@ class DesignTreeView(QWidget):
         if self.vars_view:
             self.vars_view.set_variables(variables)
     
-    def _on_variables_selected(self, var_data_list):
+    def _on_variables_selected(self, var_data_list: List[Dict[str, Any]]) -> None:
         """Handle variables selected from VarsView."""
         signal_nodes = []
         for var_data in var_data_list:
@@ -400,7 +400,7 @@ class DesignTreeView(QWidget):
                 is_single_bit = True
         return is_single_bit
     
-    def _create_signal_node_from_var(self, var_data: dict) -> Optional[SignalNode]:
+    def _create_signal_node_from_var(self, var_data: Dict[str, Any]) -> Optional[SignalNode]:
         """Create a SignalNode from variable data."""
         if not var_data or not self.waveform_db:
             return None

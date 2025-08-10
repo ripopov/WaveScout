@@ -22,8 +22,8 @@ clean:  ## Clean build artifacts
 test:  ## Run tests
 	poetry run pytest tests/ --ignore=wellen/
 
-typecheck:  ## Run mypy type checker
-	poetry run mypy wavescout/ --config-file mypy.ini
+typecheck:  ## Run mypy type checker (strict mode)
+	poetry run mypy wavescout/ --strict --config-file mypy.ini
 
 dev:  ## Run the demo application
 	poetry run python scout.py

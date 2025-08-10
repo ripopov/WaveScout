@@ -2,8 +2,9 @@
 
 import yaml
 import pathlib
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 from dataclasses import asdict
+from .protocols import WaveformDBProtocol
 from .data_model import (
     WaveformSession, SignalNode, DisplayFormat, DataFormat, 
     GroupRenderMode, RenderType, Viewport, ViewportConfig, Marker, SignalNameDisplayMode, 
@@ -47,7 +48,7 @@ def _serialize_node(node: SignalNode) -> Dict[str, Any]:
     return data
 
 
-def _resolve_signal_handles(nodes: List[SignalNode], waveform_db) -> None:
+def _resolve_signal_handles(nodes: List[SignalNode], waveform_db: WaveformDBProtocol) -> None:
     """Resolve signal handles for nodes that have null handles."""
     if not waveform_db or not waveform_db.hierarchy:
         return
@@ -58,7 +59,7 @@ def _resolve_signal_handles(nodes: List[SignalNode], waveform_db) -> None:
     name_to_var = {}
     
     # Recursively collect all vars from the hierarchy through scope iteration
-    def collect_vars_from_scope(scope):
+    def collect_vars_from_scope(scope: Any) -> None:
         # Add vars in this scope
         for var in scope.vars(hierarchy):
             full_name = var.full_name(hierarchy)
@@ -91,7 +92,7 @@ def _resolve_signal_handles(nodes: List[SignalNode], waveform_db) -> None:
             next_handle += 1
     
     # Recursively resolve handles
-    def resolve_node(node: SignalNode):
+    def resolve_node(node: SignalNode) -> None:
         if not node.is_group and node.handle is None:
             # Try exact match first
             if node.name in name_to_var:
@@ -172,7 +173,7 @@ def _deserialize_node(data: Dict[str, Any], parent: Optional[SignalNode] = None)
     return node
 
 
-def save_session(session: WaveformSession, path: pathlib.Path):
+def save_session(session: WaveformSession, path: pathlib.Path) -> None:
     """
     Serialize session to YAML, excluding waveform_db pointer
     but preserving its URI for reconnection.
@@ -266,7 +267,9 @@ def load_session(path: pathlib.Path) -> WaveformSession:
             )
     # If timescale not in saved data but waveform_db is loaded, get it from there
     elif waveform_db:
-        session.timescale = waveform_db.get_timescale()
+        timescale = waveform_db.get_timescale()
+        if timescale:
+            session.timescale = timescale
     
     # Resolve signal handles if waveform_db is available
     if waveform_db:
@@ -280,7 +283,7 @@ def load_session(path: pathlib.Path) -> WaveformSession:
     
     # Update the SignalNode counter to avoid ID conflicts
     # Find the maximum instance_id in all loaded nodes
-    def find_max_instance_id(nodes):
+    def find_max_instance_id(nodes: List[SignalNode]) -> int:
         max_id = 0
         for node in nodes:
             if getattr(node, 'instance_id', None) is not None:

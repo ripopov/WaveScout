@@ -189,7 +189,7 @@ class WaveformController:
     def _iter_all_nodes(self) -> Iterable[SignalNode]:
         if not self.session:
             return
-        def walk(node: SignalNode):
+        def walk(node: SignalNode) -> Iterable[SignalNode]:
             yield node
             for ch in node.children:
                 yield from walk(ch)

@@ -138,3 +138,14 @@ class WaveformDBProtocol(Protocol):
             Next available SignalHandle if supported, None otherwise
         """
         return None
+    
+    def get_signal(self, handle: SignalHandle) -> Optional[Signal]:
+        """Get the signal object for the given handle.
+        
+        Args:
+            handle: Signal handle
+        
+        Returns:
+            Pywellen Signal object if available, None otherwise
+        """
+        ...

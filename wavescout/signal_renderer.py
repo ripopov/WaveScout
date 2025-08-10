@@ -21,13 +21,14 @@ This module depends only on QPainter and small data types from the local data mo
 and sampling code; it contains no widget logic.
 """
 
-from typing import Dict, Tuple, Optional, Any
+from typing import Dict, Tuple, Optional, Any, Union
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPolygonF
 from PySide6.QtCore import Qt, QPointF
 from .data_model import RenderType, Time, AnalogScalingMode, SignalHandle, SignalNodeID
 from .signal_sampling import SignalDrawingData, ValueKind
 from .config import RENDERING, COLORS
 import math
+from .protocols import WaveformDBProtocol
 
 
 def calculate_signal_bounds(y: int, row_height: int, margin_top: int = RENDERING.SIGNAL_MARGIN_TOP, 
@@ -84,8 +85,8 @@ def calculate_valid_pixel_range(start_time: Time, end_time: Time, width: int,
     return min_valid_pixel, max_valid_pixel
 
 
-def draw_digital_signal(painter: QPainter, node_info: dict, drawing_data: SignalDrawingData, 
-                       y: int, row_height: int, params: dict) -> None:
+def draw_digital_signal(painter: QPainter, node_info: Dict[str, Any], drawing_data: SignalDrawingData, 
+                       y: int, row_height: int, params: Dict[str, Any]) -> None:
     """Render a boolean waveform as step lines.
     
     Logic overview
@@ -179,8 +180,8 @@ def draw_digital_signal(painter: QPainter, node_info: dict, drawing_data: Signal
                 painter.drawLine(int(current_x + 1), y_low, int(current_x + 1), y_high)
 
 
-def draw_bus_signal(painter: QPainter, node_info: dict, drawing_data: SignalDrawingData, 
-                   y: int, row_height: int, params: dict) -> None:
+def draw_bus_signal(painter: QPainter, node_info: Dict[str, Any], drawing_data: SignalDrawingData, 
+                   y: int, row_height: int, params: Dict[str, Any]) -> None:
     """Render a multi-bit bus with smooth dynamic transitions.
     
     Logic overview:
@@ -394,7 +395,7 @@ def compute_signal_range(drawing_data: SignalDrawingData, start_time: Optional[T
     return min_val, max_val
 
 
-def compute_global_signal_range(handle: SignalHandle, waveform_db) -> Tuple[float, float]:
+def compute_global_signal_range(handle: SignalHandle, waveform_db: WaveformDBProtocol) -> Tuple[float, float]:
     """Estimate global min/max from the waveform database.
     
     Rationale
@@ -471,7 +472,7 @@ def get_signal_range(instance_id: SignalNodeID, handle: SignalHandle,
                     drawing_data: SignalDrawingData, 
                     scaling_mode: AnalogScalingMode, 
                     signal_range_cache: Dict[SignalNodeID, Any],
-                    waveform_db = None,
+                    waveform_db: Optional[WaveformDBProtocol] = None,
                     start_time: Optional[Time] = None, end_time: Optional[Time] = None) -> Tuple[float, float]:
     """Return analog Y-range using a small cache keyed by signal instance.
     
@@ -529,8 +530,8 @@ def get_signal_range(instance_id: SignalNodeID, handle: SignalHandle,
         return min_val, max_val
 
 
-def draw_analog_signal(painter: QPainter, node_info: dict, drawing_data: SignalDrawingData, 
-                      y: int, row_height: int, params: dict) -> None:
+def draw_analog_signal(painter: QPainter, node_info: Dict[str, Any], drawing_data: SignalDrawingData, 
+                      y: int, row_height: int, params: Dict[str, Any]) -> None:
     """Render an analog waveform as a polyline with optional min/max labels.
     
     Logic overview
@@ -685,8 +686,8 @@ def draw_analog_signal(painter: QPainter, node_info: dict, drawing_data: SignalD
                 painter.drawLine(x_int + 1, y_top, x_int + 1, y_bottom)
 
 
-def draw_event_signal(painter: QPainter, node_info: dict, drawing_data: SignalDrawingData, 
-                     y: int, row_height: int, params: dict) -> None:
+def draw_event_signal(painter: QPainter, node_info: Dict[str, Any], drawing_data: SignalDrawingData, 
+                     y: int, row_height: int, params: Dict[str, Any]) -> None:
     """Render timestamped events as thin upward arrows.
     
     Logic overview

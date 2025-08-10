@@ -19,12 +19,12 @@ from PySide6.QtGui import QKeySequence
 class VarsModel(QAbstractTableModel):
     """Table model for displaying variables with Name, Type, and Bit Range columns."""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[Any] = None) -> None:
         super().__init__(parent)
         self.variables: List[Dict[str, Any]] = []
         self.columns = ["Name", "Type", "Bit Range"]
     
-    def set_variables(self, variables: List[Dict[str, Any]]):
+    def set_variables(self, variables: List[Dict[str, Any]]) -> None:
         """Set the list of variables to display."""
         self.beginResetModel()
         self.variables = variables
@@ -84,7 +84,7 @@ class VarsModel(QAbstractTableModel):
 class FuzzyFilterProxyModel(QSortFilterProxyModel):
     """Proxy model implementing fuzzy filtering for variables using rapidfuzz."""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[Any] = None) -> None:
         super().__init__(parent)
         self.filter_text = ""
         self.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
@@ -94,7 +94,7 @@ class FuzzyFilterProxyModel(QSortFilterProxyModel):
         from rapidfuzz import fuzz
         self.fuzz = fuzz
     
-    def set_filter_text(self, text: str):
+    def set_filter_text(self, text: str) -> None:
         """Set the filter text and invalidate the filter."""
         self.filter_text = text.lower()
         self.invalidateFilter()
@@ -139,7 +139,7 @@ class VarsView(QWidget):
     # Signal emitted when variables are selected for addition
     variables_selected = Signal(list)  # List of variable dictionaries
     
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[Any] = None) -> None:
         super().__init__(parent)
         
         self._setup_ui()
@@ -150,7 +150,7 @@ class VarsView(QWidget):
         self.filter_timer.setSingleShot(True)
         self.filter_timer.timeout.connect(self._apply_filter)
     
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         """Create the UI components."""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -186,21 +186,21 @@ class VarsView(QWidget):
         
         layout.addWidget(self.table_view)
     
-    def _setup_connections(self):
+    def _setup_connections(self) -> None:
         """Connect signals and slots."""
         self.filter_input.textChanged.connect(self._on_filter_changed)
         self.table_view.doubleClicked.connect(self._on_double_click)
     
-    def _on_filter_changed(self, text: str):
+    def _on_filter_changed(self, text: str) -> None:
         """Handle filter text change with debouncing."""
         self.filter_timer.stop()
         self.filter_timer.start(200)  # 200ms debounce
     
-    def _apply_filter(self):
+    def _apply_filter(self) -> None:
         """Apply the filter to the proxy model."""
         self.filter_proxy.set_filter_text(self.filter_input.text())
     
-    def _on_double_click(self, index: QModelIndex):
+    def _on_double_click(self, index: QModelIndex) -> None:
         """Handle double-click on a variable."""
         if not index.isValid():
             return
@@ -219,7 +219,7 @@ class VarsView(QWidget):
         if var_data:
             self.variables_selected.emit([var_data])
     
-    def set_variables(self, variables: List[Dict[str, Any]]):
+    def set_variables(self, variables: List[Dict[str, Any]]) -> None:
         """Set the variables to display.
         Performs a one-time resize-to-contents for secondary columns after data changes,
         then restores interactive mode to avoid expensive recalculations during layout changes.
@@ -271,11 +271,11 @@ class VarsView(QWidget):
         
         return selected
     
-    def clear_filter(self):
+    def clear_filter(self) -> None:
         """Clear the filter input."""
         self.filter_input.clear()
     
-    def focus_filter(self):
+    def focus_filter(self) -> None:
         """Set focus to the filter input."""
         self.filter_input.setFocus()
         self.filter_input.selectAll()

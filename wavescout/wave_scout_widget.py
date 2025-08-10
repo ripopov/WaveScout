@@ -3,8 +3,9 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout,
                               QScrollBar, QSplitter,
                               QLabel, QFrame, QApplication)
-from PySide6.QtCore import Qt, Signal, QModelIndex, QItemSelectionModel, QItemSelection, QEvent, QTimer
-from typing import Optional
+from PySide6.QtCore import Qt, Signal, QModelIndex, QItemSelectionModel, QItemSelection, QEvent, QTimer, QObject
+from PySide6.QtGui import QKeyEvent
+from typing import Optional, Any, cast, List
 from .waveform_item_model import WaveformItemModel
 from .waveform_canvas import WaveformCanvas
 from .data_model import WaveformSession, SignalNode, GroupRenderMode
@@ -18,14 +19,14 @@ from .config import RENDERING, UI
 class SignalValuesView(BaseColumnView):
     """Tree view for signal values at cursor (column 1)."""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(visible_column=1, allow_expansion=False, parent=parent)
 
 
 class AnalysisView(BaseColumnView):
     """Tree view for analysis values (column 3)."""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(visible_column=3, allow_expansion=False, parent=parent)
 
 
@@ -34,7 +35,7 @@ class WaveScoutWidget(QWidget):
     
     cursorChanged = Signal(object)  # Using object to handle large time values
     
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.session: Optional[WaveformSession] = None
         self.model: Optional[WaveformItemModel] = None
@@ -48,7 +49,7 @@ class WaveScoutWidget(QWidget):
         self.controller.on("cursor_changed", self._on_controller_cursor_changed)
         self.controller.on("benchmark_changed", self._on_controller_benchmark_changed)
         
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         """Set up the user interface."""
         # Main layout
         layout = QVBoxLayout(self)
@@ -99,7 +100,7 @@ class WaveScoutWidget(QWidget):
         # Sync header heights across panels
         self._sync_header_heights()
         
-    def _setup_shared_scrollbar(self):
+    def _setup_shared_scrollbar(self) -> None:
         """Set up the shared vertical scrollbar for row locking."""
         # Create a single scrollbar
         self._shared_scrollbar = QScrollBar(Qt.Orientation.Vertical)
@@ -113,7 +114,7 @@ class WaveScoutWidget(QWidget):
         self._canvas.setSharedScrollBar(self._shared_scrollbar)
         self._shared_scrollbar.valueChanged.connect(self._canvas.update)
         
-    def setSession(self, session: WaveformSession):
+    def setSession(self, session: WaveformSession) -> None:
         """Set the waveform session and create the model."""
         self._cleanup_previous_session()
         self._initialize_new_session(session)
@@ -122,7 +123,7 @@ class WaveScoutWidget(QWidget):
         self._setup_model_connections()
         self._restore_ui_state()
     
-    def _cleanup_previous_session(self):
+    def _cleanup_previous_session(self) -> None:
         """Clean up the previous session resources."""
         # Disconnect signals from old model
         if hasattr(self, 'model') and self.model:
@@ -163,7 +164,7 @@ class WaveScoutWidget(QWidget):
             self.model.deleteLater()
             self.model = None
     
-    def _initialize_new_session(self, session: WaveformSession):
+    def _initialize_new_session(self, session: WaveformSession) -> None:
         """Initialize the new session and create models."""
         # Set new session
         self.session = session
@@ -185,7 +186,7 @@ class WaveScoutWidget(QWidget):
         self._canvas.setTimeRange(session.viewport.start_time, session.viewport.end_time)
         self._canvas.setCursorTime(session.cursor_time)
     
-    def _setup_model_connections(self):
+    def _setup_model_connections(self) -> None:
         """Set up all signal-slot connections for the model."""
         if not self.model:
             return
@@ -204,7 +205,7 @@ class WaveScoutWidget(QWidget):
         if self._selection_model:
             self._selection_model.selectionChanged.connect(self._on_selection_changed)
     
-    def _sync_header_heights(self):
+    def _sync_header_heights(self) -> None:
         """Ensure all panel headers have the same height using system theme value."""
         try:
             height = RENDERING.DEFAULT_HEADER_HEIGHT
@@ -215,7 +216,7 @@ class WaveScoutWidget(QWidget):
             # Fail-safe: ignore if headers are not yet available
             pass
     
-    def _restore_ui_state(self):
+    def _restore_ui_state(self) -> None:
         """Restore UI state including scrollbar and expansion states."""
         # Force the tree view to calculate sizes by processing events
         QApplication.processEvents()
@@ -229,7 +230,7 @@ class WaveScoutWidget(QWidget):
         # Expand all groups initially based on their is_expanded state
         self._restore_expansion_state()
         
-    def _update_scrollbar_range(self):
+    def _update_scrollbar_range(self) -> None:
         """Update the shared scrollbar range based on total rows."""
         if not self.model or not self._names_view.model():
             return
@@ -264,7 +265,7 @@ class WaveScoutWidget(QWidget):
         self._canvas.setRowHeight(RENDERING.DEFAULT_ROW_HEIGHT)
         
 
-    def _calculate_total_rows(self, parent=QModelIndex()):
+    def _calculate_total_rows(self, parent: QModelIndex = QModelIndex()) -> int:
         """Calculate total number of visible rows in the tree."""
         if not self.model:
             return 0
@@ -280,7 +281,7 @@ class WaveScoutWidget(QWidget):
                 
         return count
         
-    def _sync_expansion(self, index):
+    def _sync_expansion(self, index: QModelIndex) -> None:
         """Synchronize expansion state across all tree views."""
         is_expanded = self._names_view.isExpanded(index)
         
@@ -305,7 +306,7 @@ class WaveScoutWidget(QWidget):
         if self.model:
             self.model.layoutChanged.emit()
         
-    def _restore_expansion_state(self, parent_index=QModelIndex()):
+    def _restore_expansion_state(self, parent_index: QModelIndex = QModelIndex()) -> None:
         """Restore expansion state from data model."""
         if not self.model:
             return
@@ -329,13 +330,13 @@ class WaveScoutWidget(QWidget):
                 # Recurse into children
                 self._restore_expansion_state(index)
     
-    def _on_model_reset(self):
+    def _on_model_reset(self) -> None:
         """Handle model reset by restoring expansion state."""
         # Schedule restoration for next event loop iteration to ensure views are updated
         QTimer.singleShot(0, self._restore_expansion_state)
         self._update_scrollbar_range()
                 
-    def _on_cursor_moved(self, time):
+    def _on_cursor_moved(self, time: int) -> None:
         """Handle cursor movement from canvas."""
         if self.session and self.model:
             self.session.cursor_time = time
@@ -360,7 +361,7 @@ class WaveScoutWidget(QWidget):
             
             self.cursorChanged.emit(time)
             
-    def _on_controller_cursor_changed(self):
+    def _on_controller_cursor_changed(self) -> None:
         """Controller signaled cursor change: refresh info bar and canvas."""
         if not self.session:
             return
@@ -379,11 +380,11 @@ class WaveScoutWidget(QWidget):
                 self._info_bar.setText(f"Cursor: {time}")
         self.cursorChanged.emit(time)
 
-    def _on_controller_benchmark_changed(self):
+    def _on_controller_benchmark_changed(self) -> None:
         if self._canvas:
             self._canvas.update()
             
-    def _on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection):
+    def _on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection) -> None:
         """Handle selection changes and update the data model."""
         if self._updating_selection or not self.session or not self._selection_model or not self.model:
             return
@@ -407,7 +408,7 @@ class WaveScoutWidget(QWidget):
         # Update canvas to highlight selected signals
         self._canvas.update()
         
-    def _select_all(self):
+    def _select_all(self) -> None:
         """Select all items in the model."""
         if not self._selection_model or not self.model:
             return
@@ -415,7 +416,7 @@ class WaveScoutWidget(QWidget):
         # Create selection for all items
         selection = QItemSelection()
         
-        def add_to_selection(parent_index=QModelIndex()):
+        def add_to_selection(parent_index: QModelIndex = QModelIndex()) -> None:
             """Recursively add all items to selection."""
             assert self.model is not None  # For mypy
             rows = self.model.rowCount(parent_index)
@@ -438,12 +439,13 @@ class WaveScoutWidget(QWidget):
         # Manually trigger selection changed to update data model
         self._on_selection_changed(selection, QItemSelection())
         
-    def eventFilter(self, watched, event):
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         """Filter events from child widgets to handle keyboard shortcuts."""
         if event.type() == QEvent.Type.KeyPress:
             # Check if this is one of our shortcut keys
-            key = event.key()
-            modifiers = event.modifiers()
+            key_event = cast(QKeyEvent, event)
+            key = key_event.key()
+            modifiers = key_event.modifiers()
             
             # Zoom and navigation keys should be handled by parent
             if (key in [Qt.Key.Key_Plus, Qt.Key.Key_Equal, Qt.Key.Key_Minus] or
@@ -458,7 +460,7 @@ class WaveScoutWidget(QWidget):
         
         return super().eventFilter(watched, event)
     
-    def keyPressEvent(self, event):
+    def keyPressEvent(self, event: Any) -> None:
         """Handle key press events."""
         # Handle delete key
         if event.key() == Qt.Key.Key_Delete:
@@ -504,7 +506,7 @@ class WaveScoutWidget(QWidget):
         else:
             super().keyPressEvent(event)
             
-    def _delete_selected_nodes(self):
+    def _delete_selected_nodes(self) -> None:
         """Delete all selected nodes from the data model."""
         if not self.session or not self.session.selected_nodes:
             return
@@ -561,7 +563,7 @@ class WaveScoutWidget(QWidget):
             if self.model:
                 self.model.endResetModel()
                 
-    def _create_group_from_selected(self):
+    def _create_group_from_selected(self) -> None:
         """Create a new group containing the selected nodes."""
         if not self.session or not self.session.selected_nodes:
             return
@@ -678,25 +680,25 @@ class WaveScoutWidget(QWidget):
             if self.model:
                 self.model.endResetModel()
                 
-    def _zoom_in(self):
+    def _zoom_in(self) -> None:
         """Zoom in by 2x (delta = 0.5)."""
         if self.session and self.session.viewport:
             self._zoom_viewport(0.5)
             
-    def _zoom_out(self):
+    def _zoom_out(self) -> None:
         """Zoom out by 2x (delta = 2.0)."""
         if self.session and self.session.viewport:
             self._zoom_viewport(2.0)
             
-    def _zoom_to_fit(self):
+    def _zoom_to_fit(self) -> None:
         """Fit entire waveform in view (delegated to controller)."""
         self.controller.zoom_to_fit()
     
-    def toggleBenchmarkMode(self):
+    def toggleBenchmarkMode(self) -> None:
         """Toggle benchmark mode on/off (delegated to controller)."""
         self.controller.toggle_benchmark_mode()
             
-    def _zoom_viewport(self, zoom_factor: float, mouse_x: Optional[int] = None):
+    def _zoom_viewport(self, zoom_factor: float, mouse_x: Optional[int] = None) -> None:
         """Apply zoom to viewport around mouse position or center.
         
         Args:
@@ -718,21 +720,21 @@ class WaveScoutWidget(QWidget):
         # Delegate zoom to controller; controller will emit viewport_changed
         self.controller.zoom_viewport(zoom_factor, mouse_relative)
         
-    def _pan_left(self):
+    def _pan_left(self) -> None:
         """Pan left by 10% of viewport width."""
         if self.session and self.session.viewport:
             viewport = self.session.viewport
             pan_distance = viewport.width * UI.PAN_PERCENTAGE
             self._pan_viewport(-pan_distance)
             
-    def _pan_right(self):
+    def _pan_right(self) -> None:
         """Pan right by 10% of viewport width."""
         if self.session and self.session.viewport:
             viewport = self.session.viewport
             pan_distance = viewport.width * UI.PAN_PERCENTAGE
             self._pan_viewport(pan_distance)
             
-    def _pan_viewport(self, pan_distance: float):
+    def _pan_viewport(self, pan_distance: float) -> None:
         """Pan viewport by given distance in relative coordinates.
         
         Args:
@@ -744,17 +746,17 @@ class WaveScoutWidget(QWidget):
         # Delegate pan to controller; it will handle constraints and emit viewport_changed
         self.controller.pan_viewport(pan_distance)
         
-    def _go_to_start(self):
+    def _go_to_start(self) -> None:
         """Go to start of waveform (delegated to controller)."""
         if self.session and self.session.viewport:
             self.controller.go_to_start()
             
-    def _go_to_end(self):
+    def _go_to_end(self) -> None:
         """Go to end of waveform (delegated to controller)."""
         if self.session and self.session.viewport:
             self.controller.go_to_end()
             
-    def _update_canvas_time_range(self):
+    def _update_canvas_time_range(self) -> None:
         """Update canvas with current viewport time range."""
         if self.session and self._canvas:
             viewport = self.session.viewport
@@ -784,7 +786,7 @@ class WaveScoutWidget(QWidget):
             
         return min_width
             
-    def wheelEvent(self, event):
+    def wheelEvent(self, event: Any) -> None:
         """Handle mouse wheel events for zoom and pan."""
         if not self.session or not self.session.viewport:
             return super().wheelEvent(event)

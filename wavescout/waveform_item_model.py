@@ -1,7 +1,7 @@
 """Qt Model/View bridge for waveform data."""
 
 from PySide6.QtCore import Qt, QModelIndex, QAbstractItemModel, QPersistentModelIndex, QObject, QMimeData, QByteArray
-from typing import overload, List, Optional, Union, Tuple
+from typing import overload, List, Optional, Union, Tuple, Any, Sequence
 import json
 from .data_model import WaveformSession, SignalNode, SignalNameDisplayMode, RenderType
 from .signal_sampling import parse_signal_value
@@ -10,16 +10,16 @@ from .signal_sampling import parse_signal_value
 class WaveformItemModel(QAbstractItemModel):
     """Exposes SignalNode tree to Qt views while keeping dataclass purity."""
 
-    def __init__(self, session: WaveformSession, parent=None):
+    def __init__(self, session: WaveformSession, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._session = session
         self._headers = ["Signal", "Value", "Waveform", "Analysis"]
 
     # -- overriding row/column API --
-    def columnCount(self, _parent=QModelIndex()):
+    def columnCount(self, _parent: Union[QModelIndex, QPersistentModelIndex] = QModelIndex()) -> int:
         return 4  # One column for each panel: Signal, Value, Waveform, Analysis
 
-    def rowCount(self, parent=QModelIndex()):
+    def rowCount(self, parent: Union[QModelIndex, QPersistentModelIndex] = QModelIndex()) -> int:
         # Return number of children for given parent (or root nodes)
         if not parent.isValid():
             return len(self._session.root_nodes)
@@ -79,7 +79,7 @@ class WaveformItemModel(QAbstractItemModel):
         
         return self.createIndex(row, 0, parent_node)
 
-    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+    def data(self, index: Union[QModelIndex, QPersistentModelIndex], role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         # Return appropriate data based on column and role
         if not index.isValid():
             return None
@@ -106,13 +106,13 @@ class WaveformItemModel(QAbstractItemModel):
         
         return None
 
-    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             if 0 <= section < len(self._headers):
                 return self._headers[section]
         return None
 
-    def flags(self, index):
+    def flags(self, index: Union[QModelIndex, QPersistentModelIndex]) -> Qt.ItemFlag:
         if not index.isValid():
             return Qt.ItemFlag.ItemIsDropEnabled
         
@@ -125,7 +125,7 @@ class WaveformItemModel(QAbstractItemModel):
         
         return default_flags
 
-    def hasChildren(self, parent=QModelIndex()):
+    def hasChildren(self, parent: Union[QModelIndex, QPersistentModelIndex] = QModelIndex()) -> bool:
         if not parent.isValid():
             return len(self._session.root_nodes) > 0
         
@@ -191,15 +191,15 @@ class WaveformItemModel(QAbstractItemModel):
         return ""
     
     # -- Drag and Drop Support --
-    def supportedDropActions(self):
+    def supportedDropActions(self) -> Qt.DropAction:
         return Qt.DropAction.MoveAction
     
-    def mimeTypes(self):
+    def mimeTypes(self) -> List[str]:
         return ["application/x-wavescout-signalnodes"]
     
-    def mimeData(self, indexes):
+    def mimeData(self, indexes: Sequence[QModelIndex]) -> QMimeData:
         if not indexes:
-            return None
+            return QMimeData()
         
         # Collect unique nodes (avoid duplicates from multiple columns)
         nodes_data = []
@@ -219,14 +219,14 @@ class WaveformItemModel(QAbstractItemModel):
                     })
         
         if not nodes_data:
-            return None
+            return QMimeData()
         
         mime_data = QMimeData()
         data = json.dumps(nodes_data).encode('utf-8')
         mime_data.setData("application/x-wavescout-signalnodes", QByteArray(data))
         return mime_data
     
-    def canDropMimeData(self, data, action, row, column, parent):
+    def canDropMimeData(self, data: QMimeData, action: Qt.DropAction, row: int, column: int, parent: Union[QModelIndex, QPersistentModelIndex]) -> bool:
         if not data.hasFormat("application/x-wavescout-signalnodes"):
             return False
         
@@ -236,13 +236,13 @@ class WaveformItemModel(QAbstractItemModel):
         # Always allow drops - we'll handle the logic in dropMimeData
         return True
     
-    def dropMimeData(self, data, action, row, column, parent):
+    def dropMimeData(self, data: QMimeData, action: Qt.DropAction, row: int, column: int, parent: Union[QModelIndex, QPersistentModelIndex]) -> bool:
         if not self.canDropMimeData(data, action, row, column, parent):
             return False
 
         # Parse the drag data
         byte_data = data.data("application/x-wavescout-signalnodes")
-        nodes_data = json.loads(byte_data.data().decode('utf-8'))
+        nodes_data = json.loads(bytes(byte_data.data()).decode('utf-8'))
         
         # Determine drop target and insertion position
         if row == -1 and parent.isValid():

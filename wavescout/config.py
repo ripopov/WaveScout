@@ -72,7 +72,7 @@ class ColorScheme:
     
     # Debug colors
     DEBUG_TEXT: str = "#ffff00"  # Yellow
-    DEBUG_BACKGROUND: tuple = (0, 0, 0, 200)  # RGBA
+    DEBUG_BACKGROUND: tuple[int, int, int, int] = (0, 0, 0, 200)  # RGBA
     
     # Default signal color
     DEFAULT_SIGNAL: str = "#33C3F0"
@@ -107,7 +107,7 @@ class UIConfig:
     # Drag and drop
     DRAG_DROP_ENABLED: bool = True
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.SPLITTER_INITIAL_SIZES is None:
             object.__setattr__(self, 'SPLITTER_INITIAL_SIZES', [200, 100, 400, 100])
 
@@ -127,7 +127,7 @@ class TimeRulerDefaults:
     TICK_Y_START: int = 29
     TEXT_Y_OFFSET: int = 5
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.NICE_NUMBERS is None:
             object.__setattr__(self, 'NICE_NUMBERS', [1, 2, 2.5, 5])
 

@@ -60,6 +60,7 @@ from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
 from PySide6.QtWidgets import QApplication
 from typing import Optional, Any, List, overload, Dict
 from .data_model import SignalHandle
+from .protocols import WaveformDBProtocol
 
 
 class DesignTreeNode:
@@ -85,7 +86,7 @@ class DesignTreeNode:
         self.var_handle: Optional[SignalHandle] = None  # Wellen Var handle for database lookups
         self.var = None  # Wellen Var object reference
 
-    def add_child(self, child: 'DesignTreeNode'):
+    def add_child(self, child: 'DesignTreeNode') -> None:
         """Add a child node to this node and set this node as its parent."""
         child.parent = self
         self.children.append(child)
@@ -102,7 +103,7 @@ class DesignTreeModel(QAbstractItemModel):
     - Creating icons for visual distinction between scopes and signals
     """
 
-    def __init__(self, waveform_db=None, parent=None):
+    def __init__(self, waveform_db: Optional[WaveformDBProtocol] = None, parent: Optional[QObject] = None) -> None:
         """Initialize the model with an optional waveform database.
         
         Args:
@@ -112,14 +113,14 @@ class DesignTreeModel(QAbstractItemModel):
         super().__init__(parent)
         self.root_node = DesignTreeNode("Root", is_scope=True)
         self.waveform_db = waveform_db
-        self._scope_icon = None
-        self._signal_icon = None
+        self._scope_icon: Optional[QIcon] = None
+        self._signal_icon: Optional[QIcon] = None
         self._create_icons()
 
         if waveform_db:
             self.load_hierarchy(waveform_db)
 
-    def _create_icons(self):
+    def _create_icons(self) -> None:
         """Create visual icons to distinguish between scopes (folders) and signals (waveforms).
         
         Creates two 16x16 pixel icons:
@@ -169,7 +170,7 @@ class DesignTreeModel(QAbstractItemModel):
             self._scope_icon = None
             self._signal_icon = None
 
-    def load_hierarchy(self, waveform_db):
+    def load_hierarchy(self, waveform_db: WaveformDBProtocol) -> None:
         """Load and build the complete design hierarchy from a waveform database.
         
         This clears any existing hierarchy and rebuilds it from the provided database.
@@ -188,7 +189,7 @@ class DesignTreeModel(QAbstractItemModel):
 
         self.endResetModel()  # Notify views that model rebuild is complete
 
-    def _build_hierarchy(self):
+    def _build_hierarchy(self) -> None:
         """Build the internal tree structure from the waveform database hierarchy.
         
         This method:
@@ -218,7 +219,7 @@ class DesignTreeModel(QAbstractItemModel):
         # Clean up the temporary mapping
         self._var_to_handle = None
 
-    def _build_scope_recursive(self, scopes, parent_node, hierarchy):
+    def _build_scope_recursive(self, scopes: Any, parent_node: DesignTreeNode, hierarchy: Any) -> None:
         """Recursively build the tree structure for scopes and their contents.
         
         This method traverses the design hierarchy depth-first, creating nodes for:
