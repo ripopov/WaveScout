@@ -1,11 +1,12 @@
 """Helper functions to load waveforms and create signal nodes."""
 
-from typing import List, Dict, Any
+from typing import List, Dict
+from pywellen import Var, Hierarchy
 from .data_model import SignalNode, SignalHandle, DisplayFormat, DataFormat, WaveformSession, RenderType
 from .waveform_db import WaveformDB
 
 
-def create_signal_node_from_wellen(var: Any, hierarchy: Any, handle: SignalHandle) -> SignalNode:
+def create_signal_node_from_wellen(var: Var, hierarchy: Hierarchy, handle: SignalHandle) -> SignalNode:
     """Create a SignalNode from a Wellen variable."""
     # Get variable info
     full_name = var.full_name(hierarchy)

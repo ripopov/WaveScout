@@ -4,6 +4,7 @@ import yaml
 import pathlib
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import asdict
+from pywellen import Var, Hierarchy
 from .protocols import WaveformDBProtocol
 from .data_model import (
     WaveformSession, SignalNode, DisplayFormat, DataFormat, 
@@ -56,10 +57,10 @@ def _resolve_signal_handles(nodes: List[SignalNode], waveform_db: WaveformDBProt
     hierarchy = waveform_db.hierarchy
     
     # Create a cache of signal names to var objects
-    name_to_var = {}
+    name_to_var: Dict[str, Var] = {}
     
     # Recursively collect all vars from the hierarchy through scope iteration
-    def collect_vars_from_scope(scope: Any) -> None:
+    def collect_vars_from_scope(scope: Hierarchy) -> None:
         # Add vars in this scope
         for var in scope.vars(hierarchy):
             full_name = var.full_name(hierarchy)

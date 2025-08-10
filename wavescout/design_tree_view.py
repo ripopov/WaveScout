@@ -7,14 +7,15 @@ A standalone widget providing two viewing modes for the design hierarchy:
 """
 
 from enum import Enum
-from typing import Optional, List, Any, cast, TYPE_CHECKING
+from typing import Optional, List, cast
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeView, QPushButton,
     QLabel, QStackedWidget, QSplitter, QLineEdit, QTableView,
     QHeaderView, QProgressDialog, QApplication, QAbstractItemView
 )
-from PySide6.QtCore import Qt, Signal, QSettings, QModelIndex, QSortFilterProxyModel, QEvent
+from PySide6.QtCore import Qt, Signal, QSettings, QModelIndex, QSortFilterProxyModel, QEvent, QObject
 from PySide6.QtGui import QKeyEvent
+from pywellen import Var
 
 from .design_tree_model import DesignTreeModel, DesignTreeNode
 from .data_model import SignalNode, RenderType, DisplayFormat, SignalHandle
@@ -40,7 +41,7 @@ class DesignTreeView(QWidget):
     signals_selected = Signal(list)  # List of SignalNode objects
     status_message = Signal(str)
     
-    def __init__(self, parent: Optional[Any] = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         
         self.waveform_db: Optional['WaveformDBProtocol'] = None
@@ -303,7 +304,7 @@ class DesignTreeView(QWidget):
             self.signals_selected.emit(signal_nodes)
             self.status_message.emit(f"Added {len(signal_nodes)} signal(s)")
     
-    def eventFilter(self, obj: Any, event: QEvent) -> bool:
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         """Event filter to handle keyboard shortcuts"""
         if event.type() == QEvent.Type.KeyPress:
             key_event = cast(QKeyEvent, event)
@@ -378,7 +379,7 @@ class DesignTreeView(QWidget):
             self.signals_selected.emit(signal_nodes)
             self.status_message.emit(f"Added {len(signal_nodes)} signal(s)")
     
-    def _is_single_bit(self, var_obj: Any, handle: Optional[SignalHandle]) -> bool:
+    def _is_single_bit(self, var_obj: Optional[Var], handle: Optional[SignalHandle]) -> bool:
         """Determine if a variable/signal is single-bit using pywellen API.
         
         Tries the provided var object first; if not available, attempts to fetch

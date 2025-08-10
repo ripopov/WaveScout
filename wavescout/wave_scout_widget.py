@@ -4,8 +4,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout,
                               QScrollBar, QSplitter,
                               QLabel, QFrame, QApplication)
 from PySide6.QtCore import Qt, Signal, QModelIndex, QItemSelectionModel, QItemSelection, QEvent, QTimer, QObject
-from PySide6.QtGui import QKeyEvent
-from typing import Optional, Any, cast, List
+from PySide6.QtGui import QKeyEvent, QWheelEvent
+from typing import Optional, cast, List
 from .waveform_item_model import WaveformItemModel
 from .waveform_canvas import WaveformCanvas
 from .data_model import WaveformSession, SignalNode, GroupRenderMode
@@ -455,12 +455,12 @@ class WaveScoutWidget(QWidget):
                 (key == Qt.Key.Key_G and modifiers == Qt.KeyboardModifier.NoModifier) or
                 key in [Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_PageUp, Qt.Key.Key_PageDown]):
                 # Send the event to our keyPressEvent
-                self.keyPressEvent(event)
+                self.keyPressEvent(key_event)
                 return True
         
         return super().eventFilter(watched, event)
     
-    def keyPressEvent(self, event: Any) -> None:
+    def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle key press events."""
         # Handle delete key
         if event.key() == Qt.Key.Key_Delete:
@@ -786,7 +786,7 @@ class WaveScoutWidget(QWidget):
             
         return min_width
             
-    def wheelEvent(self, event: Any) -> None:
+    def wheelEvent(self, event: QWheelEvent) -> None:
         """Handle mouse wheel events for zoom and pan."""
         if not self.session or not self.session.viewport:
             return super().wheelEvent(event)
