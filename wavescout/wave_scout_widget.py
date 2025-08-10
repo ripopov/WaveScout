@@ -40,7 +40,6 @@ class WaveScoutWidget(QWidget):
         # Bind controller events to view updates
         self.controller.on("viewport_changed", self._update_canvas_time_range)
         self.controller.on("cursor_changed", self._on_controller_cursor_changed)
-        self.controller.on("benchmark_changed", self._on_controller_benchmark_changed)
         self.controller.on("markers_changed", self._on_controller_markers_changed)
         
     def _setup_ui(self) -> None:
@@ -386,10 +385,6 @@ class WaveScoutWidget(QWidget):
                 self._info_bar.setText(f"Cursor: {time}")
         self.cursorChanged.emit(time)
 
-    def _on_controller_benchmark_changed(self) -> None:
-        if self._canvas:
-            self._canvas.update()
-            
     def _on_controller_markers_changed(self) -> None:
         """Handle markers change from controller."""
         if self._canvas:
@@ -638,10 +633,6 @@ class WaveScoutWidget(QWidget):
         """Fit entire waveform in view (delegated to controller)."""
         self.controller.zoom_to_fit()
     
-    def toggleBenchmarkMode(self) -> None:
-        """Toggle benchmark mode on/off (delegated to controller)."""
-        self.controller.toggle_benchmark_mode()
-            
     def _zoom_viewport(self, zoom_factor: float, mouse_x: Optional[int] = None) -> None:
         """Apply zoom to viewport around mouse position or center.
         

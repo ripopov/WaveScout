@@ -270,5 +270,3 @@ class WaveformSession:
     selected_nodes: List[SignalNode] = field(default_factory=list)  # Currently selected nodes
     time_ruler_config: TimeRulerConfig = field(default_factory=TimeRulerConfig)  # Configuration for time ruler display
     timescale: Timescale = field(default_factory=lambda: Timescale(1, TimeUnit.PICOSECONDS))  # Timescale from the waveform file, default 1 ps if waveform not specifies timescale
-    canvas_benchmark_mode: bool = False  # When enabled, canvas draws each pixel with a different color in rainbow pattern
-                                         # instead of waveforms. Used to benchmark pixel painting speed vs draw command computation

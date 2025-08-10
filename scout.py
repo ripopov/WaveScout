@@ -257,31 +257,6 @@ class WaveScoutMainWindow(QMainWindow):
         
         view_menu.addSeparator()
         
-        # Canvas mode submenu
-        canvas_mode_menu = view_menu.addMenu("Canvas &Mode")
-        
-        # Create action group for exclusive selection
-        canvas_mode_group = QActionGroup(self)
-        
-        # Normal mode action
-        normal_mode_action = QAction("&Normal (Waveforms)", self)
-        normal_mode_action.setCheckable(True)
-        normal_mode_action.setChecked(True)
-        normal_mode_action.triggered.connect(lambda: self._set_canvas_mode(False))
-        canvas_mode_group.addAction(normal_mode_action)
-        canvas_mode_menu.addAction(normal_mode_action)
-        
-        # Benchmark mode action
-        benchmark_mode_action = QAction("&Benchmark (Rainbow Pixels)", self)
-        benchmark_mode_action.setCheckable(True)
-        benchmark_mode_action.triggered.connect(lambda: self._set_canvas_mode(True))
-        canvas_mode_group.addAction(benchmark_mode_action)
-        canvas_mode_menu.addAction(benchmark_mode_action)
-        
-        # Store references for later use
-        self.normal_mode_action = normal_mode_action
-        self.benchmark_mode_action = benchmark_mode_action
-        
     def reload_waveform(self):
         """Reload the current waveform file."""
         if not self.current_wave_file:
@@ -384,11 +359,6 @@ class WaveScoutMainWindow(QMainWindow):
         """Handle successful file load."""
         self.wave_widget.setSession(session)
         
-        # Update canvas mode menu to match session
-        if session.canvas_benchmark_mode:
-            self.benchmark_mode_action.setChecked(True)
-        else:
-            self.normal_mode_action.setChecked(True)
         
         # Get filename from the session's waveform database (file_path is optional property)
         if session.waveform_db:
@@ -556,11 +526,6 @@ class WaveScoutMainWindow(QMainWindow):
         # Update UI
         self.wave_widget.setSession(session)
         
-        # Update canvas mode menu to match session
-        if session.canvas_benchmark_mode:
-            self.benchmark_mode_action.setChecked(True)
-        else:
-            self.normal_mode_action.setChecked(True)
         
         session_file = getattr(self, '_loading_session_path', 'session')
         self.statusBar().showMessage(f"Session loaded from: {Path(session_file).name}")
@@ -687,18 +652,6 @@ class WaveScoutMainWindow(QMainWindow):
             model.layoutChanged.emit()
             
         self.statusBar().showMessage(f"Added signal: {new_node.name}")
-    
-    def _set_canvas_mode(self, benchmark_mode: bool):
-        """Set canvas rendering mode (normal or benchmark)."""
-        if self.wave_widget.session:
-            self.wave_widget.session.canvas_benchmark_mode = benchmark_mode
-            # Invalidate the last render hash to force re-render
-            # Force canvas to repaint
-            self.wave_widget._canvas.update()
-            
-            # Update status message
-            mode_name = "Benchmark (Rainbow Pixels)" if benchmark_mode else "Normal (Waveforms)"
-            self.statusBar().showMessage(f"Canvas mode: {mode_name}", 2000)
     
     def _drop_marker(self):
         """Add a marker at the current cursor position."""

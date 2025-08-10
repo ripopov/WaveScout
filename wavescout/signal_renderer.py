@@ -2,7 +2,7 @@
 
 Purpose
 - Provide concise, reusable drawing routines for different signal kinds used by the
-  WaveScout viewer (digital, bus, analog, and event) plus a benchmark pattern.
+  WaveScout viewer (digital, bus, analog, and event).
 - Keep higher-level widgets thin: callers assemble inputs (sampling results and
   render params), this module turns them into QPainter primitives.
 
@@ -48,7 +48,6 @@ class RenderParams(TypedDict, total=False):
     end_time: Time
     cursor_time: Time
     scroll_value: int
-    benchmark_mode: bool
     visible_nodes_info: list[NodeInfo]
     visible_nodes: list[SignalNode]  # SignalNode objects
     waveform_db: Optional[WaveformDBProtocol]
@@ -768,76 +767,3 @@ def draw_event_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sign
         painter.drawPoint(x_pos, arrow_tip_y + 2)
         painter.drawPoint(x_pos + 1, arrow_tip_y + 2)
 
-
-def draw_benchmark_pattern(painter: QPainter, width: int, height: int) -> None:
-    """Fill the canvas with a rainbow pattern to test paint throughput.
-    
-    Uses a vectorized NumPy pipeline to generate an RGB888 image covering the entire
-    viewport, then draws it as a single QImage. Also overlays a centered title.
-    
-    Args:
-        painter: Active QPainter.
-        width: Canvas width in pixels.
-        height: Canvas height in pixels.
-    """
-    import numpy as np
-    from PySide6.QtGui import QImage
-    
-    # Create coordinate grids using numpy's efficient meshgrid
-    x_coords, y_coords = np.meshgrid(np.arange(width), np.arange(height))
-    
-    # Calculate hue values for all pixels at once (vectorized)
-    hue_array = ((x_coords + y_coords) % 360) / 360.0
-    
-    # Convert HSV to RGB using vectorized operations
-    h = hue_array * 6.0
-    i = np.floor(h).astype(int)
-    f = h - i
-    
-    # Create RGB array
-    rgb_array = np.zeros((height, width, 3), dtype=np.uint8)
-    
-    # Calculate RGB values based on hue sector
-    idx = (i % 6)
-    
-    # Red channel
-    rgb_array[:,:,0] = np.where((idx == 0) | (idx == 5), 255,
-                      np.where((idx == 1), (1-f) * 255,
-                      np.where((idx == 4), f * 255, 0)))
-    
-    # Green channel  
-    rgb_array[:,:,1] = np.where((idx == 1) | (idx == 2), 255,
-                      np.where((idx == 0), f * 255,
-                      np.where((idx == 3), (1-f) * 255, 0)))
-    
-    # Blue channel
-    rgb_array[:,:,2] = np.where((idx == 3) | (idx == 4), 255,
-                      np.where((idx == 2), f * 255,
-                      np.where((idx == 5), (1-f) * 255, 0)))
-    
-    # Convert numpy array to QImage
-    bytes_per_line = width * 3
-    try:
-        # Make sure the array is C-contiguous
-        rgb_array = np.ascontiguousarray(rgb_array)
-        image_data = rgb_array.data.tobytes()
-        image = QImage(image_data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
-        
-        # Draw the entire image at once
-        painter.drawImage(0, 0, image)
-    except Exception as e:
-        # Fallback to pixel-by-pixel drawing if numpy fails
-        raise
-    
-    # Draw text
-    painter.setPen(QColor(COLORS.TEXT))
-    painter.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-    text = "BENCHMARK MODE - Rainbow Pixel Pattern"
-    text_rect = painter.fontMetrics().boundingRect(text)
-    x = (width - text_rect.width()) // 2
-    y = height // 2
-    
-    painter.fillRect(x - 5, y - text_rect.height() - 5, 
-                    text_rect.width() + 10, text_rect.height() + 10, 
-                    QColor(0, 0, 0, 200))
-    painter.drawText(x, y, text)

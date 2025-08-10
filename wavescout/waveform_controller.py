@@ -55,7 +55,6 @@ class WaveformController:
         "viewport_changed": [],
         "selection_changed": [],
         "cursor_changed": [],
-        "benchmark_changed": [],
         "markers_changed": [],
     })
 
@@ -89,7 +88,6 @@ class WaveformController:
         # Also emit viewport and cursor to allow immediate refresh
         self._emit("viewport_changed")
         self._emit("cursor_changed")
-        self._emit("benchmark_changed")
 
     def set_selection_by_ids(self, ids: Iterable[int]) -> None:
         """Set selection given node instance IDs; sync Session.selected_nodes."""
@@ -127,12 +125,6 @@ class WaveformController:
                 new_time=int(time_value)
             ))
             self._emit("cursor_changed")
-
-    def toggle_benchmark_mode(self) -> None:
-        if not self.session:
-            return
-        self.session.canvas_benchmark_mode = not self.session.canvas_benchmark_mode
-        self._emit("benchmark_changed")
 
     # ---- Marker operations ----
     def add_marker(self, index: int, time: Time, color: Optional[str] = None) -> None:

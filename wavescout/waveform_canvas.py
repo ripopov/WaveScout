@@ -12,7 +12,7 @@ from .signal_sampling import (
     generate_signal_draw_commands
 )
 from .signal_renderer import (
-    draw_digital_signal, draw_bus_signal, draw_analog_signal, draw_event_signal, draw_benchmark_pattern,
+    draw_digital_signal, draw_bus_signal, draw_analog_signal, draw_event_signal,
     NodeInfo, RenderParams
 )
 from .config import RENDERING, COLORS, MARKER_LABELS
@@ -528,23 +528,21 @@ class WaveformCanvas(QWidget):
             params['end_time'],
             # Don't include cursor_time - cursor is drawn separately
             params['scroll_value'],
-            params['benchmark_mode'],
             params.get('header_height', 35),  # Include header height
         ]
         
-        # Add visible nodes info if not in benchmark mode
-        if not params['benchmark_mode']:
-            key_params.append(len(params['visible_nodes_info']))
-            # Include node handles, height scaling, and data format to detect changes
-            if 'visible_nodes' in params:
-                key_params.append(
-                    tuple((node.handle, node.name, node.height_scaling, 
-                           node.format.data_format if not node.is_group else None) 
-                          for node in params['visible_nodes'])
-                )
-            # Include row heights to detect layout changes
-            if 'row_heights' in params:
-                key_params.append(tuple(params['row_heights'].items()))
+        # Add visible nodes info
+        key_params.append(len(params['visible_nodes_info']))
+        # Include node handles, height scaling, and data format to detect changes
+        if 'visible_nodes' in params:
+            key_params.append(
+                tuple((node.handle, node.name, node.height_scaling, 
+                       node.format.data_format if not node.is_group else None) 
+                      for node in params['visible_nodes'])
+            )
+        # Include row heights to detect layout changes
+        if 'row_heights' in params:
+            key_params.append(tuple(params['row_heights'].items()))
         
         return hash(tuple(key_params))
     
@@ -555,27 +553,6 @@ class WaveformCanvas(QWidget):
         if self._shared_scrollbar:
             scroll_value = self._shared_scrollbar.value()
         
-        # Check benchmark mode
-        benchmark_mode = False
-        if self._model and self._model._session:
-            benchmark_mode = self._model._session.canvas_benchmark_mode
-        
-        # In benchmark mode, we don't need nodes or draw commands
-        if benchmark_mode:
-            return RenderParams(
-                width=self.width(),
-                height=self.height(),
-                dpr=float(self.devicePixelRatioF()),
-                start_time=self._start_time,
-                end_time=self._end_time,
-                cursor_time=self._cursor_time,
-                scroll_value=scroll_value,
-                benchmark_mode=benchmark_mode,
-                visible_nodes_info=[],
-                generation=self._render_generation,
-                waveform_db=None,
-                waveform_max_time=None
-            )
         
         # Only copy visible nodes info, not the actual nodes
         visible_nodes_info: List[NodeInfo] = []
@@ -604,7 +581,6 @@ class WaveformCanvas(QWidget):
             end_time=self._end_time,
             cursor_time=self._cursor_time,
             scroll_value=scroll_value,
-            benchmark_mode=benchmark_mode,
             visible_nodes_info=visible_nodes_info,
             visible_nodes=self._visible_nodes.copy(),  # Pass full nodes for draw command generation
             waveform_db=waveform_db,
@@ -624,8 +600,8 @@ class WaveformCanvas(QWidget):
         # Timing for draw command generation
         draw_cmd_start = time_module.time()
         
-        # Generate draw commands if not in benchmark mode
-        if not params['benchmark_mode'] and params['waveform_db']:
+        # Generate draw commands
+        if params['waveform_db']:
             visible_signal_node = [node for node in params['visible_nodes'] if not node.is_group and node.handle is not None]
             draw_commands = self._generate_all_draw_commands(
                 visible_signal_node,
@@ -659,11 +635,7 @@ class WaveformCanvas(QWidget):
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         
         try:
-            if params['benchmark_mode']:
-                # Render benchmark pattern
-                draw_benchmark_pattern(painter, params['width'], params['height'])
-            else:
-                # First paint the valid time range background
+            # First paint the valid time range background
                 if self._waveform_max_time is not None and params['width'] > 0:
                     # Calculate pixel positions for time boundaries
                     x_min = int((self._waveform_min_time - params['start_time']) * params['width'] / 
