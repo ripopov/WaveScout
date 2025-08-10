@@ -5,6 +5,8 @@
 WaveScout is a waveform viewer widget for digital design verification. It is built with PySide6 for the GUI and uses a
 Rust backend (Wellen library: https://github.com/ekiwi/wellen) for processing waveform databases.
 
+Project must use modern Python 3.12 features and use Poetry for dependency management.
+
 ## Project Structure
 ```
 WaveScout/
@@ -20,6 +22,8 @@ WaveScout/
 ```
 
 ## Key Dependencies
+- Poetry
+- Python 3.12
 - PySide6 (Qt6 for Python)
 - pywellen (Python bindings for Wellen waveform library)
 - Rust toolchain (for building pywellen)
