@@ -1,10 +1,10 @@
 # Project Guidelines
 
-This document provides an overview of the WaveScout project and concrete guidelines for 
+This document provides an overview of the WaveformScout project and concrete guidelines for 
 CLAUDE, Junie, and other coding agents when making changes.
 
 ## Overview
-- WaveScout is a PySide6 (Qt6) digital/mixed-signal waveform viewer with a Rust-accelerated backend (Wellen via pywellen) for fast waveform processing.
+- WaveformScout is a PySide6 (Qt6) digital/mixed-signal waveform viewer with a Rust-accelerated backend (Wellen via pywellen) for fast waveform processing.
 - Primary goals: performant waveform viewing, clean dataclass-based model layer, and an efficient Qt Model/View bridge.
 
 ## Project Structure (high level)
