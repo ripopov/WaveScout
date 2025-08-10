@@ -205,6 +205,14 @@ class WaveScoutMainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction("E&xit", self.close)
         
+        # Edit menu
+        edit_menu = menubar.addMenu("&Edit")
+        edit_menu.addSeparator()
+        self.drop_marker_action = QAction("&Drop Marker", self)
+        self.drop_marker_action.setShortcut(QKeySequence("Ctrl+M"))
+        self.drop_marker_action.triggered.connect(self._drop_marker)
+        edit_menu.addAction(self.drop_marker_action)
+        
         # View menu
         view_menu = menubar.addMenu("&View")
         view_menu.addAction(self.zoom_in_action)
@@ -238,6 +246,13 @@ class WaveScoutMainWindow(QMainWindow):
             action.triggered.connect(lambda checked, s=scale: self._set_ui_scale(s))
             ui_scaling_group.addAction(action)
             ui_scaling_menu.addAction(action)
+        
+        view_menu.addSeparator()
+        
+        # Markers window action
+        self.markers_window_action = QAction("&Markers...", self)
+        self.markers_window_action.triggered.connect(self._show_markers_window)
+        view_menu.addAction(self.markers_window_action)
         
         view_menu.addSeparator()
         
@@ -682,6 +697,26 @@ class WaveScoutMainWindow(QMainWindow):
             mode_name = "Benchmark (Rainbow Pixels)" if benchmark_mode else "Normal (Waveforms)"
             self.statusBar().showMessage(f"Canvas mode: {mode_name}", 2000)
     
+    def _drop_marker(self):
+        """Add a marker at the current cursor position."""
+        if self.wave_widget.controller and self.wave_widget.session:
+            # Find the first available marker slot
+            for i in range(9):
+                marker = self.wave_widget.controller.get_marker(i)
+                if not marker:
+                    self.wave_widget.controller.add_marker(i, self.wave_widget.session.cursor_time)
+                    self.statusBar().showMessage(f"Marker {chr(65 + i)} added at cursor position", 3000)
+                    break
+            else:
+                self.statusBar().showMessage("All marker slots are in use", 3000)
+    
+    def _show_markers_window(self):
+        """Show the markers management window."""
+        from wavescout.markers_window import MarkersWindow
+        
+        if self.wave_widget.controller and self.wave_widget.session:
+            dialog = MarkersWindow(self.wave_widget.controller, self)
+            dialog.exec()
     
     def _set_ui_scale(self, scale: float):
         """Set the UI scaling factor."""

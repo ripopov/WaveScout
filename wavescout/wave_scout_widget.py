@@ -41,6 +41,7 @@ class WaveScoutWidget(QWidget):
         self.controller.on("viewport_changed", self._update_canvas_time_range)
         self.controller.on("cursor_changed", self._on_controller_cursor_changed)
         self.controller.on("benchmark_changed", self._on_controller_benchmark_changed)
+        self.controller.on("markers_changed", self._on_controller_markers_changed)
         
     def _setup_ui(self) -> None:
         """Set up the user interface."""
@@ -367,6 +368,11 @@ class WaveScoutWidget(QWidget):
         if self._canvas:
             self._canvas.update()
             
+    def _on_controller_markers_changed(self) -> None:
+        """Handle markers change from controller."""
+        if self._canvas:
+            self._canvas.update()
+            
     def _on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection) -> None:
         """Handle selection changes and update the data model."""
         if self._updating_selection or not self.session or not self._selection_model or not self.model:
@@ -485,6 +491,23 @@ class WaveScoutWidget(QWidget):
             event.accept()
         elif event.key() == Qt.Key.Key_PageDown:
             self._pan_right()
+            event.accept()
+        # Handle marker shortcuts (Ctrl+1 through Ctrl+9)
+        elif (event.modifiers() == Qt.KeyboardModifier.ControlModifier and 
+              event.key() >= Qt.Key.Key_1 and event.key() <= Qt.Key.Key_9):
+            marker_index = event.key() - Qt.Key.Key_1  # Convert to 0-based index
+            if self.controller:
+                self.controller.toggle_marker_at_cursor(marker_index)
+            event.accept()
+        # Handle marker navigation (1 through 9 without modifiers)
+        elif (event.modifiers() == Qt.KeyboardModifier.NoModifier and 
+              event.key() >= Qt.Key.Key_1 and event.key() <= Qt.Key.Key_9):
+            marker_index = event.key() - Qt.Key.Key_1  # Convert to 0-based index
+            if self.controller:
+                # Get actual canvas width for accurate pixel offset calculation
+                canvas_width = self._canvas.width() if self._canvas else 1000
+                # Navigate with 10 pixel offset from left edge
+                self.controller.navigate_to_marker(marker_index, 10, canvas_width)
             event.accept()
         else:
             super().keyPressEvent(event)

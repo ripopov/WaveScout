@@ -6,7 +6,7 @@ from PySide6.QtGui import QPainter, QPen, QColor, QFont, QFontMetrics, QImage, Q
 from typing import List, Tuple, Dict, Optional, Union
 from .waveform_item_model import WaveformItemModel
 from dataclasses import dataclass, field
-from .data_model import SignalNode, SignalHandle, SignalNodeID, Time, TimeUnit, TimeRulerConfig, RenderType
+from .data_model import SignalNode, SignalHandle, SignalNodeID, Time, TimeUnit, TimeRulerConfig, RenderType, Marker
 from .signal_sampling import (
     SignalDrawingData,
     generate_signal_draw_commands
@@ -15,7 +15,7 @@ from .signal_renderer import (
     draw_digital_signal, draw_bus_signal, draw_analog_signal, draw_event_signal, draw_benchmark_pattern,
     NodeInfo, RenderParams
 )
-from .config import RENDERING, COLORS
+from .config import RENDERING, COLORS, MARKER_LABELS
 import time as time_module
 import math
 from .protocols import WaveformDBProtocol
@@ -439,7 +439,7 @@ class WaveformCanvas(QWidget):
             painter.drawImage(0, 0, self._rendered_image)
     
     def _paint_overlays(self, painter: QPainter, update_rect: QRect, is_partial_update: bool) -> None:
-        """Paint overlays on top of waveforms (boundary lines, ruler, cursor)."""
+        """Paint overlays on top of waveforms (boundary lines, ruler, markers, cursor)."""
         # Draw boundary lines
         if not is_partial_update:
             self._draw_boundary_lines(painter)
@@ -448,8 +448,55 @@ class WaveformCanvas(QWidget):
         if not is_partial_update:
             self._draw_time_ruler(painter)
         
+        # Draw markers (before cursor so cursor is always on top)
+        self._paint_markers(painter, update_rect, is_partial_update)
+        
         # Draw cursor
         self._paint_cursor(painter, update_rect, is_partial_update)
+    
+    def _paint_markers(self, painter: QPainter, update_rect: QRect, is_partial_update: bool) -> None:
+        """Draw markers if they're visible."""
+        if not self._model or not self._model._session:
+            return
+            
+        markers = self._model._session.markers
+        if not markers:
+            return
+            
+        for i, marker in enumerate(markers):
+            # Skip placeholder markers (time < 0)
+            if marker and marker.time >= 0 and marker.time >= self._start_time and marker.time <= self._end_time:
+                x = int((marker.time - self._start_time) * self.width() / 
+                       (self._end_time - self._start_time))
+                
+                # Only draw marker if it's in the update region (or full update)
+                marker_padding = RENDERING.MARKER_WIDTH + 2
+                if not is_partial_update or (x >= update_rect.left() - marker_padding and 
+                                            x <= update_rect.right() + marker_padding):
+                    # Draw the vertical line
+                    pen = QPen(QColor(marker.color))
+                    pen.setWidth(RENDERING.MARKER_WIDTH)
+                    painter.setPen(pen)
+                    painter.drawLine(x, 0, x, self.height())
+                    
+                    # Draw the label at the top
+                    if i < len(MARKER_LABELS):
+                        label = MARKER_LABELS[i]
+                        font = QFont(RENDERING.FONT_FAMILY, RENDERING.FONT_SIZE_SMALL)
+                        painter.setFont(font)
+                        
+                        # Draw label background for readability
+                        fm = QFontMetrics(font)
+                        text_rect = fm.boundingRect(label)
+                        text_rect.moveTopLeft(QRect(x - text_rect.width() // 2, 2, 0, 0).topLeft())
+                        
+                        # Semi-transparent background
+                        painter.fillRect(text_rect.adjusted(-2, -1, 2, 1), 
+                                       QColor(0, 0, 0, 180))
+                        
+                        # Draw the label text
+                        painter.setPen(QColor(marker.color))
+                        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, label)
     
     def _paint_cursor(self, painter: QPainter, update_rect: QRect, is_partial_update: bool) -> None:
         """Draw the cursor if it's visible."""

@@ -14,7 +14,12 @@ Implement persistent timestamp markers in WaveScout waveform viewer, allowing us
 - Marker rendering does not invalidate cached waveform pictures
 
 ### User Interaction
-- **Keyboard shortcuts**: Ctrl+1 through Ctrl+9 to place/toggle markers
+- **Keyboard shortcuts**: 
+  - Ctrl+1 through Ctrl+9 to place/toggle markers at cursor position
+  - 1 through 9 (without Ctrl) to navigate viewport to corresponding marker
+- **Navigation behavior**: 
+  - Pressing number key moves viewport so marker is 10 pixels from left edge
+  - Provides visual clarity with slight offset from viewport edge
 - **Menu option**: Edit → Drop Marker to place marker at cursor position
 - **Marker management window**: View → Markers showing table with editable properties
 - **Table features**:
@@ -88,16 +93,23 @@ Implement persistent timestamp markers in WaveScout waveform viewer, allowing us
   - `update_marker_time(index: int, time: Time)`: Update timestamp
   - `update_marker_color(index: int, color: str)`: Update color
   - `get_marker(index: int) -> Optional[Marker]`: Get marker by index
+  - `navigate_to_marker(index: int, pixel_offset: int = 10)`: Navigate viewport to marker
 - **New Events**:
   - `"markers_changed"`: Emitted when markers modified
 - **Integration**:
   - Maintain markers list in session
   - Emit events for UI synchronization
+  - Calculate viewport position for marker navigation
 
 #### 4. `wavescout/wave_scout_widget.py`
 - **Keyboard Shortcuts**:
-  - Add Ctrl+1 through Ctrl+9 handling in `keyPressEvent()`
-  - Toggle behavior: add marker if none at index, remove if exists
+  - Add Ctrl+1 through Ctrl+9 handling in `keyPressEvent()` for marker placement
+  - Add 1 through 9 (without modifiers) for viewport navigation to markers
+  - Toggle behavior: Ctrl+N adds/removes marker, N alone navigates to marker
+- **Navigation Logic**:
+  - Check if marker exists at index
+  - If exists, call controller's `navigate_to_marker(index)`
+  - Viewport shifts so marker appears 10 pixels from left edge
 - **Menu Integration**:
   - Add "Drop Marker" action to Edit menu
   - Add "Markers..." action to View menu to open marker window
@@ -172,6 +184,16 @@ View Menu:
    - Draw label text at top with background
 2. Ensure rendering order: signals → markers → cursor
 
+### Marker Navigation Algorithm
+1. Get marker at specified index from session
+2. If marker doesn't exist, do nothing (no navigation)
+3. Calculate target viewport position:
+   - Convert pixel offset (10px) to time units
+   - Set viewport.left = marker.time - offset_time
+   - Maintain current viewport width
+4. Clamp viewport to valid bounds
+5. Emit `viewport_changed` event to update canvas
+
 ## Performance Considerations
 
 ### Rendering Optimization
@@ -200,18 +222,21 @@ View Menu:
 - Color picker integration
 
 ### Manual Testing
-- Verify all 9 shortcuts work correctly
+- Verify all 9 shortcuts work correctly for marker placement (Ctrl+1-9)
+- Verify all 9 shortcuts work correctly for navigation (1-9)
 - Test marker visibility at different zoom levels
 - Confirm markers don't affect performance
 - Validate color changes apply immediately
 - Test edge cases (markers at viewport boundaries)
+- Test navigation to markers at different positions
+- Verify 10-pixel offset provides good visual clarity
 
 ## Implementation Notes
 
 ### Phase 1: Core Implementation
 1. Add marker rendering to canvas
-2. Implement controller methods
-3. Add keyboard shortcuts
+2. Implement controller methods (including navigation)
+3. Add keyboard shortcuts for placement (Ctrl+1-9)
 4. Test basic functionality
 
 ### Phase 2: UI Integration
@@ -220,7 +245,13 @@ View Menu:
 3. Implement color picker
 4. Add delete functionality
 
-### Phase 3: Polish
+### Phase 3: Navigation Features
+1. Add number key shortcuts (1-9) for navigation
+2. Implement navigate_to_marker in controller
+3. Calculate proper viewport offset (10 pixels)
+4. Test navigation at various zoom levels
+
+### Phase 4: Polish
 1. Optimize rendering
 2. Add visual feedback
 3. Improve label positioning
@@ -228,3 +259,6 @@ View Menu:
 
 ## Summary
 The Markers feature leverages existing WaveScout infrastructure, particularly the cursor implementation pattern and session persistence system. The data model already supports markers, requiring only UI integration and rendering logic. Implementation follows established patterns for controller events, canvas rendering, and Qt model/view architecture.
+
+### Key Navigation Enhancement
+The addition of number key shortcuts (1-9) for viewport navigation significantly improves marker usability. Users can quickly jump between marked positions with single key presses, with the 10-pixel offset ensuring the marker is clearly visible but not at the absolute edge. This creates an efficient workflow where Ctrl+N sets markers and N alone navigates to them.

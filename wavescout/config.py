@@ -7,6 +7,9 @@ used throughout the application to improve maintainability and consistency.
 from dataclasses import dataclass
 from typing import Optional, List
 
+# Marker labels
+MARKER_LABELS: List[str] = ["A", "B", "C", "D", "E", "F", "G", "H", "I"]
+
 
 @dataclass(frozen=True)
 class RenderingConfig:
@@ -37,6 +40,10 @@ class RenderingConfig:
     # Cursor settings
     CURSOR_WIDTH: int = 2
     CURSOR_PADDING: int = 2
+    
+    # Marker settings
+    MARKER_WIDTH: int = 1
+    MAX_MARKERS: int = 9
     
     # Debug display settings
     DEBUG_FONT_FAMILY: str = "Consolas"
@@ -69,6 +76,7 @@ class ColorScheme:
     # Selections and highlights
     SELECTION: str = "#094771"
     CURSOR: str = "#ff0000"
+    MARKER_DEFAULT_COLOR: str = "#00ff00"
     
     # Debug colors
     DEBUG_TEXT: str = "#ffff00"  # Yellow
