@@ -1,9 +1,9 @@
 """Signal names tree view for the WaveScout widget."""
 
-from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate
-from PySide6.QtCore import Qt, Signal, QModelIndex
+from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate, QWidget, QStyleOptionViewItem
+from PySide6.QtCore import Qt, Signal, QModelIndex, QAbstractItemModel, QPoint, QSize
 from PySide6.QtGui import QAction, QActionGroup
-from typing import List, Optional, Callable, Any, Union
+from typing import List, Optional, Callable, Union
 from PySide6.QtCore import QPersistentModelIndex
 from .data_model import SignalNode, RenderType, AnalogScalingMode, DataFormat
 from .config import RENDERING, UI
@@ -12,11 +12,11 @@ from .config import RENDERING, UI
 class ScaledHeightDelegate(QStyledItemDelegate):
     """Custom delegate that scales row height based on SignalNode.height_scaling."""
     
-    def __init__(self, base_height: int = RENDERING.DEFAULT_ROW_HEIGHT, parent: Optional[Any] = None) -> None:
+    def __init__(self, base_height: int = RENDERING.DEFAULT_ROW_HEIGHT, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._base_height = base_height
         
-    def sizeHint(self, option: Any, index: Union[QModelIndex, QPersistentModelIndex]) -> Any:
+    def sizeHint(self, option: QStyleOptionViewItem, index: Union[QModelIndex, QPersistentModelIndex]) -> QSize:
         """Return size hint with scaled height based on node's height_scaling."""
         # Get the default size hint
         size = super().sizeHint(option, index)
@@ -36,7 +36,7 @@ class ScaledHeightDelegate(QStyledItemDelegate):
 class BaseColumnView(QTreeView):
     """Base class for column-specific tree views."""
     
-    def __init__(self, visible_column: int, allow_expansion: bool = True, parent: Optional[Any] = None) -> None:
+    def __init__(self, visible_column: int, allow_expansion: bool = True, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._visible_column = visible_column
         self.setRootIsDecorated(True)
@@ -53,7 +53,7 @@ class BaseColumnView(QTreeView):
         self._delegate = ScaledHeightDelegate(base_height=RENDERING.DEFAULT_ROW_HEIGHT, parent=self)
         self.setItemDelegate(self._delegate)
         
-    def setModel(self, model: Any) -> None:
+    def setModel(self, model: Optional[QAbstractItemModel]) -> None:
         super().setModel(model)
         # Hide all columns except the specified one
         if model:
@@ -72,7 +72,7 @@ class BaseColumnView(QTreeView):
 class SignalNamesView(BaseColumnView):
     """Tree view for signal names (column 0)."""
     
-    def __init__(self, parent: Optional[Any] = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(visible_column=0, allow_expansion=True, parent=parent)
         # Enable context menu
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -98,7 +98,7 @@ class SignalNamesView(BaseColumnView):
                 nodes.append(n)
         return nodes
 
-    def _apply_to_selected_signals(self, apply_fn: Callable[[SignalNode], Any], predicate: Optional[Callable[[SignalNode], bool]] = None) -> None:
+    def _apply_to_selected_signals(self, apply_fn: Callable[[SignalNode], None], predicate: Optional[Callable[[SignalNode], bool]] = None) -> None:
         """Apply a function to all selected signal nodes.
         - apply_fn: callable taking a SignalNode
         - predicate: optional callable taking a SignalNode and returning bool
@@ -107,7 +107,7 @@ class SignalNamesView(BaseColumnView):
             if predicate is None or predicate(n):
                 apply_fn(n)
 
-    def _show_context_menu(self, position: Any) -> None:
+    def _show_context_menu(self, position: QPoint) -> None:
         """Show context menu at the given position."""
         # Get the index at the position
         index = self.indexAt(position)
