@@ -21,14 +21,45 @@ This module depends only on QPainter and small data types from the local data mo
 and sampling code; it contains no widget logic.
 """
 
-from typing import Dict, Tuple, Optional, Any, Union
+from typing import Dict, Tuple, Optional, Union, TypedDict
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPolygonF
 from PySide6.QtCore import Qt, QPointF
-from .data_model import RenderType, Time, AnalogScalingMode, SignalHandle, SignalNodeID
+from .data_model import RenderType, Time, AnalogScalingMode, SignalHandle, SignalNodeID, DisplayFormat, SignalNode
 from .signal_sampling import SignalDrawingData, ValueKind
 from .config import RENDERING, COLORS
 import math
 from .protocols import WaveformDBProtocol
+from .waveform_canvas import SignalRangeCache
+
+# Type definitions for node_info and params dictionaries
+class NodeInfo(TypedDict):
+    name: str
+    handle: Optional[SignalHandle]
+    is_group: bool
+    format: DisplayFormat
+    render_type: Optional[RenderType]
+    height_scaling: int
+    instance_id: SignalNodeID
+
+class RenderParams(TypedDict, total=False):
+    width: int
+    height: int
+    dpr: float
+    start_time: Time
+    end_time: Time
+    cursor_time: Time
+    scroll_value: int
+    benchmark_mode: bool
+    visible_nodes_info: list[NodeInfo]
+    visible_nodes: list[SignalNode]  # SignalNode objects
+    waveform_db: Optional[WaveformDBProtocol]
+    generation: int
+    row_heights: Dict[int, int]
+    base_row_height: int
+    header_height: int
+    waveform_max_time: Optional[Time]
+    signal_range_cache: Dict[SignalNodeID, SignalRangeCache]
+    draw_commands: Dict[SignalHandle, SignalDrawingData]  # Draw commands for signals
 
 
 def calculate_signal_bounds(y: int, row_height: int, margin_top: int = RENDERING.SIGNAL_MARGIN_TOP, 
@@ -85,8 +116,8 @@ def calculate_valid_pixel_range(start_time: Time, end_time: Time, width: int,
     return min_valid_pixel, max_valid_pixel
 
 
-def draw_digital_signal(painter: QPainter, node_info: Dict[str, Any], drawing_data: SignalDrawingData, 
-                       y: int, row_height: int, params: Dict[str, Any]) -> None:
+def draw_digital_signal(painter: QPainter, node_info: NodeInfo, drawing_data: SignalDrawingData, 
+                       y: int, row_height: int, params: RenderParams) -> None:
     """Render a boolean waveform as step lines.
     
     Logic overview
@@ -180,8 +211,8 @@ def draw_digital_signal(painter: QPainter, node_info: Dict[str, Any], drawing_da
                 painter.drawLine(int(current_x + 1), y_low, int(current_x + 1), y_high)
 
 
-def draw_bus_signal(painter: QPainter, node_info: Dict[str, Any], drawing_data: SignalDrawingData, 
-                   y: int, row_height: int, params: Dict[str, Any]) -> None:
+def draw_bus_signal(painter: QPainter, node_info: NodeInfo, drawing_data: SignalDrawingData, 
+                   y: int, row_height: int, params: RenderParams) -> None:
     """Render a multi-bit bus with smooth dynamic transitions.
     
     Logic overview:
@@ -471,7 +502,7 @@ def compute_global_signal_range(handle: SignalHandle, waveform_db: WaveformDBPro
 def get_signal_range(instance_id: SignalNodeID, handle: SignalHandle,
                     drawing_data: SignalDrawingData, 
                     scaling_mode: AnalogScalingMode, 
-                    signal_range_cache: Dict[SignalNodeID, Any],
+                    signal_range_cache: Dict[SignalNodeID, SignalRangeCache],
                     waveform_db: Optional[WaveformDBProtocol] = None,
                     start_time: Optional[Time] = None, end_time: Optional[Time] = None) -> Tuple[float, float]:
     """Return analog Y-range using a small cache keyed by signal instance.
@@ -530,8 +561,8 @@ def get_signal_range(instance_id: SignalNodeID, handle: SignalHandle,
         return min_val, max_val
 
 
-def draw_analog_signal(painter: QPainter, node_info: Dict[str, Any], drawing_data: SignalDrawingData, 
-                      y: int, row_height: int, params: Dict[str, Any]) -> None:
+def draw_analog_signal(painter: QPainter, node_info: NodeInfo, drawing_data: SignalDrawingData, 
+                      y: int, row_height: int, params: RenderParams) -> None:
     """Render an analog waveform as a polyline with optional min/max labels.
     
     Logic overview
@@ -686,8 +717,8 @@ def draw_analog_signal(painter: QPainter, node_info: Dict[str, Any], drawing_dat
                 painter.drawLine(x_int + 1, y_top, x_int + 1, y_bottom)
 
 
-def draw_event_signal(painter: QPainter, node_info: Dict[str, Any], drawing_data: SignalDrawingData, 
-                     y: int, row_height: int, params: Dict[str, Any]) -> None:
+def draw_event_signal(painter: QPainter, node_info: NodeInfo, drawing_data: SignalDrawingData, 
+                     y: int, row_height: int, params: RenderParams) -> None:
     """Render timestamped events as thin upward arrows.
     
     Logic overview

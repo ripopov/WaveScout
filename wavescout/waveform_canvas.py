@@ -11,7 +11,8 @@ from .signal_sampling import (
     generate_signal_draw_commands
 )
 from .signal_renderer import (
-    draw_digital_signal, draw_bus_signal, draw_analog_signal, draw_event_signal, draw_benchmark_pattern
+    draw_digital_signal, draw_bus_signal, draw_analog_signal, draw_event_signal, draw_benchmark_pattern,
+    NodeInfo, RenderParams
 )
 from .config import RENDERING, COLORS
 import time as time_module
@@ -473,10 +474,10 @@ class WaveformCanvas(QWidget):
             self._draw_debug_counters(painter)
     
     
-    def _hash_render_params(self, params: Dict[str, Any]) -> int:
+    def _hash_render_params(self, params: RenderParams) -> int:
         """Create a hash of render parameters for quick comparison."""
         # Build key params list
-        key_params = [
+        key_params: List[Union[float, int, bool, tuple[object, ...]]] = [
             params['width'],
             params['height'],
             params.get('dpr', 1.0),
@@ -504,7 +505,7 @@ class WaveformCanvas(QWidget):
         
         return hash(tuple(key_params))
     
-    def _collect_render_params(self) -> Dict[str, Any]:
+    def _collect_render_params(self) -> RenderParams:
         """Collect all parameters needed for rendering."""
         # Get scroll position
         scroll_value = 0
@@ -518,32 +519,33 @@ class WaveformCanvas(QWidget):
         
         # In benchmark mode, we don't need nodes or draw commands
         if benchmark_mode:
-            return {
-                'width': self.width(),
-                'height': self.height(),
-                'dpr': float(self.devicePixelRatioF()),
-                'start_time': self._start_time,
-                'end_time': self._end_time,
-                'cursor_time': self._cursor_time,
-                'scroll_value': scroll_value,
-                'benchmark_mode': benchmark_mode,
-                'visible_nodes_info': [],
-                'draw_commands': {},
-                'generation': self._render_generation
-            }
+            return RenderParams(
+                width=self.width(),
+                height=self.height(),
+                dpr=float(self.devicePixelRatioF()),
+                start_time=self._start_time,
+                end_time=self._end_time,
+                cursor_time=self._cursor_time,
+                scroll_value=scroll_value,
+                benchmark_mode=benchmark_mode,
+                visible_nodes_info=[],
+                generation=self._render_generation,
+                waveform_db=None,
+                waveform_max_time=None
+            )
         
         # Only copy visible nodes info, not the actual nodes
-        visible_nodes_info = []
+        visible_nodes_info: List[NodeInfo] = []
         for i, node in enumerate(self._visible_nodes):
-            node_info = {
-                'name': node.name,
-                'handle': node.handle,
-                'is_group': node.is_group,
-                'format': node.format,
-                'render_type': node.format.render_type if hasattr(node.format, 'render_type') else None,
-                'height_scaling': node.height_scaling,
-                'instance_id': node.instance_id
-            }
+            node_info: NodeInfo = NodeInfo(
+                name=node.name,
+                handle=node.handle,
+                is_group=node.is_group,
+                format=node.format,
+                render_type=node.format.render_type if hasattr(node.format, 'render_type') else None,
+                height_scaling=node.height_scaling,
+                instance_id=node.instance_id
+            )
             visible_nodes_info.append(node_info)
         
         # Get waveform_db reference if available
@@ -551,27 +553,27 @@ class WaveformCanvas(QWidget):
         if self._model and self._model._session and self._model._session.waveform_db:
             waveform_db = self._model._session.waveform_db
         
-        return {
-            'width': self.width(),
-            'height': self.height(),
-            'dpr': float(self.devicePixelRatioF()),
-            'start_time': self._start_time,
-            'end_time': self._end_time,
-            'cursor_time': self._cursor_time,
-            'scroll_value': scroll_value,
-            'benchmark_mode': benchmark_mode,
-            'visible_nodes_info': visible_nodes_info,
-            'visible_nodes': self._visible_nodes.copy(),  # Pass full nodes for draw command generation
-            'waveform_db': waveform_db,
-            'generation': self._render_generation,
-            'row_heights': self._row_heights.copy(),  # Pass row heights for rendering
-            'base_row_height': self._row_height,
-            'header_height': self._header_height,  # Include header height for proper rendering
-            'waveform_max_time': self._waveform_max_time,  # Add waveform max time for renderer
-            'signal_range_cache': self._signal_range_cache  # Pass signal range cache for analog rendering
-        }
+        return RenderParams(
+            width=self.width(),
+            height=self.height(),
+            dpr=float(self.devicePixelRatioF()),
+            start_time=self._start_time,
+            end_time=self._end_time,
+            cursor_time=self._cursor_time,
+            scroll_value=scroll_value,
+            benchmark_mode=benchmark_mode,
+            visible_nodes_info=visible_nodes_info,
+            visible_nodes=self._visible_nodes.copy(),  # Pass full nodes for draw command generation
+            waveform_db=waveform_db,
+            generation=self._render_generation,
+            row_heights=self._row_heights.copy(),  # Pass row heights for rendering
+            base_row_height=self._row_height,
+            header_height=self._header_height,  # Include header height for proper rendering
+            waveform_max_time=self._waveform_max_time,  # Add waveform max time for renderer
+            signal_range_cache=self._signal_range_cache  # Pass signal range cache for analog rendering
+        )
     
-    def _render_to_image(self, params: Dict[str, Any], generation: int) -> Tuple[QImage, int, float]:
+    def _render_to_image(self, params: RenderParams, generation: int) -> Tuple[QImage, int, float]:
         """Render waveforms to an image (runs in thread pool)."""
         # Start timing
         render_start_time = time_module.time()
@@ -649,7 +651,7 @@ class WaveformCanvas(QWidget):
         return image, generation, render_time_ms
     
     
-    def _render_waveforms(self, painter: QPainter, params: Dict[str, Any]) -> None:
+    def _render_waveforms(self, painter: QPainter, params: RenderParams) -> None:
         """Render waveforms (thread-safe version)."""
         import time as time_module
 
@@ -693,7 +695,7 @@ class WaveformCanvas(QWidget):
         
     
     
-    def _draw_time_ruler_simple(self, painter: QPainter, params: Dict[str, Any]) -> None:
+    def _draw_time_ruler_simple(self, painter: QPainter, params: RenderParams) -> None:
         """Simple version of time ruler drawing."""
         # Use default config since we can't access model from thread
         config = TimeRulerConfig()
@@ -722,7 +724,7 @@ class WaveformCanvas(QWidget):
             label = f"{time}"
             painter.drawText(x - 20, 5, 40, 20, Qt.AlignmentFlag.AlignCenter, label)
     
-    def _draw_row(self, painter: QPainter, node_info: Dict[str, Any], draw_commands: Dict[int, Any], row: int, y: int, row_height: int, params: Dict[str, Any]) -> None:
+    def _draw_row(self, painter: QPainter, node_info: NodeInfo, draw_commands: Dict[SignalHandle, SignalDrawingData], row: int, y: int, row_height: int, params: RenderParams) -> None:
         """Thread-safe version of row drawing."""
         # Draw background
         if row % 2 == 0:
@@ -749,7 +751,7 @@ class WaveformCanvas(QWidget):
             elif render_type == RenderType.EVENT:
                 draw_event_signal(painter, node_info, drawing_data, y, row_height, params)
     
-    def _draw_cursor(self, painter: QPainter, params: Dict[str, Any]) -> None:
+    def _draw_cursor(self, painter: QPainter, params: RenderParams) -> None:
         """Thread-safe version of cursor drawing."""
         if params['cursor_time'] >= params['start_time'] and params['cursor_time'] <= params['end_time']:
             x = int((params['cursor_time'] - params['start_time']) * params['width'] / 
