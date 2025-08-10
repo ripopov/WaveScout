@@ -49,7 +49,7 @@ def _serialize_node(node: SignalNode) -> Dict[str, Any]:
 
 def _resolve_signal_handles(nodes: List[SignalNode], waveform_db) -> None:
     """Resolve signal handles for nodes that have null handles."""
-    if not waveform_db.hierarchy:
+    if not waveform_db or not waveform_db.hierarchy:
         return
         
     hierarchy = waveform_db.hierarchy

@@ -203,8 +203,6 @@ class DesignTreeModel(QAbstractItemModel):
             return
 
         hierarchy = self.waveform_db.hierarchy
-        if not hierarchy:
-            return
 
         # OPTIMIZATION: Build a reverse mapping from variables to handles once
         # This allows O(1) handle lookups instead of O(n) searches

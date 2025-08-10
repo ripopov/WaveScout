@@ -17,7 +17,9 @@ class WaveformDBProtocol(Protocol):
     internals, providing a typed interface for all waveform operations.
     """
     
-    # Required attributes
+    # Required attributes  
+    # These are Optional because WaveformDB starts empty before open() is called
+    # Components should check if waveform_db itself is None, not these attributes
     waveform: Optional[Waveform]
     hierarchy: Optional[Hierarchy]
     

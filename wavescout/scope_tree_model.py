@@ -72,8 +72,6 @@ class ScopeTreeModel(QAbstractItemModel):
             return
         
         hierarchy = self.waveform_db.hierarchy
-        if not hierarchy:
-            return
         
         # Create root node
         self.root_node = DesignTreeNode("TOP", is_scope=True)

@@ -115,7 +115,7 @@ class WaveformDB:
             
     def top_signals(self) -> List[SignalHandle]:
         """Get handles for top-level signals."""
-        if not self.waveform:
+        if not self.waveform or not self.hierarchy:
             return []
             
         handles = []
@@ -131,8 +131,6 @@ class WaveformDB:
             for child_scope in scope.scopes(self.hierarchy):
                 collect_vars_recursive(child_scope)
         
-        if self.hierarchy is None:
-            return handles
         for scope in self.hierarchy.top_scopes():
             collect_vars_recursive(scope)
             
