@@ -7,9 +7,10 @@ import os
 from pathlib import Path
 from PySide6.QtWidgets import (QApplication, QMainWindow, 
                               QSplitter, QTreeView, QFileDialog,
-                              QMessageBox, QProgressDialog, QAbstractItemView)
+                              QMessageBox, QProgressDialog, QAbstractItemView,
+                              QToolBar, QStyle)
 from PySide6.QtCore import Qt, QThreadPool, QRunnable, Signal, QObject, QSettings, QEvent
-from PySide6.QtGui import QAction, QActionGroup
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 # QtAsyncio and asyncio removed - using single-threaded execution
 from wavescout import WaveScoutWidget, create_sample_session, save_session, load_session
 from wavescout.design_tree_view import DesignTreeView
@@ -60,6 +61,9 @@ class WaveScoutMainWindow(QMainWindow):
         # Store current UI scale
         self.current_ui_scale = self.settings.value("ui_scale", 1.0, type=float)
         
+        # Store current waveform file for reload
+        self.current_wave_file: str | None = None
+        
         # Create main splitter
         self.main_splitter = QSplitter(Qt.Horizontal)
         
@@ -81,8 +85,14 @@ class WaveScoutMainWindow(QMainWindow):
         
         self.setCentralWidget(self.main_splitter)
         
+        # Create actions first (shared between menu and toolbar)
+        self._create_actions()
+        
         # Create menu bar
         self._create_menus()
+        
+        # Create toolbar
+        self._create_toolbar()
         
         # Initialize status bar
         self.statusBar().showMessage("Ready")
@@ -104,14 +114,91 @@ class WaveScoutMainWindow(QMainWindow):
             vcd_path = Path(__file__).parent / "test_inputs" / "swerv1.vcd"
             if vcd_path.exists():
                 QTimer.singleShot(100, lambda: self.load_vcd(str(vcd_path)))
+            else:
+                # No default file, ensure actions are disabled
+                self._set_waveform_actions_enabled(False)
         
+    def _create_actions(self):
+        """Create shared QAction objects for toolbar and menu."""
+        # File actions
+        self.open_action = QAction("&Open...", self)
+        self.open_action.setShortcut(QKeySequence.Open)
+        self.open_action.setStatusTip("Open a waveform file")
+        self.open_action.triggered.connect(self.open_file)
+        
+        self.reload_action = QAction("&Reload", self)
+        self.reload_action.setShortcut(QKeySequence("Ctrl+R"))
+        self.reload_action.setStatusTip("Reload the current waveform file")
+        self.reload_action.setEnabled(False)  # Disabled until a file is loaded
+        self.reload_action.triggered.connect(self.reload_waveform)
+        
+        # View actions
+        self.zoom_in_action = QAction("Zoom &In", self)
+        self.zoom_in_action.setShortcut(QKeySequence("+"))
+        self.zoom_in_action.setStatusTip("Zoom in on the waveform")
+        self.zoom_in_action.setEnabled(False)  # Disabled until a file is loaded
+        self.zoom_in_action.triggered.connect(self.wave_widget._zoom_in)
+        
+        self.zoom_out_action = QAction("Zoom &Out", self)
+        self.zoom_out_action.setShortcut(QKeySequence("-"))
+        self.zoom_out_action.setStatusTip("Zoom out of the waveform")
+        self.zoom_out_action.setEnabled(False)  # Disabled until a file is loaded
+        self.zoom_out_action.triggered.connect(self.wave_widget._zoom_out)
+        
+        self.zoom_fit_action = QAction("Zoom to &Fit", self)
+        self.zoom_fit_action.setShortcut(QKeySequence("F"))
+        self.zoom_fit_action.setStatusTip("Fit the entire waveform in view")
+        self.zoom_fit_action.setEnabled(False)  # Disabled until a file is loaded
+        self.zoom_fit_action.triggered.connect(self.wave_widget._zoom_to_fit)
+        
+        self.pan_left_action = QAction("Pan &Left", self)
+        self.pan_left_action.setShortcut(QKeySequence("Left"))
+        self.pan_left_action.setStatusTip("Pan the view left")
+        self.pan_left_action.setEnabled(False)  # Disabled until a file is loaded
+        self.pan_left_action.triggered.connect(self.wave_widget._pan_left)
+        
+        self.pan_right_action = QAction("Pan &Right", self)
+        self.pan_right_action.setShortcut(QKeySequence("Right"))
+        self.pan_right_action.setStatusTip("Pan the view right")
+        self.pan_right_action.setEnabled(False)  # Disabled until a file is loaded
+        self.pan_right_action.triggered.connect(self.wave_widget._pan_right)
+        
+        # Set icons for toolbar
+        style = self.style()
+        if style:
+            self.open_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
+            self.reload_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
+            self.zoom_in_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_ArrowUp))
+            self.zoom_out_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_ArrowDown))
+            self.pan_left_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_ArrowLeft))
+            self.pan_right_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight))
+            self.zoom_fit_action.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DialogResetButton))
+    
+    def _create_toolbar(self):
+        """Create the main toolbar."""
+        self.toolbar = QToolBar("Main Toolbar", self)
+        self.toolbar.setObjectName("MainToolbar")  # For saving/restoring state
+        self.addToolBar(self.toolbar)
+        
+        # Add actions to toolbar
+        self.toolbar.addAction(self.open_action)
+        self.toolbar.addAction(self.reload_action)
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.zoom_in_action)
+        self.toolbar.addAction(self.zoom_out_action)
+        self.toolbar.addAction(self.zoom_fit_action)
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.pan_left_action)
+        self.toolbar.addAction(self.pan_right_action)
+    
     def _create_menus(self):
         """Create application menus."""
         menubar = self.menuBar()
         
         # File menu
         file_menu = menubar.addMenu("&File")
-        file_menu.addAction("&Open...", self.open_file)
+        file_menu.addAction(self.open_action)
+        file_menu.addAction(self.reload_action)
         file_menu.addSeparator()
         file_menu.addAction("&Save Session...", self.save_session)
         file_menu.addAction("&Load Session...", self.load_session)
@@ -120,9 +207,12 @@ class WaveScoutMainWindow(QMainWindow):
         
         # View menu
         view_menu = menubar.addMenu("&View")
-        view_menu.addAction("Zoom &In\t+", self.wave_widget._zoom_in)
-        view_menu.addAction("Zoom &Out\t-", self.wave_widget._zoom_out)
-        view_menu.addAction("Zoom to &Fit\tF", self.wave_widget._zoom_to_fit)
+        view_menu.addAction(self.zoom_in_action)
+        view_menu.addAction(self.zoom_out_action)
+        view_menu.addAction(self.zoom_fit_action)
+        view_menu.addSeparator()
+        view_menu.addAction(self.pan_left_action)
+        view_menu.addAction(self.pan_right_action)
         view_menu.addSeparator()
         
         # UI Scaling submenu
@@ -176,6 +266,33 @@ class WaveScoutMainWindow(QMainWindow):
         self.normal_mode_action = normal_mode_action
         self.benchmark_mode_action = benchmark_mode_action
         
+    def reload_waveform(self):
+        """Reload the current waveform file."""
+        if not self.current_wave_file:
+            QMessageBox.information(self, "No File Loaded", "No waveform file is currently loaded.")
+            return
+            
+        # Check if file still exists
+        if not os.path.exists(self.current_wave_file):
+            QMessageBox.critical(self, "File Not Found", 
+                               f"The file no longer exists:\n{self.current_wave_file}")
+            self.current_wave_file = None
+            self._set_waveform_actions_enabled(False)
+            return
+            
+        # Reload the file
+        self.statusBar().showMessage(f"Reloading {os.path.basename(self.current_wave_file)}...")
+        self.load_file(self.current_wave_file)
+    
+    def _set_waveform_actions_enabled(self, enabled: bool):
+        """Enable or disable waveform-related actions."""
+        self.reload_action.setEnabled(enabled and self.current_wave_file is not None)
+        self.zoom_in_action.setEnabled(enabled)
+        self.zoom_out_action.setEnabled(enabled)
+        self.zoom_fit_action.setEnabled(enabled)
+        self.pan_left_action.setEnabled(enabled)
+        self.pan_right_action.setEnabled(enabled)
+    
     def open_file(self):
         """Open a waveform file using file dialog."""
 
@@ -194,6 +311,9 @@ class WaveScoutMainWindow(QMainWindow):
             
     def load_file(self, file_path: str):
         """Load a waveform file asynchronously using thread pool."""
+        # Store the file path for reload functionality
+        self.current_wave_file = file_path
+        
         # Show loading status
         file_name = os.path.basename(file_path)
         
@@ -226,6 +346,9 @@ class WaveScoutMainWindow(QMainWindow):
         if self.progress_dialog:
             self.progress_dialog.setLabelText("Setting up UI...")
             
+        # Enable waveform-related actions
+        self._set_waveform_actions_enabled(True)
+            
         self.on_load_finished(session)
         
     def _on_waveform_load_error(self, error_msg):
@@ -234,6 +357,10 @@ class WaveScoutMainWindow(QMainWindow):
         if self.progress_dialog:
             self.progress_dialog.close()
             self.progress_dialog = None
+            
+        # Clear the current file on error
+        self.current_wave_file = None
+        self._set_waveform_actions_enabled(False)
             
         self.on_load_error(error_msg)
         
@@ -407,6 +534,9 @@ class WaveScoutMainWindow(QMainWindow):
         if self.progress_dialog:
             self.progress_dialog.setLabelText("Setting up UI...")
             
+        # Enable waveform-related actions
+        self._set_waveform_actions_enabled(True)
+            
         # Update UI
         self.wave_widget.setSession(session)
         
@@ -461,6 +591,9 @@ class WaveScoutMainWindow(QMainWindow):
         if self.progress_dialog:
             self.progress_dialog.close()
             self.progress_dialog = None
+        
+        # Disable waveform actions on error
+        self._set_waveform_actions_enabled(False)
             
         session_file = getattr(self, '_loading_session_path', 'unknown')
         error_msg = f"Failed to load session from {session_file}:\n{error_msg}"
