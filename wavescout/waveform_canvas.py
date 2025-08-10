@@ -412,8 +412,7 @@ class WaveformCanvas(QWidget):
         self._calculate_and_store_ruler_info()
         
         # Draw grid lines if enabled
-        if (hasattr(self, '_last_tick_positions') and hasattr(self, '_last_ruler_config') and 
-            self._last_ruler_config is not None):
+        if self._last_ruler_config is not None:
             if self._last_ruler_config.show_grid_lines and self._last_tick_positions:
                 self._draw_grid_lines(painter, self._last_tick_positions, self._last_ruler_config)
     
@@ -558,7 +557,7 @@ class WaveformCanvas(QWidget):
         
         # Check benchmark mode
         benchmark_mode = False
-        if self._model and self._model._session and hasattr(self._model._session, 'canvas_benchmark_mode'):
+        if self._model and self._model._session:
             benchmark_mode = self._model._session.canvas_benchmark_mode
         
         # In benchmark mode, we don't need nodes or draw commands
@@ -586,7 +585,7 @@ class WaveformCanvas(QWidget):
                 handle=node.handle,
                 is_group=node.is_group,
                 format=node.format,
-                render_type=node.format.render_type if hasattr(node.format, 'render_type') else None,
+                render_type=node.format.render_type,
                 height_scaling=node.height_scaling,
                 instance_id=node.instance_id
             )
@@ -829,7 +828,7 @@ class WaveformCanvas(QWidget):
             return
 
         # Use stored configuration if available
-        if hasattr(self, '_last_ruler_config') and self._last_ruler_config is not None:
+        if self._last_ruler_config is not None:
             config = self._last_ruler_config
             tick_positions = self._last_tick_positions
             _, step_size = self._calculate_time_ruler_ticks(config)
@@ -867,7 +866,7 @@ class WaveformCanvas(QWidget):
                 # Format and draw label
                 # Use the session's timescale unit if available, otherwise fall back to config
                 display_unit = config.time_unit
-                if self._model and hasattr(self._model, '_session') and self._model._session and self._model._session.timescale:
+                if self._model and self._model._session and self._model._session.timescale:
                     display_unit = self._model._session.timescale.unit
                 label = self._format_time_label(time_value, display_unit, step_size)
                 
@@ -904,7 +903,7 @@ class WaveformCanvas(QWidget):
         estimated_step = (viewport_right - viewport_left) / 10
         # Use the session's timescale unit if available, otherwise fall back to config
         display_unit = config.time_unit
-        if self._model and hasattr(self._model, '_session') and self._model._session and self._model._session.timescale:
+        if self._model and self._model._session and self._model._session.timescale:
             display_unit = self._model._session.timescale.unit
         sample_label = self._format_time_label(sample_time, display_unit, estimated_step)
         
@@ -988,7 +987,7 @@ class WaveformCanvas(QWidget):
             step_size: The step size between ticks (used to determine decimal places)
         """
         # Get the current timescale
-        if self._model and hasattr(self._model, '_session') and self._model._session and self._model._session.timescale:
+        if self._model and self._model._session and self._model._session.timescale:
             timescale = self._model._session.timescale
         else:
             # Default to 1ps if not available

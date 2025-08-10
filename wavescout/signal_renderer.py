@@ -169,8 +169,8 @@ def draw_digital_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Si
         # Clip next_x to valid range
         next_x = min(next_x, max_valid_pixel)
         
-        # Get y position based on value (use value_str for compatibility)
-        value_str = current_sample.value_str if hasattr(current_sample, 'value_str') else str(current_sample.value) if hasattr(current_sample, 'value') else ""
+        # Get y position based on value
+        value_str = current_sample.value_str or ""
         if value_str == "1" or current_sample.value_bool == True:
             current_y = y_high
         elif value_str == "0" or current_sample.value_bool == False:
@@ -195,7 +195,7 @@ def draw_digital_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Si
                     break
             
             if prev_sample:
-                prev_value_str = prev_sample.value_str if hasattr(prev_sample, 'value_str') else str(prev_sample.value) if hasattr(prev_sample, 'value') else ""
+                prev_value_str = prev_sample.value_str or ""
                 prev_y = y_high if prev_value_str == "1" or prev_sample.value_bool == True else y_low if prev_value_str == "0" or prev_sample.value_bool == False else y_middle
                 # Only draw transition if it's within the valid range
                 if prev_y != current_y and current_x >= min_valid_pixel and current_x <= max_valid_pixel:
@@ -368,8 +368,8 @@ def draw_bus_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Signal
             # Interior width for text calculation (accounting for dynamic transitions)
             interior_width = region_width - (actual_trans_width * 2) if region_width > actual_trans_width * 2 else 0
             
-            # Get value text (use value_str)
-            value_text = current_sample.value_str if hasattr(current_sample, 'value_str') else str(current_sample.value) if hasattr(current_sample, 'value') else ""
+            # Get value text
+            value_text = current_sample.value_str or ""
             if interior_width > RENDERING.MIN_BUS_TEXT_WIDTH and value_text:
                 text = value_text
                 text_width = fm.horizontalAdvance(text)
@@ -471,7 +471,7 @@ def compute_global_signal_range(handle: SignalHandle, waveform_db: WaveformDBPro
         current_time = start_time
         while current_time <= end_time:
             query_result = signal_obj.query_signal(int(current_time))
-            if query_result and hasattr(query_result, 'value') and query_result.value is not None:
+            if query_result and query_result.value is not None:
                 # Parse the value to get numeric representation
                 _, value_float, _ = parse_signal_value(query_result.value)
                 

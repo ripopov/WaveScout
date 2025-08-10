@@ -4,6 +4,7 @@ import yaml
 import pathlib
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import asdict
+from enum import Enum
 from pywellen import Var, Hierarchy
 from .protocols import WaveformDBProtocol
 from .data_model import (
@@ -20,13 +21,13 @@ def _serialize_node(node: SignalNode) -> Dict[str, Any]:
     if node.format:
         format_dict = asdict(node.format)
         # Convert enum values to strings
-        if 'data_format' in format_dict and hasattr(format_dict['data_format'], 'value'):
+        if 'data_format' in format_dict and isinstance(format_dict['data_format'], Enum):
             format_dict['data_format'] = format_dict['data_format'].value
-        if 'signal_name_mode' in format_dict and hasattr(format_dict['signal_name_mode'], 'value'):
+        if 'signal_name_mode' in format_dict and isinstance(format_dict['signal_name_mode'], Enum):
             format_dict['signal_name_mode'] = format_dict['signal_name_mode'].value
-        if 'render_type' in format_dict and hasattr(format_dict['render_type'], 'value'):
+        if 'render_type' in format_dict and isinstance(format_dict['render_type'], Enum):
             format_dict['render_type'] = format_dict['render_type'].value
-        if 'analog_scaling_mode' in format_dict and hasattr(format_dict['analog_scaling_mode'], 'value'):
+        if 'analog_scaling_mode' in format_dict and isinstance(format_dict['analog_scaling_mode'], Enum):
             format_dict['analog_scaling_mode'] = format_dict['analog_scaling_mode'].value
     
     data: Dict[str, Any] = {

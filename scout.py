@@ -598,6 +598,8 @@ class WaveScoutMainWindow(QMainWindow):
         QTimer.singleShot(100, update_design_tree)
         
         # Clean up stored path
+        # Note: hasattr check needed because _loading_session_path is a temporary attribute
+        # that may not exist if loading was interrupted
         if hasattr(self, '_loading_session_path'):
             delattr(self, '_loading_session_path')
             
@@ -618,6 +620,8 @@ class WaveScoutMainWindow(QMainWindow):
         self.statusBar().showMessage("Session load failed")
         
         # Clean up stored path
+        # Note: hasattr check needed because _loading_session_path is a temporary attribute
+        # that may not exist if loading was interrupted
         if hasattr(self, '_loading_session_path'):
             delattr(self, '_loading_session_path')
 
@@ -689,8 +693,6 @@ class WaveScoutMainWindow(QMainWindow):
         if self.wave_widget.session:
             self.wave_widget.session.canvas_benchmark_mode = benchmark_mode
             # Invalidate the last render hash to force re-render
-            if hasattr(self.wave_widget._canvas, '_last_render_hash'):
-                self.wave_widget._canvas._last_render_hash = None
             # Force canvas to repaint
             self.wave_widget._canvas.update()
             

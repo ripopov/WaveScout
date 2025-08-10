@@ -115,6 +115,9 @@ class WaveScoutWidget(QWidget):
     
     def _cleanup_previous_session(self) -> None:
         """Clean up the previous session resources."""
+        # Note: hasattr checks are necessary here because cleanup may be called
+        # at various stages of the widget lifecycle, and attributes might not exist yet
+        
         # Disconnect signals from old model
         if hasattr(self, 'model') and self.model:
             try:
@@ -351,7 +354,7 @@ class WaveScoutWidget(QWidget):
                 )
             
             # Format cursor time using appropriate unit
-            if self.session.time_ruler_config and hasattr(self, '_canvas'):
+            if self.session.time_ruler_config:
                 formatted_time = self._canvas._format_time_label(time, self.session.time_ruler_config.time_unit, None)
                 self._info_bar.setText(f"Cursor: {formatted_time}")
             else:
@@ -372,7 +375,7 @@ class WaveScoutWidget(QWidget):
         self._canvas.setCursorTime(self.session.cursor_time)
         # Update info bar text similar to _on_cursor_moved
         time = self.session.cursor_time
-        if self.session.time_ruler_config and hasattr(self, '_canvas'):
+        if self.session.time_ruler_config:
             formatted_time = self._canvas._format_time_label(time, self.session.time_ruler_config.time_unit, None)
             self._info_bar.setText(f"Cursor: {formatted_time}")
         else:

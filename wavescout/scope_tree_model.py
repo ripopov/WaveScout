@@ -97,10 +97,9 @@ class ScopeTreeModel(QAbstractItemModel):
                 parent_node.add_child(scope_node)
             
             # Recursively process child scopes
-            if hasattr(scope, 'scopes'):
-                child_scopes = scope.scopes(hierarchy)
-                if child_scopes:
-                    self._build_scope_recursive(child_scopes, scope_node, hierarchy)
+            child_scopes = scope.scopes(hierarchy)
+            if child_scopes:
+                self._build_scope_recursive(child_scopes, scope_node, hierarchy)
     
     def _create_parent_nodes(self, path_parts: List[str], scope_map: Dict[str, DesignTreeNode]) -> Optional[DesignTreeNode]:
         """Create parent nodes for a given path."""
@@ -150,16 +149,15 @@ class ScopeTreeModel(QAbstractItemModel):
         
         # Get variables in this scope
         variables: List[VariableData] = []
-        if hasattr(scope, 'vars'):
-            for var in scope.vars(hierarchy):
-                var_data: VariableData = {
-                    'name': var.name(hierarchy),
-                    'full_path': var.full_name(hierarchy),
-                    'var_type': var.var_type() if hasattr(var, 'var_type') else '',
-                    'bit_range': self._format_bit_range(var),
-                    'var': var
-                }
-                variables.append(var_data)
+        for var in scope.vars(hierarchy):
+            var_data: VariableData = {
+                'name': var.name(hierarchy),
+                'full_path': var.full_name(hierarchy),
+                'var_type': var.var_type(),
+                'bit_range': self._format_bit_range(var),
+                'var': var
+            }
+            variables.append(var_data)
         
         return variables
     
@@ -179,8 +177,7 @@ class ScopeTreeModel(QAbstractItemModel):
                     current_scope = scope
                     found = True
                     # Get child scopes for next iteration
-                    if hasattr(scope, 'scopes'):
-                        current_scopes = scope.scopes(hierarchy)
+                    current_scopes = scope.scopes(hierarchy)
                     break
             
             if not found:
@@ -191,22 +188,20 @@ class ScopeTreeModel(QAbstractItemModel):
     def _format_bit_range(self, var: Var) -> str:
         """Format the bit range for display."""
         # Try to get bitwidth using the same method as DesignTreeModel
-        if hasattr(var, 'bitwidth'):
-            try:
-                bitwidth = var.bitwidth()
-                if bitwidth > 1:
-                    return f"[{bitwidth - 1}:0]"
-            except:
-                pass
+        try:
+            bitwidth = var.bitwidth()
+            if bitwidth and bitwidth > 1:
+                return f"[{bitwidth - 1}:0]"
+        except:
+            pass
         
-        # Fallback to range if available
-        if hasattr(var, 'range') and var.range:
-            r = var.range
-            if hasattr(r, 'msb') and hasattr(r, 'lsb'):
-                if r.msb != r.lsb:
-                    return f"[{r.msb}:{r.lsb}]"
-                else:
-                    return f"[{r.msb}]"
+        # Fallback to index if available
+        idx = var.index()
+        if idx:
+            if idx.msb() != idx.lsb():
+                return f"[{idx.msb()}:{idx.lsb()}]"
+            else:
+                return f"[{idx.msb()}]"
         
         return ""
     

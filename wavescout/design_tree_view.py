@@ -231,7 +231,7 @@ class DesignTreeView(QWidget):
                 var_obj = self.waveform_db.get_var(handle)
             except Exception:
                 var_obj = None
-        if var_obj is not None and hasattr(var_obj, 'var_type'):
+        if var_obj is not None:
             try:
                 var_type_str = str(var_obj.var_type())
             except Exception:
@@ -394,7 +394,7 @@ class DesignTreeView(QWidget):
             except Exception:
                 var_obj = None
         # Use pywellen is_1bit if available
-        if var_obj is not None and hasattr(var_obj, 'is_1bit'):
+        if var_obj is not None:
             try:
                 is_single_bit = bool(var_obj.is_1bit())
             except Exception:
@@ -432,7 +432,7 @@ class DesignTreeView(QWidget):
         vt = var_data.get('var_type')
         if vt is not None:
             var_type_str = str(vt)
-        elif var is not None and hasattr(var, 'var_type'):
+        elif var is not None:
             try:
                 var_type_str = str(var.var_type())
             except Exception:

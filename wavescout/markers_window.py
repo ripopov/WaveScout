@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QStyledItemDelegate, QStyleOptionViewItem, QStyle
 )
 from PySide6.QtCore import Qt, Signal, QModelIndex, QPersistentModelIndex
-from PySide6.QtGui import QColor, QKeyEvent, QCloseEvent, QCursor, QPainter
+from PySide6.QtGui import QColor, QKeyEvent, QCloseEvent, QCursor, QPainter, QBrush
 from typing import Optional
 from .waveform_controller import WaveformController
 from .config import MARKER_LABELS, COLORS, RENDERING
@@ -25,8 +25,8 @@ class ColorCellDelegate(QStyledItemDelegate):
             if not color_value:
                 # Try to get from background brush
                 bg_brush = index.data(Qt.ItemDataRole.BackgroundRole)
-                if bg_brush:
-                    color_value = bg_brush.color().name() if hasattr(bg_brush, 'color') else None
+                if isinstance(bg_brush, QBrush):
+                    color_value = bg_brush.color().name()
             
             # Draw the color cell background, ignoring selection state
             rect = option.rect  # type: ignore[attr-defined]

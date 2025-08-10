@@ -247,7 +247,7 @@ class WaveformDB:
     
     def get_time_table(self) -> Optional[TimeTable]:
         """Get the time table from the waveform. Returns pywellen TimeTable object."""
-        if self.waveform and hasattr(self.waveform, 'time_table'):
+        if self.waveform:
             return self.waveform.time_table
         return None
     
@@ -376,7 +376,7 @@ class WaveformDB:
             Bit width of the signal (defaults to 32 if unknown)
         """
         vars_list = self.get_all_vars_for_handle(handle)
-        if vars_list and hasattr(vars_list[0], 'bitwidth'):
+        if vars_list:
             width = vars_list[0].bitwidth()
             if width is not None:
                 return int(width)
