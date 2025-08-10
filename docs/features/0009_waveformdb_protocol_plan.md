@@ -3,6 +3,31 @@
 ## Objective
 Decouple UI from WaveformDB internals by introducing a small typed protocol and refactoring the few remaining direct `_var_map` usages. Limit behavior discovery to the protocol and avoid risky changes around hierarchy/persistence.
 
+## Problem Statement
+- Symptoms
+  - UI code accesses WaveformDB private state `_var_map` directly in multiple places, e.g.:
+    - wavescout/design_tree_view.py: _find_signal_handle uses `_var_map` as if it were keyed by full-path strings; in reality `_var_map` is Dict[SignalHandle, List[var]].
+    - wavescout/waveform_item_model.py: _value_at_cursor derives bit width via `_var_map[node.handle][0].bitwidth()`.
+    - wavescout/signal_sampling.py: generate_signal_draw_commands derives bit width via `_var_map[signal.handle][0].bitwidth()`.
+    - tests/test_data_format.py: reads `db._var_map` directly for iteration and bit width.
+  - Multiple call sites use `hasattr` to probe WaveformDB capabilities (get_handle_for_var, iter_handles_and_vars, get_var), causing behavior discovery at runtime instead of via a stable interface.
+- Root cause
+  - Tight coupling between views/models and WaveformDB implementation details, no formal interface. One site even misassumes `_var_map` is keyed by names, leading to incorrect lookups.
+- Impact
+  - Breaks encapsulation and hinders refactoring or swapping DB implementations.
+  - Makes mocking difficult in tests; encourages brittle `hasattr` branches.
+  - Introduces correctness risks (e.g., name-based lookup against handle-keyed map) and readability issues.
+- Constraints
+  - Preserve O(1) performance characteristics by reusing existing internal maps.
+  - Avoid broad changes around hierarchy traversal and persistence logic in this refactor.
+- Out of scope (explicitly)
+  - Removing `hasattr` checks related to hierarchy traversal or optional persistence helpers (e.g., add_var_with_handle) in persistence.py, scope_tree_model.py, etc.
+- Success criteria
+  - UI no longer accesses `_var_map` directly; it relies only on a small, typed protocol.
+  - Bit width and handle lookups are encapsulated behind public API helpers.
+  - Limited `hasattr` checks are removed only for protocol-guaranteed methods; hierarchy/persistence guards remain.
+  - Tests stop touching `_var_map` and cover the new helpers and protocol conformance.
+
 ## Protocol
 - File: wavescout/protocols.py (NEW)
 - Type: typing.Protocol named WaveformDBProtocol
