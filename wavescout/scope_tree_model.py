@@ -292,6 +292,8 @@ class ScopeTreeModel(QAbstractItemModel):
             return None
         
         node = index.internalPointer()
+        if not isinstance(node, DesignTreeNode):
+            return None
         
         if role == Qt.ItemDataRole.DisplayRole:
             return node.name
@@ -300,7 +302,7 @@ class ScopeTreeModel(QAbstractItemModel):
         elif role == Qt.ItemDataRole.ToolTipRole:
             # Build full path for tooltip
             path_parts = []
-            current = node
+            current: Optional[DesignTreeNode] = node
             while current and current != self.root_node:
                 path_parts.append(current.name)
                 current = current.parent
