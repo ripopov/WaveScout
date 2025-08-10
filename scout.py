@@ -8,7 +8,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (QApplication, QMainWindow, 
                               QSplitter, QTreeView, QFileDialog,
                               QMessageBox, QProgressDialog, QAbstractItemView,
-                              QToolBar, QStyle)
+                              QToolBar, QStyle, QStyleFactory)
 from PySide6.QtCore import Qt, QThreadPool, QRunnable, Signal, QObject, QSettings, QEvent
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 # QtAsyncio and asyncio removed - using single-threaded execution
@@ -247,6 +247,25 @@ class WaveScoutMainWindow(QMainWindow):
             action.triggered.connect(lambda checked, s=scale: self._set_ui_scale(s))
             ui_scaling_group.addAction(action)
             ui_scaling_menu.addAction(action)
+        
+        view_menu.addSeparator()
+        
+        # Style submenu
+        style_menu = view_menu.addMenu("&Style")
+        self.style_action_group = QActionGroup(self)
+        self.style_action_group.setExclusive(True)
+        available_styles = QStyleFactory.keys()
+        # Determine current style name in the same case as keys
+        current_style = QApplication.instance().style().objectName() if QApplication.instance() else ""
+        # Normalize comparison
+        for name in available_styles:
+            act = QAction(name, self)
+            act.setCheckable(True)
+            if current_style and name.lower() == current_style.lower():
+                act.setChecked(True)
+            act.triggered.connect(lambda checked, n=name: self._set_ui_style(n))
+            self.style_action_group.addAction(act)
+            style_menu.addAction(act)
         
         view_menu.addSeparator()
         
@@ -707,6 +726,37 @@ class WaveScoutMainWindow(QMainWindow):
         # The actual scaling will be applied through environment variable
         # on next application start
 
+    def _set_ui_style(self, style_name: str):
+        """Set the Qt widget style at runtime and persist the choice."""
+        if not style_name:
+            return
+        if style_name not in QStyleFactory.keys():
+            QMessageBox.warning(self, "Style Not Available", f"The style '{style_name}' is not available on this platform.")
+            return
+        app = QApplication.instance()
+        if not app:
+            return
+        # Apply the style
+        style = QStyleFactory.create(style_name)
+        if style is None:
+            QMessageBox.warning(self, "Style Error", f"Failed to create style '{style_name}'.")
+            return
+        app.setStyle(style)
+        # Persist user choice
+        self.settings.setValue("ui_style", style_name)
+        # Feedback to user
+        self.statusBar().showMessage(f"Style: {style_name}", 2000)
+        # Optionally refresh icons to the new style's standard icons
+        new_style = self.style()
+        if new_style:
+            self.open_action.setIcon(new_style.standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon))
+            self.reload_action.setIcon(new_style.standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
+            self.zoom_in_action.setIcon(new_style.standardIcon(QStyle.StandardPixmap.SP_ArrowUp))
+            self.zoom_out_action.setIcon(new_style.standardIcon(QStyle.StandardPixmap.SP_ArrowDown))
+            self.pan_left_action.setIcon(new_style.standardIcon(QStyle.StandardPixmap.SP_ArrowLeft))
+            self.pan_right_action.setIcon(new_style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight))
+            self.zoom_fit_action.setIcon(new_style.standardIcon(QStyle.StandardPixmap.SP_DialogResetButton))
+
 
 def main():
     """Run the demo application."""
@@ -729,6 +779,17 @@ def main():
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     
     app = QApplication(sys.argv)
+    
+    # Apply saved UI style if available
+    saved_style = settings.value("ui_style", "", type=str)
+    if saved_style:
+        try:
+            if saved_style in QStyleFactory.keys():
+                style_obj = QStyleFactory.create(saved_style)
+                if style_obj is not None:
+                    app.setStyle(style_obj)
+        except Exception:
+            pass
     
     # Create main window with optional session or wave file
     window = WaveScoutMainWindow(session_file=args.load_session, wave_file=args.load_wave, exit_after_load=args.exit_after_load)
