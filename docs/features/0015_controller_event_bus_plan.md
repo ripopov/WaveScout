@@ -1,142 +1,462 @@
 # Feature Plan: Controller-Centric Mutations with Typed Event Bus
 
+## Executive Summary
+
+This plan establishes a clean architecture pattern where all domain mutations flow through a centralized controller API, with changes propagated via a typed event bus. The UI layer becomes purely reactive, eliminating direct mutations of domain objects.
+
+**Key Benefits:**
+- Single source of truth for all state mutations
+- Type-safe event propagation without Qt dependencies  
+- Clear separation between domain logic and UI concerns
+- Easier testing and debugging with explicit event flow
+- Foundation for undo/redo and collaborative features
+
 ## Requirements Analysis
 
-Goal: Centralize all domain mutations behind a pure-Python controller API and propagate UI updates through a typed, lightweight Event Bus. Tighten type safety at the backend boundary using Protocols.
+### Functional Requirements
 
-Key requirements:
-- UI (WaveScoutWidget, SignalNamesView) and the Qt model (WaveformItemModel) must not mutate domain objects directly; they express intent via controller methods only.
-- Introduce a small, typed Event Bus and explicit event dataclasses; UI and models subscribe and react to events.
-- Strengthen typing at the session/backend boundary by replacing Any with a Protocol.
-- Preserve existing behaviors (delete/group/move/rename/format changes, drag-and-drop) with no regressions.
-- Keep code strictly typed per project guidelines (no Any; explicit Optional/TypeAlias/TypedDict as needed).
+**Core Architecture:**
+- All domain mutations must flow through `WaveformController` methods
+- UI components (WaveScoutWidget, SignalNamesView) express intent via controller calls only
+- Qt model (WaveformItemModel) receives changes via events, not direct manipulation
+- Typed event bus with dataclass payloads replaces ad-hoc callbacks
+- Backend boundary uses `WaveformDBProtocol` instead of `Any` typing
 
-Non-functional:
-- Maintain or improve responsiveness; allow a minimal, reset-based update path initially, optimizing later.
-- Keep controller methods UI-free (no Qt types, no dialogs).
+**Preserved Behaviors:**
+- Signal/group deletion with multi-selection support
+- Drag-and-drop reordering within and between groups
+- Context menu actions (format changes, render type, scaling, rename)
+- Viewport and cursor synchronization
+- Marker management operations
 
-## Codebase Research
+### Non-Functional Requirements
 
-Essential Files to Examine:
-- wavescout/data_model.py: Session and node structures, typing of waveform_db (boundary to backend)
-- wavescout/waveform_controller.py: Central place to own mutation APIs
-- wavescout/waveform_item_model.py: Drag-and-drop and structure changes in Qt model
-- wavescout/signal_names_view.py: Context menu actions and edits (format, render type, rename)
-- wavescout/wave_scout_widget.py: High-level widget wiring and structural actions
-- wavescout/waveform_canvas.py: Redraw triggers (for event-driven updates)
+**Performance:**
+- Initial implementation uses model reset for correctness
+- Optimization path: fine-grained Qt model updates based on event payloads
+- Lazy evaluation where possible (e.g., cache invalidation markers)
 
-Architecture Patterns to Consider:
-- Command-like controller methods emitting events
-- Event Bus with dataclass payloads; type-safe publish/subscribe
-- Normalized viewport model and cache invalidation triggers
+**Type Safety:**
+- No `Any` types per project guidelines
+- Explicit `Optional`, `TypeAlias`, and `TypedDict` usage
+- Protocol-based backend interface
+- Generic type constraints on event bus
+
+**Maintainability:**
+- Controller methods remain UI-framework agnostic (no Qt types)
+- Clear event naming and payload structure
+- Comprehensive type hints for IDE support
+
+## Architecture Analysis
+
+### Current State Assessment
+
+Based on codebase review:
+
+1. **WaveformController** already exists with:
+   - Basic callback mechanism (`_callbacks` dict)
+   - Viewport, cursor, and marker operations
+   - Selection tracking by instance IDs
+   - Missing: structural mutations (delete, group, move, rename)
+
+2. **Data Model** observations:
+   - `WaveformSession.waveform_db` typed as `Optional[Any]` - needs Protocol
+   - `SignalNode` has instance_id generation for unique identification
+   - Tree structure with parent/child relationships
+   - Display format and render configuration per node
+
+3. **UI Layer** patterns:
+   - `SignalNamesView` directly mutates node properties (format, render_type)
+   - `WaveformItemModel` performs tree surgery during drag-drop
+   - No centralized mutation tracking or event propagation
+
+4. **Existing Protocol:**
+   - `WaveformDBProtocol` already defined in `wavescout/protocols.py`
+   - Comprehensive interface for waveform operations
+   - Ready to replace `Any` typing
+
+### Gap Analysis
+
+**Missing Components:**
+1. Typed event system to replace string-based callbacks
+2. Controller methods for structural mutations
+3. Event subscriptions in UI components
+4. Decoupling of model updates from direct manipulation
 
 ## Data Model Design
 
-Changes within data_model.py:
-- Strengthen the backend boundary type on WaveformSession:
-  - Replace Optional[Any] waveform_db with Optional[WaveformDBProtocol].
-  - Define/import WaveformDBProtocol in wavescout/protocols.py (only methods actually used by the app, e.g., get_signal, get_var_bitwidth, iter_handles, timescale/time range access).
+### Type Strengthening
 
-Persistence:
-- No new persisted fields. The change is purely typing for the session boundary (YAML unaffected).
+```python
+# wavescout/data_model.py
+from wavescout.protocols import WaveformDBProtocol
 
-Types and Aliases:
-- Introduce precise payload types for events (TypeAlias, Literal) in events module.
+@dataclass
+class WaveformSession:
+    waveform_db: Optional[WaveformDBProtocol] = None  # Changed from Any
+    # ... rest unchanged
+```
 
-## Implementation Planning
+### Event Type Hierarchy
 
-File-by-File Changes (no code here; nature of changes only):
+```python
+# wavescout/application/events.py
+from dataclasses import dataclass
+from typing import Literal, Optional, Dict, List, Any
+from wavescout.data_model import Time, SignalNodeID
 
-1) wavescout/data_model.py
-- Change field type: WaveformSession.waveform_db: Optional[WaveformDBProtocol]
-- Update imports to use local protocols module
+@dataclass(frozen=True)
+class Event:
+    """Base class for all events."""
+    timestamp: float = field(default_factory=time.time)
 
-2) wavescout/application/events.py (new)
-- Define dataclass events used by the app initially:
-  - StructureChangedEvent: change_kind (Literal['move','delete','insert','group']), changed_ids (list[int]), optional parent_id, insert_row
-  - FormatChangedEvent: id (int), fields (dict[str, str] or a stricter TypedDict if stable)
-  - ViewportChangedEvent: old/new viewport bounds (float or Time type if available)
-  - CursorMovedEvent: old_pos/new_pos (float or Time)
-- Centralize shared type aliases if helpful
+@dataclass(frozen=True)
+class StructureChangedEvent(Event):
+    """Emitted when signal tree structure changes."""
+    change_kind: Literal['insert', 'delete', 'move', 'group', 'ungroup']
+    affected_ids: List[SignalNodeID]
+    parent_id: Optional[SignalNodeID] = None
+    insert_row: Optional[int] = None
+    
+@dataclass(frozen=True)  
+class FormatChangedEvent(Event):
+    """Emitted when signal display format changes."""
+    node_id: SignalNodeID
+    changes: Dict[str, Any]  # Will migrate to TypedDict
+    
+@dataclass(frozen=True)
+class ViewportChangedEvent(Event):
+    """Emitted when viewport bounds change."""
+    old_left: float
+    old_right: float
+    new_left: float
+    new_right: float
+    
+@dataclass(frozen=True)
+class CursorMovedEvent(Event):
+    """Emitted when cursor position changes."""
+    old_time: Time
+    new_time: Time
 
-3) wavescout/application/event_bus.py (new)
-- Minimal, type-safe publish/subscribe mechanism:
-  - Subscribe by event type; enforce callable signature via Protocol or generic constraints
-  - Publish validates payload type; logs or raises in debug on subscriber exceptions
+@dataclass(frozen=True)
+class SelectionChangedEvent(Event):
+    """Emitted when node selection changes."""
+    old_selection: List[SignalNodeID]
+    new_selection: List[SignalNodeID]
+```
 
-4) wavescout/waveform_controller.py
-- Add pure-Python mutation APIs (no Qt):
-  - delete_nodes_by_ids(ids: Iterable[int]) -> None
-  - group_nodes(ids: Iterable[int], name: str, mode: GroupRenderMode) -> None
-  - move_nodes(order: list[int], new_parent_id: Optional[int], insert_row: int) -> None
-  - set_data_format(id: int, fmt: DataFormat) -> None
-  - set_height_scaling(id: int, value: int) -> None
-  - set_render_type(id: int, render_type: RenderType, scaling: Optional[AnalogScalingMode] = None) -> None
-  - rename_node(id: int, nickname: str) -> None
-- Emit StructureChangedEvent or FormatChangedEvent as appropriate
-- Keep any legacy callbacks temporarily but implement them via the Event Bus internally
+## Implementation Design
 
-5) wavescout/wave_scout_widget.py
-- Replace direct structural mutations (e.g., delete/group) with controller calls
-- Subscribe to typed events to trigger UI updates (e.g., repaint, model refresh)
-- Ensure viewport/cursor handlers route through controller methods that emit Viewport/Cursor events
+### Event Bus Architecture
 
-6) wavescout/signal_names_view.py
-- Replace direct domain mutations in context menu handlers with controller calls:
-  - set_data_format, set_height_scaling, set_render_type (and analog scaling), rename
-- Remove ad-hoc model updates where the controller+events now drive refresh; temporarily allow model resets for correctness during transition
+```python
+# wavescout/application/event_bus.py
+from typing import TypeVar, Generic, Callable, Dict, List, Type
+import logging
 
-7) wavescout/waveform_item_model.py
-- In dropMimeData and related helpers:
-  - Parse DnD payload; call controller.move_nodes(...) instead of mutating the tree
-  - Subscribe to StructureChangedEvent; initially perform beginResetModel/endResetModel on changes
-  - Optionally, later optimize to fine-grained beginMoveRows/insert/remove based on event payload
+T = TypeVar('T', bound=Event)
 
-8) wavescout/waveform_canvas.py
-- Ensure relevant events (structure/format/viewport) trigger appropriate redraw requests
+class EventBus:
+    """Type-safe publish-subscribe event bus."""
+    
+    def __init__(self):
+        self._subscribers: Dict[Type[Event], List[Callable]] = {}
+        self._logger = logging.getLogger(__name__)
+    
+    def subscribe(self, event_type: Type[T], handler: Callable[[T], None]) -> None:
+        """Subscribe to events of specific type."""
+        if event_type not in self._subscribers:
+            self._subscribers[event_type] = []
+        self._subscribers[event_type].append(handler)
+    
+    def unsubscribe(self, event_type: Type[T], handler: Callable[[T], None]) -> None:
+        """Unsubscribe from events."""
+        if event_type in self._subscribers:
+            try:
+                self._subscribers[event_type].remove(handler)
+            except ValueError:
+                pass
+                
+    def publish(self, event: Event) -> None:
+        """Publish event to all subscribers."""
+        event_type = type(event)
+        for handler in self._subscribers.get(event_type, []):
+            try:
+                handler(event)
+            except Exception as e:
+                self._logger.error(f"Handler error for {event_type.__name__}: {e}")
+                if __debug__:
+                    raise
+```
 
-## Algorithm Descriptions
+### Controller API Extensions
 
-Event Bus:
-- Maintain a dict[type, list[Subscriber]] where Subscriber is a callable with a specific signature per event type
-- publish(event):
-  1) Lookup list of subscribers for type(event)
-  2) Invoke each safely; log exceptions; fail fast in debug
-  3) No return aggregation; side-effect system
+```python
+# wavescout/waveform_controller.py additions
 
-Controller Operations (examples):
-- delete_nodes_by_ids(ids):
-  - Validate ids exist; remove nodes from session tree; update parent/children arrays
-  - Emit StructureChangedEvent(change_kind='delete', changed_ids=sorted(ids))
-- move_nodes(order, new_parent_id, insert_row):
-  - Compute source positions; detach nodes; insert into new parent at insert_row in provided order
-  - Emit StructureChangedEvent(change_kind='move', changed_ids=order, parent_id=new_parent_id, insert_row=insert_row)
-- set_data_format(id, fmt) / set_render_type(...):
-  - Update node display format/render metadata
-  - Emit FormatChangedEvent(id=id, fields={'format': str(fmt)}) or include more fields as needed
+class WaveformController:
+    # ... existing code ...
+    
+    def __init__(self):
+        # ... existing init ...
+        self.event_bus = EventBus()
+        
+    # ---- Structural Mutations ----
+    
+    def delete_nodes_by_ids(self, ids: Iterable[SignalNodeID]) -> None:
+        """Delete nodes from the signal tree."""
+        if not self.session:
+            return
+            
+        ids_list = list(ids)
+        if not ids_list:
+            return
+            
+        # Collect nodes to delete
+        nodes_to_delete = []
+        for node in self._iter_all_nodes():
+            if node.instance_id in ids_list:
+                nodes_to_delete.append(node)
+        
+        # Remove from tree
+        for node in nodes_to_delete:
+            if node.parent:
+                node.parent.children.remove(node)
+            elif node in self.session.root_nodes:
+                self.session.root_nodes.remove(node)
+                
+        # Emit event
+        self.event_bus.publish(StructureChangedEvent(
+            change_kind='delete',
+            affected_ids=ids_list
+        ))
+        
+    def group_nodes(
+        self,
+        ids: Iterable[SignalNodeID],
+        group_name: str,
+        mode: GroupRenderMode
+    ) -> SignalNodeID:
+        """Create a new group containing specified nodes."""
+        if not self.session:
+            return -1
+            
+        # Implementation details...
+        # Returns new group's instance_id
+        
+    def move_nodes(
+        self,
+        node_ids: List[SignalNodeID],
+        target_parent_id: Optional[SignalNodeID],
+        insert_row: int
+    ) -> None:
+        """Move nodes to new position in tree."""
+        if not self.session:
+            return
+            
+        # Implementation details...
+        
+        self.event_bus.publish(StructureChangedEvent(
+            change_kind='move',
+            affected_ids=node_ids,
+            parent_id=target_parent_id,
+            insert_row=insert_row
+        ))
+        
+    def set_node_format(self, node_id: SignalNodeID, **kwargs) -> None:
+        """Update display format properties."""
+        node = self._find_node_by_id(node_id)
+        if not node:
+            return
+            
+        changes = {}
+        for key, value in kwargs.items():
+            if hasattr(node.format, key):
+                old_value = getattr(node.format, key)
+                if old_value != value:
+                    setattr(node.format, key, value)
+                    changes[key] = value
+                    
+        if changes:
+            self.event_bus.publish(FormatChangedEvent(
+                node_id=node_id,
+                changes=changes
+            ))
+            
+    def rename_node(self, node_id: SignalNodeID, nickname: str) -> None:
+        """Set user-defined nickname for node."""
+        node = self._find_node_by_id(node_id)
+        if not node:
+            return
+            
+        if node.nickname != nickname:
+            node.nickname = nickname
+            self.event_bus.publish(FormatChangedEvent(
+                node_id=node_id,
+                changes={'nickname': nickname}
+            ))
+```
 
-## UI Integration
+### Migration Strategy
 
-Subscriptions:
-- WaveScoutWidget subscribes to StructureChangedEvent and FormatChangedEvent to trigger canvas/model refresh and to Viewport/Cursor events to adjust rulers/cursors
-- WaveformItemModel subscribes to StructureChangedEvent to refresh rows (reset initially)
-- SignalNamesView triggers controller calls from context menu and keyboard shortcuts; let model refresh via events
+**Phase 1: Foundation (Low Risk)**
+- Update `WaveformSession.waveform_db` typing to use Protocol
+- Implement event classes and EventBus
+- Add to controller without removing callbacks yet
 
-Context Menu Integration (SignalNamesView._show_context_menu):
-- Keep existing structure; actions now delegate to controller APIs; remove direct domain mutation
+**Phase 2: Controller APIs (Medium Risk)**
+- Add mutation methods to controller
+- Update unit tests for new APIs
+- Maintain backward compatibility
 
-Visual Updates:
-- WaveformCanvas.paintEvent remains; ensure event-driven repaint is requested when events are received
+**Phase 3: UI Migration (Higher Risk)**
+- Replace direct mutations with controller calls
+- Subscribe to events for updates
+- Initially use model reset, optimize later
+
+**Phase 4: Optimization (Low Risk)**
+- Implement fine-grained model updates
+- Add caching and lazy evaluation
+- Performance profiling and tuning
+
+## Testing Strategy
+
+### Unit Tests
+```python
+def test_delete_nodes_emits_event():
+    controller = WaveformController()
+    events = []
+    controller.event_bus.subscribe(
+        StructureChangedEvent,
+        lambda e: events.append(e)
+    )
+    
+    # Setup session with nodes
+    session = create_test_session()
+    controller.set_session(session)
+    
+    # Delete nodes
+    controller.delete_nodes_by_ids([1, 2, 3])
+    
+    # Verify event
+    assert len(events) == 1
+    assert events[0].change_kind == 'delete'
+    assert events[0].affected_ids == [1, 2, 3]
+```
+
+### Integration Tests
+- Drag-drop operations through controller
+- Multi-selection deletions
+- Format changes with canvas updates
+- Event propagation chain validation
 
 ## Performance Considerations
-- Initial approach: use beginResetModel/endResetModel on structural events for correctness
-- Optimization path: switch to fine-grained insert/remove/move model signals when event payload provides sufficient context
-- Cache invalidation: when formats change, invalidate only affected nodes/ranges; ensure no full redraw if unnecessary
-- Memory: small overhead for subscriber lists and short-lived event objects
 
-## Phase Planning
-- Phase 1: Type boundary and Event Bus foundations (data_model Protocol change; events module; event bus module)
-- Phase 2: Controller APIs and migration of widget/view handlers to controller calls
-- Phase 3: WaveformItemModel DnD refactor and event-driven refresh (reset first, optimize later)
-- Phase 4: Types, tests, and documentation updates across the touched modules
+### Memory Impact
+- Event objects: ~100 bytes per event (short-lived)
+- Subscriber lists: ~8 bytes per subscription
+- Total overhead: < 10KB for typical session
 
+### CPU Impact
+- Event dispatch: O(n) where n = subscribers
+- Type checking: Negligible with frozen dataclasses
+- Model updates: Initially O(m) for reset, optimizable to O(log m)
+
+### Optimization Opportunities
+1. **Batch Events:** Coalesce rapid changes
+2. **Lazy Properties:** Compute on demand
+3. **Incremental Updates:** Track dirty regions
+4. **Event Filtering:** Subscribe to specific node IDs
+
+## Risk Assessment
+
+### Technical Risks
+1. **Qt Model Update Complexity**
+   - Mitigation: Start with reset, incremental optimization
+   
+2. **Event Ordering Dependencies**
+   - Mitigation: Document event contracts clearly
+   
+3. **Performance Regression**
+   - Mitigation: Benchmark before/after, profile hotspots
+
+### Migration Risks
+1. **Breaking Existing Functionality**
+   - Mitigation: Comprehensive test coverage first
+   
+2. **Merge Conflicts**
+   - Mitigation: Small, focused PRs
+
+## Success Metrics
+
+### Quantitative
+- Zero regressions in existing tests
+- < 5ms event propagation latency
+- < 10% memory overhead increase
+- 100% type coverage (mypy strict mode)
+
+### Qualitative
+- Cleaner separation of concerns
+- Easier debugging with event tracing
+- Foundation for future features (undo/redo)
+- Improved code maintainability
+
+## Timeline Estimate
+
+- **Phase 1:** 2-3 hours (typing, events, bus)
+- **Phase 2:** 3-4 hours (controller methods, tests)
+- **Phase 3:** 4-6 hours (UI migration, testing)
+- **Phase 4:** 2-3 hours (optimization, profiling)
+
+**Total: 11-16 hours**
+
+## Next Steps
+
+1. Review and approve this plan
+2. Create feature branch
+3. Implement Phase 1 (foundation)
+4. Submit PR for early feedback
+5. Continue with subsequent phases
+
+## Appendix: Example Usage
+
+```python
+# Before: Direct mutation
+node.format.data_format = DataFormat.HEX
+model.layoutChanged.emit()
+
+# After: Controller-mediated
+controller.set_node_format(
+    node_id=node.instance_id,
+    data_format=DataFormat.HEX
+)
+# Model updates automatically via event subscription
+```
+
+```python
+# UI subscription example
+class WaveformItemModel(QAbstractItemModel):
+    def __init__(self, controller: WaveformController):
+        super().__init__()
+        self.controller = controller
+        
+        # Subscribe to relevant events
+        controller.event_bus.subscribe(
+            StructureChangedEvent,
+            self._on_structure_changed
+        )
+        controller.event_bus.subscribe(
+            FormatChangedEvent,
+            self._on_format_changed
+        )
+        
+    def _on_structure_changed(self, event: StructureChangedEvent):
+        # Initially: full reset
+        self.beginResetModel()
+        self.endResetModel()
+        
+        # Later: fine-grained updates
+        # if event.change_kind == 'move':
+        #     self.beginMoveRows(...)
+        #     self.endMoveRows()
+```
