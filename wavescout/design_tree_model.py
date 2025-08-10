@@ -58,9 +58,10 @@ Tree Node Structure:
 from PySide6.QtCore import Qt, QAbstractItemModel, QModelIndex, QPersistentModelIndex, QObject
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
 from PySide6.QtWidgets import QApplication
-from typing import Optional, Any, List, overload, Dict
+from typing import Optional, List, overload, Dict, Union
 from .data_model import SignalHandle
 from .protocols import WaveformDBProtocol
+from pywellen import Hierarchy, Var
 
 
 class DesignTreeNode:
@@ -84,7 +85,7 @@ class DesignTreeNode:
         self.parent = parent
         self.children: List['DesignTreeNode'] = []
         self.var_handle: Optional[SignalHandle] = None  # Wellen Var handle for database lookups
-        self.var = None  # Wellen Var object reference
+        self.var: Optional[Var] = None  # Wellen Var object reference
 
     def add_child(self, child: 'DesignTreeNode') -> None:
         """Add a child node to this node and set this node as its parent."""
@@ -207,7 +208,7 @@ class DesignTreeModel(QAbstractItemModel):
 
         # OPTIMIZATION: Build a reverse mapping from variables to handles once
         # This allows O(1) handle lookups instead of O(n) searches
-        self._var_to_handle: Optional[Dict[int, Any]] = {}
+        self._var_to_handle: Optional[Dict[int, SignalHandle]] = {}
         for handle, vars_list in self.waveform_db.iter_handles_and_vars():
             # Map each variable in the list to the same handle
             for var in vars_list:
@@ -219,7 +220,7 @@ class DesignTreeModel(QAbstractItemModel):
         # Clean up the temporary mapping
         self._var_to_handle = None
 
-    def _build_scope_recursive(self, scopes: Any, parent_node: DesignTreeNode, hierarchy: Any) -> None:
+    def _build_scope_recursive(self, scopes: List[Hierarchy], parent_node: DesignTreeNode, hierarchy: Hierarchy) -> None:
         """Recursively build the tree structure for scopes and their contents.
         
         This method traverses the design hierarchy depth-first, creating nodes for:
@@ -378,7 +379,7 @@ class DesignTreeModel(QAbstractItemModel):
         """
         return 3  # Name, Type, Bit Range
 
-    def data(self, index: QModelIndex | QPersistentModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def data(self, index: QModelIndex | QPersistentModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Optional[Union[str, QIcon, DesignTreeNode]]:
         """Get data for display or other roles for the given item.
         
         This is a required method for QAbstractItemModel. It provides all the data
@@ -398,6 +399,8 @@ class DesignTreeModel(QAbstractItemModel):
             return None
 
         node = index.internalPointer()
+        if not isinstance(node, DesignTreeNode):
+            return None
         column = index.column()
 
         if role == Qt.ItemDataRole.DisplayRole:
@@ -416,7 +419,7 @@ class DesignTreeModel(QAbstractItemModel):
 
         return None
 
-    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Optional[str]:
         """Get header labels for the tree view columns.
         
         This is a required method for QAbstractItemModel. It provides the text
