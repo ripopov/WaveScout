@@ -27,19 +27,17 @@ def test_widget_creation(wave_widget):
     assert wave_widget.model is not None
 
 
-def test_four_panels_exist(wave_widget):
-    """Test that all four panels exist."""
+def test_three_panels_exist(wave_widget):
+    """Test that the three panels exist (names, values, canvas)."""
     # Check that all views exist
     assert hasattr(wave_widget, '_names_view')
     assert hasattr(wave_widget, '_values_view')
     assert hasattr(wave_widget, '_canvas')
-    assert hasattr(wave_widget, '_analysis_view')
     
     # Check they are visible
     assert wave_widget._names_view.isVisible()
     assert wave_widget._values_view.isVisible()
     assert wave_widget._canvas.isVisible()
-    assert wave_widget._analysis_view.isVisible()
 
 
 def test_model_has_signals(wave_widget):
@@ -111,32 +109,16 @@ def test_values_panel(wave_widget):
     print(f"\nValues at cursor: {values}")
 
 
-def test_analysis_panel(wave_widget):
-    """Test that analysis values are displayed in the analysis panel."""
-    analysis_view = wave_widget._analysis_view
-    model = wave_widget.model
-    
-    # Check that the view has the model
-    assert analysis_view.model() == model
-    
-    # Check fourth column is visible
-    assert not analysis_view.isColumnHidden(3)
-    
-    # Check other columns are hidden
-    for col in [0, 1, 2]:
-        assert analysis_view.isColumnHidden(col)
 
 
 def test_shared_scrollbar(wave_widget):
-    """Test that all views share the same scrollbar."""
+    """Test that views share the same scrollbar (names and values)."""
     # Get scrollbars from each view
     names_scroll = wave_widget._names_view.verticalScrollBar()
     values_scroll = wave_widget._values_view.verticalScrollBar()
-    analysis_scroll = wave_widget._analysis_view.verticalScrollBar()
     
     # Check they are the same object
     assert names_scroll == values_scroll
-    assert values_scroll == analysis_scroll
     assert names_scroll == wave_widget._shared_scrollbar
 
 
@@ -211,9 +193,8 @@ def test_expansion_sync(wave_widget, qtbot):
         # Collapse in names view
         wave_widget._names_view.collapse(group_index)
         
-        # Check it's collapsed in other views
+        # Check it's collapsed in values view
         assert not wave_widget._values_view.isExpanded(group_index)
-        assert not wave_widget._analysis_view.isExpanded(group_index)
         
         # Check data model is updated
         assert group_node.is_expanded == False
@@ -221,9 +202,8 @@ def test_expansion_sync(wave_widget, qtbot):
         # Expand in names view
         wave_widget._names_view.expand(group_index)
         
-        # Check it's expanded in other views
+        # Check it's expanded in values view
         assert wave_widget._values_view.isExpanded(group_index)
-        assert wave_widget._analysis_view.isExpanded(group_index)
         
         # Check data model is updated
         assert group_node.is_expanded == True
@@ -274,7 +254,6 @@ def test_headers_visible(wave_widget):
     # Check headers
     assert not wave_widget._names_view.isHeaderHidden()
     assert not wave_widget._values_view.isHeaderHidden()
-    assert not wave_widget._analysis_view.isHeaderHidden()
     
     # Get header text
     model = wave_widget.model

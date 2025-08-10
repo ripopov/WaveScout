@@ -56,12 +56,10 @@ def test_multi_selection_enabled(wave_widget):
     # Check selection mode on all views
     assert wave_widget._names_view.selectionMode() == QAbstractItemView.ExtendedSelection
     assert wave_widget._values_view.selectionMode() == QAbstractItemView.ExtendedSelection
-    assert wave_widget._analysis_view.selectionMode() == QAbstractItemView.ExtendedSelection
     
     # Check selection behavior (should select rows)
     assert wave_widget._names_view.selectionBehavior() == QAbstractItemView.SelectRows
     assert wave_widget._values_view.selectionBehavior() == QAbstractItemView.SelectRows
-    assert wave_widget._analysis_view.selectionBehavior() == QAbstractItemView.SelectRows
 
 
 def test_shared_selection_model(wave_widget):
@@ -70,7 +68,6 @@ def test_shared_selection_model(wave_widget):
     selection_model = wave_widget._selection_model
     assert wave_widget._names_view.selectionModel() == selection_model
     assert wave_widget._values_view.selectionModel() == selection_model
-    assert wave_widget._analysis_view.selectionModel() == selection_model
 
 
 def test_single_selection(wave_widget, qtbot):

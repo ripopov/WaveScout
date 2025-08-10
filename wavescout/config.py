@@ -109,7 +109,7 @@ class UIConfig:
     
     def __post_init__(self) -> None:
         if self.SPLITTER_INITIAL_SIZES is None:
-            object.__setattr__(self, 'SPLITTER_INITIAL_SIZES', [200, 100, 400, 100])
+            object.__setattr__(self, 'SPLITTER_INITIAL_SIZES', [200, 100, 600])
 
 
 @dataclass(frozen=True)

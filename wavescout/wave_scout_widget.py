@@ -1,8 +1,8 @@
-"""Main WaveScout widget with four synchronized panels."""
+"""Main WaveScout widget with three synchronized panels."""
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout,
-                              QScrollBar, QSplitter,
-                              QLabel, QFrame, QApplication)
+                               QScrollBar, QSplitter,
+                               QLabel, QFrame, QApplication)
 from PySide6.QtCore import Qt, Signal, QModelIndex, QItemSelectionModel, QItemSelection, QEvent, QTimer, QObject
 from PySide6.QtGui import QKeyEvent, QWheelEvent
 from typing import Optional, cast, List
@@ -23,15 +23,8 @@ class SignalValuesView(BaseColumnView):
         super().__init__(visible_column=1, allow_expansion=False, parent=parent)
 
 
-class AnalysisView(BaseColumnView):
-    """Tree view for analysis values (column 3)."""
-    
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
-        super().__init__(visible_column=3, allow_expansion=False, parent=parent)
-
-
 class WaveScoutWidget(QWidget):
-    """Main WaveScout widget with four synchronized panels."""
+    """Main WaveScout widget with three synchronized panels."""
     
     cursorChanged = Signal(object)  # Using object to handle large time values
     
@@ -64,26 +57,23 @@ class WaveScoutWidget(QWidget):
         self._info_bar.setMaximumHeight(UI.INFO_BAR_HEIGHT)
         layout.addWidget(self._info_bar)
         
-        # Create splitter for the four panels
+        # Create splitter for the three panels
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         
-        # Create the four views
+        # Create the three views
         self._names_view = SignalNamesView()
         self._values_view = SignalValuesView()
         self._canvas = WaveformCanvas(None)
-        self._analysis_view = AnalysisView()
         
         # Install event filter on child views to handle keyboard shortcuts
         self._names_view.installEventFilter(self)
         self._values_view.installEventFilter(self)
         self._canvas.installEventFilter(self)
-        self._analysis_view.installEventFilter(self)
         
         # Add views to splitter
         self._splitter.addWidget(self._names_view)
         self._splitter.addWidget(self._values_view)
         self._splitter.addWidget(self._canvas)
-        self._splitter.addWidget(self._analysis_view)
         
         # Set initial splitter sizes
         if UI.SPLITTER_INITIAL_SIZES is not None:
@@ -108,7 +98,6 @@ class WaveScoutWidget(QWidget):
         # Assign it to all views
         self._names_view.setVerticalScrollBar(self._shared_scrollbar)
         self._values_view.setVerticalScrollBar(self._shared_scrollbar)
-        self._analysis_view.setVerticalScrollBar(self._shared_scrollbar)
         
         # Canvas will use the scrollbar for painting
         self._canvas.setSharedScrollBar(self._shared_scrollbar)
@@ -150,7 +139,7 @@ class WaveScoutWidget(QWidget):
                 pass
         
         # Clear models from all views
-        for view_name in ['_names_view', '_values_view', '_analysis_view', '_canvas']:
+        for view_name in ['_names_view', '_values_view', '_canvas']:
             if hasattr(self, view_name):
                 view = getattr(self, view_name)
                 if view:
@@ -178,8 +167,6 @@ class WaveScoutWidget(QWidget):
         self._names_view.setSelectionModel(self._selection_model)
         self._values_view.setModel(self.model)
         self._values_view.setSelectionModel(self._selection_model)
-        self._analysis_view.setModel(self.model)
-        self._analysis_view.setSelectionModel(self._selection_model)
         self._canvas.setModel(self.model)
         
         # Set canvas time range from viewport
@@ -209,7 +196,7 @@ class WaveScoutWidget(QWidget):
         """Ensure all panel headers have the same height using system theme value."""
         try:
             height = RENDERING.DEFAULT_HEADER_HEIGHT
-            for view in [self._names_view, self._values_view, self._analysis_view]:
+            for view in [self._names_view, self._values_view]:
                 if view and view.header():
                     view.header().setFixedHeight(height)
         except Exception:
@@ -294,10 +281,8 @@ class WaveScoutWidget(QWidget):
         # Sync to other views
         if is_expanded:
             self._values_view.expand(index)
-            self._analysis_view.expand(index)
         else:
             self._values_view.collapse(index)
-            self._analysis_view.collapse(index)
             
         # Update scrollbar
         self._update_scrollbar_range()
@@ -321,11 +306,9 @@ class WaveScoutWidget(QWidget):
                 if node.is_expanded:
                     self._names_view.expand(index)
                     self._values_view.expand(index)
-                    self._analysis_view.expand(index)
                 else:
                     self._names_view.collapse(index)
                     self._values_view.collapse(index)
-                    self._analysis_view.collapse(index)
                 
                 # Recurse into children
                 self._restore_expansion_state(index)
