@@ -3,10 +3,13 @@
 from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate, QWidget, QStyleOptionViewItem, QInputDialog
 from PySide6.QtCore import Qt, Signal, QModelIndex, QAbstractItemModel, QPoint, QSize
 from PySide6.QtGui import QAction, QActionGroup, QKeyEvent
-from typing import List, Optional, Callable, Union
+from typing import List, Optional, Callable, Union, TYPE_CHECKING
 from PySide6.QtCore import QPersistentModelIndex
 from .data_model import SignalNode, RenderType, AnalogScalingMode, DataFormat
 from .config import RENDERING, UI
+
+if TYPE_CHECKING:
+    from .waveform_controller import WaveformController
 
 
 class ScaledHeightDelegate(QStyledItemDelegate):
@@ -72,8 +75,10 @@ class BaseColumnView(QTreeView):
 class SignalNamesView(BaseColumnView):
     """Tree view for signal names (column 0)."""
     
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, controller: 'WaveformController', parent: Optional[QWidget] = None) -> None:
         super().__init__(visible_column=0, allow_expansion=True, parent=parent)
+        self._controller = controller
+        
         # Enable context menu
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
@@ -251,63 +256,15 @@ class SignalNamesView(BaseColumnView):
         
     def _set_data_format(self, node: SignalNode, data_format: DataFormat) -> None:
         """Set the data format for the given signal node."""
-        if node.format.data_format != data_format:
-            node.format.data_format = data_format
-            
-            # Notify the model that the data has changed
-            if self.model():
-                # Find the index for this node
-                index = self._find_node_index(node)
-                if index.isValid():
-                    # Emit dataChanged for all columns to update all views
-                    # Include both DisplayRole and UserRole to ensure canvas updates
-                    self.model().dataChanged.emit(
-                        self.model().index(index.row(), 0, index.parent()),
-                        self.model().index(index.row(), self.model().columnCount() - 1, index.parent()),
-                        [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.UserRole]
-                    )
+        self._controller.set_node_format(node.instance_id, data_format=data_format)
                     
     def _set_height_scaling(self, node: SignalNode, height_scaling: int) -> None:
         """Set the height scaling for the given signal node."""
-        if node.height_scaling != height_scaling:
-            node.height_scaling = height_scaling
-            
-            # Notify the model that the data has changed
-            if self.model():
-                # Find the index for this node
-                index = self._find_node_index(node)
-                if index.isValid():
-                    # Emit dataChanged for all columns to update all views
-                    self.model().dataChanged.emit(
-                        self.model().index(index.row(), 0, index.parent()),
-                        self.model().index(index.row(), self.model().columnCount() - 1, index.parent()),
-                        [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.UserRole]
-                    )
-                    
-                    # Also need to trigger a layout change since row heights will change
-                    self.model().layoutChanged.emit()
+        self._controller.set_node_format(node.instance_id, height_scaling=height_scaling)
                     
     def _set_render_type(self, node: SignalNode, render_type: RenderType) -> None:
         """Set the render type for the given signal node."""
-        if node.format.render_type != render_type:
-            node.format.render_type = render_type
-            
-            # Clear any cached range data when switching modes
-            # This will be handled by the canvas when it detects the change
-            
-            # Notify the model that the data has changed
-            if self.model():
-                # Find the index for this node
-                index = self._find_node_index(node)
-                if index.isValid():
-                    # Emit dataChanged for all columns to update all views
-                    self.model().dataChanged.emit(
-                        self.model().index(index.row(), 0, index.parent()),
-                        self.model().index(index.row(), self.model().columnCount() - 1, index.parent()),
-                        [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.UserRole]
-                    )
-                    # Trigger layout change to refresh rendering
-                    self.model().layoutChanged.emit()
+        self._controller.set_node_format(node.instance_id, render_type=render_type)
                     
     def _set_render_type_with_scaling(self, node: SignalNode, render_type: RenderType, scaling_mode: AnalogScalingMode) -> None:
         """Set both render type and analog scaling mode for the given signal node.
@@ -316,58 +273,21 @@ class SignalNamesView(BaseColumnView):
         This auto-adjustment happens only when transitioning from a non-Analog
         render type to Analog; users can still change height scaling later.
         """
-        changed = False
-
-        # Track whether we're transitioning into Analog from a different mode
-        entering_analog = (render_type == RenderType.ANALOG and node.format.render_type != RenderType.ANALOG)
+        # Check if we're transitioning into Analog from a different mode
+        # We must check BEFORE calling set_node_format since it updates the node
+        old_render_type = node.format.render_type
+        entering_analog = (render_type == RenderType.ANALOG and old_render_type != RenderType.ANALOG)
         
-        if node.format.render_type != render_type:
-            node.format.render_type = render_type
-            changed = True
-            
-        if node.format.analog_scaling_mode != scaling_mode:
-            node.format.analog_scaling_mode = scaling_mode
-            changed = True
+        # Use controller to set render type and analog scaling mode
+        self._controller.set_node_format(
+            node.instance_id, 
+            render_type=render_type,
+            analog_scaling_mode=scaling_mode
+        )
         
-        # If we are entering Analog mode, set default height scaling to 3
-        if entering_analog and node.height_scaling != 3:
-            node.height_scaling = 3
-            changed = True
-            
-        if changed:
-            # Notify the model that the data has changed
-            if self.model():
-                # Find the index for this node
-                index = self._find_node_index(node)
-                if index.isValid():
-                    # Emit dataChanged for all columns to update all views
-                    self.model().dataChanged.emit(
-                        self.model().index(index.row(), 0, index.parent()),
-                        self.model().index(index.row(), self.model().columnCount() - 1, index.parent()),
-                        [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.UserRole]
-                    )
-                    # Trigger layout change to refresh rendering (also updates row heights)
-                    self.model().layoutChanged.emit()
-    
-    def _set_analog_scaling(self, node: SignalNode, scaling_mode: AnalogScalingMode) -> None:
-        """Set the analog scaling mode for the given signal node."""
-        if node.format.analog_scaling_mode != scaling_mode:
-            node.format.analog_scaling_mode = scaling_mode
-            
-            # Clear viewport range cache if switching to/from SCALE_TO_VISIBLE_DATA
-            # This will be handled by the canvas when it detects the change
-            
-            # Notify the model that the data has changed
-            if self.model():
-                # Find the index for this node
-                index = self._find_node_index(node)
-                if index.isValid():
-                    # Emit dataChanged for all columns to update all views
-                    self.model().dataChanged.emit(
-                        self.model().index(index.row(), 0, index.parent()),
-                        self.model().index(index.row(), self.model().columnCount() - 1, index.parent()),
-                        [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.UserRole]
-                    )
+        # If entering analog mode and height is still 1, set it to 3
+        if entering_analog and node.height_scaling == 1:
+            self._controller.set_node_format(node.instance_id, height_scaling=3)
                     
     def _find_node_index(self, target_node: SignalNode, parent: QModelIndex = QModelIndex()) -> QModelIndex:
         """Find the model index for the given node."""
@@ -413,20 +333,7 @@ class SignalNamesView(BaseColumnView):
         )
         
         if ok:
-            # Update the nickname (empty string clears the nickname)
-            node.nickname = new_nickname if new_nickname else ""
-            
-            # Notify the model that the data has changed
-            if self.model():
-                # Find the index for this node
-                index = self._find_node_index(node)
-                if index.isValid():
-                    # Emit dataChanged for all columns to update all views
-                    self.model().dataChanged.emit(
-                        self.model().index(index.row(), 0, index.parent()),
-                        self.model().index(index.row(), self.model().columnCount() - 1, index.parent()),
-                        [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.UserRole]
-                    )
+            self._controller.rename_node(node.instance_id, new_nickname if new_nickname else "")
     
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle key press events."""

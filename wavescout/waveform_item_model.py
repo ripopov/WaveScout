@@ -1,19 +1,28 @@
 """Qt Model/View bridge for waveform data."""
 
 from PySide6.QtCore import Qt, QModelIndex, QAbstractItemModel, QPersistentModelIndex, QObject, QMimeData, QByteArray
-from typing import overload, List, Optional, Union, Tuple, Any, Sequence
+from typing import overload, List, Optional, Union, Tuple, Any, Sequence, TYPE_CHECKING
 import json
 from .data_model import WaveformSession, SignalNode, SignalNameDisplayMode, RenderType
 from .signal_sampling import parse_signal_value
+from .application.events import StructureChangedEvent, FormatChangedEvent
+
+if TYPE_CHECKING:
+    from .waveform_controller import WaveformController
 
 
 class WaveformItemModel(QAbstractItemModel):
     """Exposes SignalNode tree to Qt views while keeping dataclass purity."""
 
-    def __init__(self, session: WaveformSession, parent: Optional[QObject] = None) -> None:
+    def __init__(self, session: WaveformSession, controller: 'WaveformController', parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._session = session
+        self._controller = controller
         self._headers = ["Signal", "Value", "Waveform", "Analysis"]
+        
+        # Subscribe to controller events
+        self._controller.event_bus.subscribe(StructureChangedEvent, self._on_structure_changed)
+        self._controller.event_bus.subscribe(FormatChangedEvent, self._on_format_changed)
 
     # -- overriding row/column API --
     def columnCount(self, _parent: Union[QModelIndex, QPersistentModelIndex] = QModelIndex()) -> int:
@@ -171,6 +180,72 @@ class WaveformItemModel(QAbstractItemModel):
             return value_str or ""
         except Exception:
             return ""
+    
+    def _on_structure_changed(self, event: StructureChangedEvent) -> None:
+        """Handle structure change events from controller."""
+        # For now, do a full reset. Later we can optimize with fine-grained updates
+        self.beginResetModel()
+        self.endResetModel()
+    
+    def _on_format_changed(self, event: FormatChangedEvent) -> None:
+        """Handle format change events from controller."""
+        # Find the node and emit dataChanged for it
+        node = self._find_node_by_id(event.node_id)
+        if node:
+            # Check if height changed - if so, we need layoutChanged to update canvas row heights
+            if 'height' in event.changes:
+                # Height changed, need full layout update for canvas to recalculate row positions
+                self.layoutChanged.emit()
+            else:
+                # Find the model index for this node
+                index = self._create_index_for_node(node)
+                if index.isValid():
+                    # Emit dataChanged for all columns
+                    self.dataChanged.emit(index, self.index(index.row(), 3, index.parent()))
+    
+    def _find_node_by_id(self, node_id: int) -> Optional[SignalNode]:
+        """Find a node by its instance ID."""
+        def search(nodes: List[SignalNode]) -> Optional[SignalNode]:
+            for node in nodes:
+                if node.instance_id == node_id:
+                    return node
+                found = search(node.children)
+                if found:
+                    return found
+            return None
+        return search(self._session.root_nodes)
+    
+    def _create_index_for_node(self, target_node: SignalNode) -> QModelIndex:
+        """Create a QModelIndex for a given node."""
+        # Find the path from root to node
+        path = []
+        current = target_node
+        while current.parent:
+            path.append(current)
+            current = current.parent
+        path.append(current)
+        path.reverse()
+        
+        # Build index by traversing path
+        index = QModelIndex()
+        for i, node in enumerate(path):
+            if i == 0:
+                # Root level
+                try:
+                    row = self._session.root_nodes.index(node)
+                    index = self.index(row, 0)
+                except ValueError:
+                    return QModelIndex()
+            else:
+                # Child level
+                parent_node = path[i-1]
+                try:
+                    row = parent_node.children.index(node)
+                    index = self.index(row, 0, index)
+                except ValueError:
+                    return QModelIndex()
+        
+        return index
     
     def _analysis_value(self, node: SignalNode) -> str:
         # Calculate min/max/avg based on analysis mode and range
@@ -341,13 +416,10 @@ class WaveformItemModel(QAbstractItemModel):
         if not self._validate_move(nodes, new_parent):
             return False
         
-        # Collect nodes with their current positions
-        nodes_with_info = self._collect_nodes_with_positions(nodes)
-        if not nodes_with_info:
-            return False
-        
-        # Perform the move operation
-        return self._perform_move_operation(nodes_with_info, new_parent, insert_row)
+        node_ids = [node.instance_id for node in nodes]
+        parent_id = new_parent.instance_id if new_parent else None
+        self._controller.move_nodes(node_ids, parent_id, insert_row)
+        return True
     
     def _validate_move(self, nodes: List[SignalNode], new_parent: Optional[SignalNode]) -> bool:
         """Validate that the move operation is allowed."""
@@ -360,61 +432,6 @@ class WaveformItemModel(QAbstractItemModel):
                         return False
                     ancestor = ancestor.parent
         return True
-    
-    def _collect_nodes_with_positions(self, nodes: List[SignalNode]) -> List[Tuple[int, Optional[SignalNode], SignalNode]]:
-        """Collect nodes with their current positions and parent information."""
-        nodes_with_info = []
-        for node in nodes:
-            if node.parent:
-                source_list = node.parent.children
-            else:
-                source_list = self._session.root_nodes
-            
-            try:
-                current_row = source_list.index(node)
-                nodes_with_info.append((current_row, node.parent, node))
-            except ValueError:
-                continue
-        
-        # Sort by parent and row to maintain order
-        nodes_with_info.sort(key=lambda x: (id(x[1]) if x[1] else 0, x[0]))
-        return nodes_with_info
-    
-    def _perform_move_operation(self, nodes_info: List[Tuple[int, Optional[SignalNode], SignalNode]], 
-                               new_parent: Optional[SignalNode], insert_row: int) -> bool:
-        """Perform the actual move operation."""
-        # Use beginResetModel/endResetModel for simplicity and reliability
-        self.beginResetModel()
-        
-        try:
-            # Remove nodes from their current positions
-            for _, parent, node in nodes_info:
-                if parent:
-                    parent.children.remove(node)
-                else:
-                    self._session.root_nodes.remove(node)
-            
-            # Get target list
-            if new_parent:
-                target_list = new_parent.children
-            else:
-                target_list = self._session.root_nodes
-            
-            # Insert nodes at new position
-            for i, (_, _, node) in enumerate(nodes_info):
-                node.parent = new_parent
-                if insert_row + i <= len(target_list):
-                    target_list.insert(insert_row + i, node)
-                else:
-                    target_list.append(node)
-            
-            return True
-        except Exception as e:
-            print(f"Error in _perform_move_operation: {e}")
-            return False
-        finally:
-            self.endResetModel()
-    
     def _find_index_for_node(self, node: SignalNode) -> QModelIndex:
         """Find the QModelIndex for a given node."""
         if not node.parent:

@@ -12,8 +12,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Iterable, Set
 
-from .data_model import WaveformSession, Viewport, SignalNode, Marker, Time
+from .data_model import (
+    WaveformSession, Viewport, SignalNode, Marker, Time, SignalNodeID,
+    DataFormat, GroupRenderMode, DisplayFormat, RenderType
+)
 from .config import COLORS, MARKER_LABELS, RENDERING
+from .application.event_bus import EventBus
+from .application.events import (
+    Event, StructureChangedEvent, FormatChangedEvent, ViewportChangedEvent,
+    CursorMovedEvent, SelectionChangedEvent, MarkerAddedEvent, MarkerRemovedEvent,
+    MarkerMovedEvent, SessionLoadedEvent, SessionClosedEvent, FormatChanges
+)
 
 
 Callback = Callable[[], None]
@@ -38,8 +47,9 @@ class WaveformController:
 
     session: Optional[WaveformSession] = None
     _selected_ids: Set[int] = field(default_factory=set)
+    event_bus: EventBus = field(default_factory=EventBus)
 
-    # Simple event callbacks registry
+    # Simple event callbacks registry (kept for backward compatibility)
     _callbacks: Dict[str, List[Callback]] = field(default_factory=lambda: {
         "session_changed": [],
         "viewport_changed": [],
@@ -88,6 +98,7 @@ class WaveformController:
         new_ids = set(ids)
         if new_ids == self._selected_ids:
             return
+        old_ids = list(self._selected_ids)
         self._selected_ids = new_ids
         # Rebuild session.selected_nodes in document order
         selected: List[SignalNode] = []
@@ -95,6 +106,10 @@ class WaveformController:
             if node.instance_id in self._selected_ids:
                 selected.append(node)
         self.session.selected_nodes = selected
+        self.event_bus.publish(SelectionChangedEvent(
+            old_selection=old_ids,
+            new_selection=list(new_ids)
+        ))
         self._emit("selection_changed")
 
     def get_selected_ids(self) -> Set[int]:
@@ -104,8 +119,13 @@ class WaveformController:
     def set_cursor_time(self, time_value: int) -> None:
         if not self.session:
             return
-        if self.session.cursor_time != time_value:
+        old_time = self.session.cursor_time
+        if old_time != time_value:
             self.session.cursor_time = int(time_value)
+            self.event_bus.publish(CursorMovedEvent(
+                old_time=old_time,
+                new_time=int(time_value)
+            ))
             self._emit("cursor_changed")
 
     def toggle_benchmark_mode(self) -> None:
@@ -257,7 +277,14 @@ class WaveformController:
         if not self.session:
             return
         vp = self.session.viewport
+        old_left, old_right = vp.left, vp.right
         vp.left, vp.right = 0.0, 1.0
+        self.event_bus.publish(ViewportChangedEvent(
+            old_left=old_left,
+            old_right=old_right,
+            new_left=0.0,
+            new_right=1.0
+        ))
         self._emit("viewport_changed")
 
     def go_to_start(self) -> None:
@@ -282,6 +309,7 @@ class WaveformController:
         if not self.session:
             return
         vp = self.session.viewport
+        old_left, old_right = vp.left, vp.right
         new_left = vp.left + pan_distance
         new_right = vp.right + pan_distance
         width = vp.width
@@ -297,6 +325,13 @@ class WaveformController:
             new_left = new_left - offset
             new_right = max_allowed_right
         vp.left, vp.right = new_left, new_right
+        if old_left != new_left or old_right != new_right:
+            self.event_bus.publish(ViewportChangedEvent(
+                old_left=old_left,
+                old_right=old_right,
+                new_left=new_left,
+                new_right=new_right
+            ))
         self._emit("viewport_changed")
 
     def zoom_viewport(self, zoom_factor: float, mouse_relative: Optional[float] = None) -> None:
@@ -306,6 +341,7 @@ class WaveformController:
         if not self.session:
             return
         vp = self.session.viewport
+        old_left, old_right = vp.left, vp.right
         center = mouse_relative if mouse_relative is not None else (vp.left + vp.right) / 2.0
         left_distance = center - vp.left
         right_distance = vp.right - center
@@ -323,6 +359,13 @@ class WaveformController:
             new_left = -vp.config.edge_space
             new_right = 1.0 + vp.config.edge_space
         vp.left, vp.right = new_left, new_right
+        if old_left != new_left or old_right != new_right:
+            self.event_bus.publish(ViewportChangedEvent(
+                old_left=old_left,
+                old_right=old_right,
+                new_left=new_left,
+                new_right=new_right
+            ))
         self._emit("viewport_changed")
 
     # ---- Helpers ----
@@ -346,3 +389,312 @@ class WaveformController:
         # timescale-based limit: 1 time unit -> half viewport
         timescale_min_width = (1.0 / vp.total_duration) * 2
         return max(min_width, timescale_min_width)
+    
+    def _find_node_by_id(self, node_id: SignalNodeID) -> Optional[SignalNode]:
+        """Find a node by its instance ID."""
+        for node in self._iter_all_nodes():
+            if node.instance_id == node_id:
+                return node
+        return None
+    
+    # ---- Structural Mutations (NEW) ----
+    
+    def delete_nodes_by_ids(self, ids: Iterable[SignalNodeID]) -> None:
+        """Delete nodes from the signal tree."""
+        if not self.session:
+            return
+        
+        ids_list = list(ids)
+        if not ids_list:
+            return
+        
+        # Collect nodes to delete
+        nodes_to_delete = []
+        for node in self._iter_all_nodes():
+            if node.instance_id in ids_list:
+                nodes_to_delete.append(node)
+        
+        # Remove from tree
+        for node in nodes_to_delete:
+            if node.parent:
+                node.parent.children.remove(node)
+            elif node in self.session.root_nodes:
+                self.session.root_nodes.remove(node)
+        
+        # Update selection if needed
+        self._selected_ids -= set(ids_list)
+        self.session.selected_nodes = [n for n in self.session.selected_nodes if n.instance_id not in ids_list]
+        
+        # Emit events
+        self.event_bus.publish(StructureChangedEvent(
+            change_kind='delete',
+            affected_ids=ids_list
+        ))
+        self._emit("session_changed")
+        if set(ids_list) & self._selected_ids:
+            self._emit("selection_changed")
+    
+    def group_nodes(
+        self,
+        ids: Iterable[SignalNodeID],
+        group_name: str,
+        mode: GroupRenderMode
+    ) -> SignalNodeID:
+        """Create a new group containing specified nodes."""
+        if not self.session:
+            return -1
+        
+        ids_list = list(ids)
+        if not ids_list:
+            return -1
+        
+        # Find nodes to group
+        nodes_to_group = []
+        for node in self._iter_all_nodes():
+            if node.instance_id in ids_list:
+                nodes_to_group.append(node)
+        
+        if not nodes_to_group:
+            return -1
+        
+        # Create new group
+        group = SignalNode(
+            name=group_name,
+            is_group=True,
+            group_render_mode=mode,
+            children=[]
+        )
+        
+        # Determine parent and position
+        first_node = nodes_to_group[0]
+        parent = first_node.parent
+        
+        if parent:
+            # Insert group at position of first node
+            index = parent.children.index(first_node)
+            parent.children.insert(index, group)
+            group.parent = parent
+        else:
+            # Add to root at position of first node
+            index = self.session.root_nodes.index(first_node)
+            self.session.root_nodes.insert(index, group)
+        
+        # Move nodes into group
+        for node in nodes_to_group:
+            if node.parent:
+                node.parent.children.remove(node)
+            elif node in self.session.root_nodes:
+                self.session.root_nodes.remove(node)
+            
+            node.parent = group
+            group.children.append(node)
+        
+        # Emit event
+        self.event_bus.publish(StructureChangedEvent(
+            change_kind='group',
+            affected_ids=ids_list,
+            parent_id=group.instance_id
+        ))
+        self._emit("session_changed")
+        
+        return group.instance_id
+    
+    def move_nodes(
+        self,
+        node_ids: List[SignalNodeID],
+        target_parent_id: Optional[SignalNodeID],
+        insert_row: int
+    ) -> None:
+        """Move nodes to new position in tree."""
+        if not self.session:
+            return
+        
+        # Find nodes to move
+        nodes_to_move = []
+        for node_id in node_ids:
+            node = self._find_node_by_id(node_id)
+            if node:
+                nodes_to_move.append(node)
+        
+        if not nodes_to_move:
+            return
+        
+        # Find target parent
+        target_parent = None
+        if target_parent_id is not None:
+            target_parent = self._find_node_by_id(target_parent_id)
+            if not target_parent or not target_parent.is_group:
+                return  # Invalid target
+        
+        # Remove nodes from current positions
+        for node in nodes_to_move:
+            if node.parent:
+                node.parent.children.remove(node)
+            elif node in self.session.root_nodes:
+                self.session.root_nodes.remove(node)
+        
+        # Insert at new position
+        if target_parent:
+            # Insert into group
+            for i, node in enumerate(nodes_to_move):
+                node.parent = target_parent
+                target_parent.children.insert(insert_row + i, node)
+        else:
+            # Insert at root level
+            for i, node in enumerate(nodes_to_move):
+                node.parent = None
+                self.session.root_nodes.insert(insert_row + i, node)
+        
+        # Emit event
+        self.event_bus.publish(StructureChangedEvent(
+            change_kind='move',
+            affected_ids=node_ids,
+            parent_id=target_parent_id,
+            insert_row=insert_row
+        ))
+        self._emit("session_changed")
+    
+    def ungroup_nodes(self, group_ids: Iterable[SignalNodeID]) -> None:
+        """Ungroup the specified groups, moving their children to parent level."""
+        if not self.session:
+            return
+        
+        ids_list = list(group_ids)
+        groups_to_ungroup = []
+        
+        for node_id in ids_list:
+            node = self._find_node_by_id(node_id)
+            if node and node.is_group:
+                groups_to_ungroup.append(node)
+        
+        for group in groups_to_ungroup:
+            parent = group.parent
+            children = list(group.children)
+            
+            if parent:
+                # Insert children at group's position
+                index = parent.children.index(group)
+                parent.children.remove(group)
+                for i, child in enumerate(children):
+                    child.parent = parent
+                    parent.children.insert(index + i, child)
+            else:
+                # Insert at root level
+                index = self.session.root_nodes.index(group)
+                self.session.root_nodes.remove(group)
+                for i, child in enumerate(children):
+                    child.parent = None
+                    self.session.root_nodes.insert(index + i, child)
+        
+        # Emit event
+        self.event_bus.publish(StructureChangedEvent(
+            change_kind='ungroup',
+            affected_ids=ids_list
+        ))
+        self._emit("session_changed")
+    
+    # ---- Format/Property Mutations (NEW) ----
+    
+    def set_node_format(self, node_id: SignalNodeID, **kwargs: object) -> None:
+        """Update display format properties."""
+        node = self._find_node_by_id(node_id)
+        if not node:
+            return
+        
+        changes: FormatChanges = {}
+        
+        # Handle each possible format property
+        if 'data_format' in kwargs:
+            value = kwargs['data_format']
+            if isinstance(value, (DataFormat, str)):
+                if isinstance(value, str):
+                    # Convert string to DataFormat if needed
+                    try:
+                        value = DataFormat(value)
+                    except ValueError:
+                        return
+                if node.format.data_format != value:
+                    node.format.data_format = value
+                    changes['data_format'] = value.value if isinstance(value, DataFormat) else value
+        
+        if 'render_type' in kwargs:
+            value = kwargs['render_type']
+            if isinstance(value, (RenderType, str)):
+                if isinstance(value, str):
+                    try:
+                        value = RenderType(value)
+                    except ValueError:
+                        return
+                if node.format.render_type != value:
+                    node.format.render_type = value
+                    changes['render_type'] = value.value if isinstance(value, RenderType) else value
+        
+        if 'color' in kwargs:
+            value = kwargs['color']
+            if isinstance(value, str) and node.format.color != value:
+                node.format.color = value
+                changes['color'] = value
+        
+        if 'height_scaling' in kwargs:
+            value = kwargs['height_scaling']
+            if isinstance(value, int) and node.height_scaling != value:
+                node.height_scaling = value
+                changes['height'] = value
+        
+        if 'analog_scaling_mode' in kwargs:
+            from .data_model import AnalogScalingMode
+            value = kwargs['analog_scaling_mode']
+            if isinstance(value, (AnalogScalingMode, str)):
+                if isinstance(value, str):
+                    try:
+                        value = AnalogScalingMode(value)
+                    except ValueError:
+                        return
+                if node.format.analog_scaling_mode != value:
+                    node.format.analog_scaling_mode = value
+                    changes['analog_scaling_mode'] = value.value if isinstance(value, AnalogScalingMode) else value
+        
+        if changes:
+            self.event_bus.publish(FormatChangedEvent(
+                node_id=node_id,
+                changes=changes
+            ))
+            self._emit("session_changed")
+    
+    def rename_node(self, node_id: SignalNodeID, nickname: str) -> None:
+        """Set user-defined nickname for node."""
+        node = self._find_node_by_id(node_id)
+        if not node:
+            return
+        
+        if node.nickname != nickname:
+            node.nickname = nickname
+            self.event_bus.publish(FormatChangedEvent(
+                node_id=node_id,
+                changes={'nickname': nickname}
+            ))
+            self._emit("session_changed")
+    
+    def set_node_expanded(self, node_id: SignalNodeID, expanded: bool) -> None:
+        """Set whether a group node is expanded."""
+        node = self._find_node_by_id(node_id)
+        if not node or not node.is_group:
+            return
+        
+        if node.is_expanded != expanded:
+            node.is_expanded = expanded
+            self._emit("session_changed")
+    
+    def set_group_render_mode(self, node_id: SignalNodeID, mode: GroupRenderMode) -> None:
+        """Set the render mode for a group."""
+        node = self._find_node_by_id(node_id)
+        if not node or not node.is_group:
+            return
+        
+        if node.group_render_mode != mode:
+            node.group_render_mode = mode
+            self.event_bus.publish(FormatChangedEvent(
+                node_id=node_id,
+                changes={'render_type': mode.value}
+            ))
+            self._emit("session_changed")

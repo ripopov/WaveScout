@@ -1,0 +1,1 @@
+"""Application layer for WaveScout - controllers, events, and business logic."""

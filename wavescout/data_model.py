@@ -36,8 +36,11 @@ Displayed signals can be grouped into a tree structure. So WaveformSession is a 
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Any, ClassVar, Dict, Tuple
+from typing import List, Optional, ClassVar, Dict, Tuple, TYPE_CHECKING
 from enum import Enum
+
+if TYPE_CHECKING:
+    from wavescout.protocols import WaveformDBProtocol
 
 Time = int  # In Timescale units
 
@@ -256,7 +259,7 @@ class SignalRangeCache:
 
 @dataclass
 class WaveformSession:
-    waveform_db: Optional[Any] = None  # Pointer to WaveformDB instance
+    waveform_db: Optional['WaveformDBProtocol'] = None  # Pointer to WaveformDB instance
     root_nodes: List[SignalNode] = field(default_factory=list)
     viewport: Viewport = field(default_factory=Viewport)
     markers: List[Marker] = field(default_factory=list)

@@ -293,11 +293,12 @@ def test_height_scaling_widget_api(qtbot):
         widget.model.layoutChanged.emit()
     qtbot.wait(50)
 
-    # Set height scaling for prdata
+    # Set height scaling for prdata using controller
     prdata_node = found_nodes["prdata"]
-    names_view = widget._names_view
     assert prdata_node.height_scaling != 8
-    names_view._set_height_scaling(prdata_node, 8)
+    
+    # Use the controller to set height scaling
+    widget.controller.set_node_format(prdata_node.instance_id, height_scaling=8)
 
     # Verify persistence in YAML
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -368,8 +369,8 @@ def test_height_scaling_ui_interaction(qtbot):
         if n.name.endswith("apb_testbench.prdata")
     )
     
-    names_view = window.wave_widget._names_view
-    names_view._set_height_scaling(prdata_node, 8)
+    # Use controller to set height scaling
+    window.wave_widget.controller.set_node_format(prdata_node.instance_id, height_scaling=8)
     assert prdata_node.height_scaling == 8
     
     # Verify YAML persistence
@@ -435,9 +436,10 @@ def test_height_scaling_for_analog_signals(qtbot):
     sine1_node = next(n for n in session.root_nodes if n.name.endswith("top.sine_1mhz"))
     sine2_node = next(n for n in session.root_nodes if n.name.endswith("top.sine_2mhz"))
     
-    names_view = window.wave_widget._names_view
-    names_view._set_height_scaling(sine1_node, 8)
-    names_view._set_height_scaling(sine2_node, 3)
+    # Use controller to set height scaling
+    controller = window.wave_widget.controller
+    controller.set_node_format(sine1_node.instance_id, height_scaling=8)
+    controller.set_node_format(sine2_node.instance_id, height_scaling=3)
     
     # Verify in YAML
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -915,13 +917,16 @@ def test_analog_scale_visible_menu_integration(qtbot):
     # Verify signal is multi-bit
     assert prdata_node.is_multi_bit, "prdata should be a multi-bit signal"
     
-    # Change render mode to Analog Scale Visible using the new combined method
-    names_view = window.wave_widget._names_view
-    names_view._set_render_type_with_scaling(
-        prdata_node, 
-        RenderType.ANALOG, 
-        AnalogScalingMode.SCALE_TO_VISIBLE_DATA
+    # Change render mode to Analog Scale Visible using controller
+    controller = window.wave_widget.controller
+    # Set render type and analog scaling mode
+    controller.set_node_format(
+        prdata_node.instance_id,
+        render_type=RenderType.ANALOG,
+        analog_scaling_mode=AnalogScalingMode.SCALE_TO_VISIBLE_DATA
     )
+    # Also set height to 3 (as the original method did when entering analog mode)
+    controller.set_node_format(prdata_node.instance_id, height_scaling=3)
     
     # Verify the settings were applied
     assert prdata_node.format.render_type == RenderType.ANALOG

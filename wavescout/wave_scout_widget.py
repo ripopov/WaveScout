@@ -62,7 +62,7 @@ class WaveScoutWidget(QWidget):
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         
         # Create the three views
-        self._names_view = SignalNamesView()
+        self._names_view = SignalNamesView(controller=self.controller)
         self._values_view = SignalValuesView()
         self._canvas = WaveformCanvas(None)
         
@@ -158,7 +158,7 @@ class WaveScoutWidget(QWidget):
         """Initialize the new session and create models."""
         # Set new session
         self.session = session
-        self.model = WaveformItemModel(session, self)
+        self.model = WaveformItemModel(session, controller=self.controller, parent=self)
         
         # Create shared selection model
         self._selection_model = QItemSelectionModel(self.model)
@@ -277,7 +277,7 @@ class WaveScoutWidget(QWidget):
         if self.model is not None:
             node = self.model.data(index, Qt.ItemDataRole.UserRole)
             if isinstance(node, SignalNode) and node.is_group:
-                node.is_expanded = is_expanded
+                self.controller.set_node_expanded(node.instance_id, is_expanded)
         
         # Sync to other views
         if is_expanded:
@@ -291,6 +291,22 @@ class WaveScoutWidget(QWidget):
         # Notify model that layout has changed to update canvas
         if self.model:
             self.model.layoutChanged.emit()
+    
+    def _iter_all_nodes(self) -> List[SignalNode]:
+        """Iterate through all nodes in the session."""
+        if not self.session:
+            return []
+        
+        nodes = []
+        def walk(node: SignalNode) -> None:
+            nodes.append(node)
+            for child in node.children:
+                walk(child)
+        
+        for root in self.session.root_nodes:
+            walk(root)
+        
+        return nodes
         
     def _restore_expansion_state(self, parent_index: QModelIndex = QModelIndex()) -> None:
         """Restore expansion state from data model."""
@@ -378,10 +394,8 @@ class WaveScoutWidget(QWidget):
         if self._updating_selection or not self.session or not self._selection_model or not self.model:
             return
             
-        # Clear previous selection
-        self.session.selected_nodes.clear()
-        
-        # Get all selected indexes
+        # Get selected nodes from the selection model
+        selected_nodes: List[SignalNode] = []
         selected_indexes = self._selection_model.selectedIndexes()
         
         # Filter to only column 0 (to avoid duplicates) and extract nodes
@@ -389,10 +403,14 @@ class WaveScoutWidget(QWidget):
         for index in selected_indexes:
             if index.column() == 0:
                 node = self.model.data(index, Qt.ItemDataRole.UserRole)
-                node_id = id(node) if node else None
-                if node and node_id not in processed_node_ids:
-                    self.session.selected_nodes.append(node)
-                    processed_node_ids.add(node_id)
+                if isinstance(node, SignalNode):
+                    node_id = node.instance_id
+                    if node_id not in processed_node_ids:
+                        selected_nodes.append(node)
+                        processed_node_ids.add(node_id)
+        
+        # Use controller to update selection (it will update session)
+        self.controller.set_selection_by_ids([n.instance_id for n in selected_nodes])
         
         # Update canvas to highlight selected signals
         self._canvas.update()
@@ -496,18 +514,16 @@ class WaveScoutWidget(QWidget):
         elif (event.modifiers() == Qt.KeyboardModifier.ControlModifier and 
               event.key() >= Qt.Key.Key_1 and event.key() <= Qt.Key.Key_9):
             marker_index = event.key() - Qt.Key.Key_1  # Convert to 0-based index
-            if self.controller:
-                self.controller.toggle_marker_at_cursor(marker_index)
+            self.controller.toggle_marker_at_cursor(marker_index)
             event.accept()
         # Handle marker navigation (1 through 9 without modifiers)
         elif (event.modifiers() == Qt.KeyboardModifier.NoModifier and 
               event.key() >= Qt.Key.Key_1 and event.key() <= Qt.Key.Key_9):
             marker_index = event.key() - Qt.Key.Key_1  # Convert to 0-based index
-            if self.controller:
-                # Get actual canvas width for accurate pixel offset calculation
-                canvas_width = self._canvas.width() if self._canvas else RENDERING.DEFAULT_CANVAS_WIDTH
-                # Navigate with default pixel offset from left edge
-                self.controller.navigate_to_marker(marker_index, None, canvas_width)
+            # Get actual canvas width for accurate pixel offset calculation
+            canvas_width = self._canvas.width() if self._canvas else RENDERING.DEFAULT_CANVAS_WIDTH
+            # Navigate with default pixel offset from left edge
+            self.controller.navigate_to_marker(marker_index, None, canvas_width)
             event.accept()
         else:
             super().keyPressEvent(event)
@@ -517,8 +533,8 @@ class WaveScoutWidget(QWidget):
         if not self.session or not self.session.selected_nodes:
             return
             
-        # Get selected nodes to delete (make a copy)
-        nodes_to_delete = list(self.session.selected_nodes)
+        # Get selected node IDs
+        node_ids = [node.instance_id for node in self.session.selected_nodes]
         
         # Clear selection in UI first to avoid accessing deleted nodes
         if self._selection_model:
@@ -526,69 +542,24 @@ class WaveScoutWidget(QWidget):
             self._selection_model.clearSelection()
             self._updating_selection = False
         
-        # Clear selection in data model
-        self.session.selected_nodes.clear()
-        
-        # Begin model reset to prevent view updates during deletion
-        if self.model:
-            self.model.beginResetModel()
-        
-        try:
-            # Create a set of node IDs for O(1) lookup
-            nodes_to_delete_ids = {id(node) for node in nodes_to_delete}
-            
-            # Process deletions in a single pass
-            # First, handle root nodes
-            new_root_nodes = []
-            for node in self.session.root_nodes:
-                if id(node) not in nodes_to_delete_ids:
-                    new_root_nodes.append(node)
-                else:
-                    # Clear parent reference for deleted nodes
-                    node.parent = None
-            self.session.root_nodes = new_root_nodes
-            
-            # Then handle children of non-deleted nodes
-            for node in nodes_to_delete:
-                if node.parent and id(node.parent) not in nodes_to_delete_ids:
-                    # Remove from parent's children
-                    parent = node.parent
-                    parent.children = [child for child in parent.children if id(child) != id(node)]
-                    node.parent = None
-            
-            # End model reset - this will refresh all views
-            if self.model:
-                self.model.endResetModel()
-                
-            # Restore expansion state after model reset
-            self._restore_expansion_state()
-            
-        except Exception as e:
-            print(f"Error during node deletion: {e}")
-            # End model reset even on error
-            if self.model:
-                self.model.endResetModel()
+        # Use controller to delete nodes
+        self.controller.delete_nodes_by_ids(node_ids)
+        # Restore expansion state after deletion
+        self._restore_expansion_state()
                 
     def _create_group_from_selected(self) -> None:
         """Create a new group containing the selected nodes."""
         if not self.session or not self.session.selected_nodes:
             return
             
-        # Create a new group node
-        group_name = f"Group {len([n for n in self.session.root_nodes if n.is_group]) + 1}"
-        group_node = SignalNode(
-            name=group_name,
-            is_group=True,
-            group_render_mode=GroupRenderMode.SEPARATE_ROWS,
-            is_expanded=True
-        )
-        
-        # Get selected nodes (make a copy to avoid modification during iteration)
-        selected_nodes = list(self.session.selected_nodes)
+        # Use controller to create group
+        # Get selected node IDs
+        selected_ids = [node.instance_id for node in self.session.selected_nodes]
         
         # Filter out nodes whose parent is also selected
         # This prevents flattening when grouping groups
-        nodes_to_group = []
+        nodes_to_group_ids = []
+        selected_nodes = list(self.session.selected_nodes)
         
         for node in selected_nodes:
             # Check if any ancestor is in the selected list
@@ -602,89 +573,50 @@ class WaveScoutWidget(QWidget):
             
             # Only include nodes that don't have a selected ancestor
             if not has_selected_ancestor:
-                nodes_to_group.append(node)
+                nodes_to_group_ids.append(node.instance_id)
         
-        # Clear selection in UI
-        if self._selection_model:
-            self._updating_selection = True
-            self._selection_model.clearSelection()
-            self._updating_selection = False
-        
-        # Clear selection in data model
-        self.session.selected_nodes.clear()
-        
-        # Begin model reset
-        if self.model:
-            self.model.beginResetModel()
-        
-        try:
-            # Find the position where to insert the new group
-            # (position of the first node being grouped)
-            insert_position = None
-            insert_parent = None
+        if nodes_to_group_ids:
+            # Create group name
+            group_name = f"Group {len([n for n in self.session.root_nodes if n.is_group]) + 1}"
             
-            for node in nodes_to_group:
-                if node.parent:
-                    # Node is in a parent's children list
-                    parent = node.parent
-                    try:
-                        idx = parent.children.index(node)
-                        if insert_position is None or (insert_parent == parent and idx < insert_position):
-                            insert_position = idx
-                            insert_parent = parent
-                    except ValueError:
-                        pass
-                else:
-                    # Node is in root_nodes
-                    try:
-                        idx = self.session.root_nodes.index(node)
-                        if insert_position is None or (insert_parent is None and idx < insert_position):
-                            insert_position = idx
-                            insert_parent = None
-                    except ValueError:
-                        pass
+            # Clear selection in UI
+            if self._selection_model:
+                self._updating_selection = True
+                self._selection_model.clearSelection()
+                self._updating_selection = False
             
-            # Remove selected nodes from their current parents and add to group
-            for node in nodes_to_group:
-                # Remove from root nodes if present
-                if node in self.session.root_nodes:
-                    self.session.root_nodes.remove(node)
-                
-                # Remove from parent's children if it has a parent
-                if node.parent:
-                    node.parent.children.remove(node)
-                
-                # Add to new group
-                node.parent = group_node
-                group_node.children.append(node)
+            # Create the group using controller
+            group_id = self.controller.group_nodes(
+                nodes_to_group_ids,
+                group_name,
+                GroupRenderMode.SEPARATE_ROWS
+            )
             
-            # Insert the group at the determined position
-            if insert_parent is not None:
-                # Insert into a parent's children
-                group_node.parent = insert_parent
-                if insert_position is not None and insert_position <= len(insert_parent.children):
-                    insert_parent.children.insert(insert_position, group_node)
-                else:
-                    insert_parent.children.append(group_node)
-            else:
-                # Insert into root nodes
-                if insert_position is not None and insert_position <= len(self.session.root_nodes):
-                    self.session.root_nodes.insert(insert_position, group_node)
-                else:
-                    self.session.root_nodes.append(group_node)
-            
-            # End model reset
-            if self.model:
-                self.model.endResetModel()
-                
-            # Restore expansion state
+            # Restore expansion state after grouping
             self._restore_expansion_state()
             
-        except Exception as e:
-            print(f"Error creating group: {e}")
-            # End model reset even on error
-            if self.model:
-                self.model.endResetModel()
+            # Select the new group
+            if group_id != -1 and self.model:
+                # Find the group node and select it
+                for node in self._iter_all_nodes():
+                    if node.instance_id == group_id:
+                        # Find index for the node in the model
+                        parent_index = QModelIndex()
+                        model_index = None
+                        for i in range(self.model.rowCount(parent_index)):
+                            temp_idx = self.model.index(i, 0, parent_index)
+                            if self.model.data(temp_idx, Qt.ItemDataRole.UserRole) == node:
+                                model_index = temp_idx
+                                break
+                        
+                        if model_index and model_index.isValid() and self._selection_model:
+                            self._selection_model.select(
+                                model_index,
+                                QItemSelectionModel.SelectionFlag.ClearAndSelect | 
+                                QItemSelectionModel.SelectionFlag.Rows
+                            )
+                        break
+        return
                 
     def _zoom_in(self) -> None:
         """Zoom in by 2x (delta = 0.5)."""
