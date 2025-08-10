@@ -49,7 +49,7 @@ def _serialize_node(node: SignalNode) -> Dict[str, Any]:
 
 def _resolve_signal_handles(nodes: List[SignalNode], waveform_db) -> None:
     """Resolve signal handles for nodes that have null handles."""
-    if not hasattr(waveform_db, 'hierarchy'):
+    if not waveform_db.hierarchy:
         return
         
     hierarchy = waveform_db.hierarchy
@@ -73,20 +73,22 @@ def _resolve_signal_handles(nodes: List[SignalNode], waveform_db) -> None:
         collect_vars_from_scope(top_scope)
     
     # Now we need to map var objects to handles
-    # First check if waveform_db has an existing mapping
+    # First check if waveform_db has an existing mapping (optional method)
     var_to_handle = {}
-    if hasattr(waveform_db, 'get_var_to_handle_mapping'):
-        var_to_handle = waveform_db.get_var_to_handle_mapping()
+    mapping = waveform_db.get_var_to_handle_mapping()
+    if mapping is not None:
+        var_to_handle = mapping
     
     # If some vars are not in the existing map, we need to add them
-    next_handle = waveform_db.get_next_available_handle() if hasattr(waveform_db, 'get_next_available_handle') else 0
+    next_handle = waveform_db.get_next_available_handle()
+    if next_handle is None:
+        next_handle = 0
     for full_name, var in name_to_var.items():
         if var not in var_to_handle:
-            # Add this var to the waveform_db's var_map
-            if hasattr(waveform_db, 'add_var_with_handle'):
-                waveform_db.add_var_with_handle(var, next_handle)
-                var_to_handle[var] = next_handle
-                next_handle += 1
+            # Note: add_var_with_handle is not implemented in WaveformDB
+            # Just use the handle without adding to database
+            var_to_handle[var] = next_handle
+            next_handle += 1
     
     # Recursively resolve handles
     def resolve_node(node: SignalNode):
@@ -175,10 +177,10 @@ def save_session(session: WaveformSession, path: pathlib.Path):
     Serialize session to YAML, excluding waveform_db pointer
     but preserving its URI for reconnection.
     """
-    # Get database URI if available
+    # Get database URI if available (file_path is an optional property)
     db_uri = None
-    if session.waveform_db and hasattr(session.waveform_db, 'file_path'):
-        db_uri = session.waveform_db.file_path
+    if session.waveform_db:
+        db_uri = getattr(session.waveform_db, 'file_path', None)
     
     # Serialize data
     data = {
@@ -263,7 +265,7 @@ def load_session(path: pathlib.Path) -> WaveformSession:
                 unit=unit
             )
     # If timescale not in saved data but waveform_db is loaded, get it from there
-    elif waveform_db and hasattr(waveform_db, 'get_timescale'):
+    elif waveform_db:
         session.timescale = waveform_db.get_timescale()
     
     # Resolve signal handles if waveform_db is available
@@ -281,7 +283,7 @@ def load_session(path: pathlib.Path) -> WaveformSession:
     def find_max_instance_id(nodes):
         max_id = 0
         for node in nodes:
-            if hasattr(node, 'instance_id'):
+            if getattr(node, 'instance_id', None) is not None:
                 max_id = max(max_id, node.instance_id)
             if node.children:
                 max_id = max(max_id, find_max_instance_id(node.children))

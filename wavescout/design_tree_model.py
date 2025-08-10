@@ -199,7 +199,7 @@ class DesignTreeModel(QAbstractItemModel):
         The reverse mapping optimization is crucial for large designs where linear
         searches would be too slow.
         """
-        if not self.waveform_db or not hasattr(self.waveform_db, 'hierarchy'):
+        if not self.waveform_db or not self.waveform_db.hierarchy:
             return
 
         hierarchy = self.waveform_db.hierarchy

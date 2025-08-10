@@ -61,14 +61,14 @@ class ScopeTreeModel(QAbstractItemModel):
         self.waveform_db = waveform_db
         self.root_node = None
         
-        if waveform_db and hasattr(waveform_db, 'hierarchy'):
+        if waveform_db and waveform_db.hierarchy:
             self._build_scope_hierarchy()
         
         self.endResetModel()
     
     def _build_scope_hierarchy(self):
         """Build the scope-only tree from the waveform database hierarchy."""
-        if not self.waveform_db or not hasattr(self.waveform_db, 'hierarchy'):
+        if not self.waveform_db or not self.waveform_db.hierarchy:
             return
         
         hierarchy = self.waveform_db.hierarchy
@@ -129,7 +129,7 @@ class ScopeTreeModel(QAbstractItemModel):
     
     def get_variables_for_scope(self, scope_node):
         """Get all variables for a given scope node."""
-        if not self.waveform_db or not hasattr(self.waveform_db, 'hierarchy'):
+        if not self.waveform_db or not self.waveform_db.hierarchy:
             return []
         
         hierarchy = self.waveform_db.hierarchy

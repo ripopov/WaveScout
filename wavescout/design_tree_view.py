@@ -208,18 +208,11 @@ class DesignTreeView(QWidget):
         
         # Get handle from node if available
         handle = None
-        if hasattr(node, 'var_handle') and node.var_handle is not None:
+        if getattr(node, 'var_handle', None) is not None:
             handle = node.var_handle
-        elif hasattr(node, 'var') and node.var and self.waveform_db:
-            # Try to get handle from var object
-            if hasattr(self.waveform_db, 'get_handle_for_var'):
-                handle = self.waveform_db.get_handle_for_var(node.var)
-            elif hasattr(self.waveform_db, 'iter_handles_and_vars'):
-                # Find handle by iterating (less efficient but works)
-                for h, vars_list in self.waveform_db.iter_handles_and_vars():
-                    if node.var in vars_list:
-                        handle = h
-                        break
+        elif getattr(node, 'var', None) and self.waveform_db:
+            # Try to get handle from var object (method is required by protocol)
+            handle = self.waveform_db.get_handle_for_var(node.var)
         
         # If not, try to find signal handle by path
         if handle is None:
@@ -229,10 +222,10 @@ class DesignTreeView(QWidget):
             return None
         
         # Determine render type using helper and var_type if available
-        var_obj = node.var if hasattr(node, 'var') else None
+        var_obj = getattr(node, 'var', None)
         is_single_bit = self._is_single_bit(var_obj, handle)
         var_type_str = None
-        if var_obj is None and hasattr(self.waveform_db, 'get_var') and handle is not None:
+        if var_obj is None and self.waveform_db and handle is not None:
             try:
                 var_obj = self.waveform_db.get_var(handle)
             except Exception:
@@ -393,8 +386,8 @@ class DesignTreeView(QWidget):
         to keep behavior safe by default.
         """
         is_single_bit = True
-        # Ensure we have a var object
-        if var_obj is None and self.waveform_db is not None and hasattr(self.waveform_db, 'get_var') and handle is not None:
+        # Ensure we have a var object (get_var is required by protocol)
+        if var_obj is None and self.waveform_db is not None and handle is not None:
             try:
                 var_obj = self.waveform_db.get_var(handle)
             except Exception:
@@ -420,8 +413,8 @@ class DesignTreeView(QWidget):
         var = var_data.get('var')
         handle = None
         
-        if var and hasattr(self.waveform_db, 'get_handle_for_var'):
-            # Try to get handle from var object
+        if var and self.waveform_db:
+            # Try to get handle from var object (method is required by protocol)
             handle = self.waveform_db.get_handle_for_var(var)
         
         if handle is None:

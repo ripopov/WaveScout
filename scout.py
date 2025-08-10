@@ -247,20 +247,28 @@ class WaveScoutMainWindow(QMainWindow):
         else:
             self.normal_mode_action.setChecked(True)
         
-        # Get filename from the session's waveform database
-        if session.waveform_db and hasattr(session.waveform_db, 'file_path'):
-            file_name = Path(session.waveform_db.file_path).name
-            # Include timescale info if available
-            if session.timescale:
-                timescale_str = f"{session.timescale.factor}{session.timescale.unit.value}"
-                self.statusBar().showMessage(f"Loaded: {file_name} (Timescale: {timescale_str})")
+        # Get filename from the session's waveform database (file_path is optional property)
+        if session.waveform_db:
+            file_path = getattr(session.waveform_db, 'file_path', None)
+            if file_path:
+                file_name = Path(file_path).name
             else:
-                self.statusBar().showMessage(f"Loaded: {file_name}")
-            # Print confirmation for CLI/integration tests
-            try:
-                print(f"Successfully loaded waveform: {session.waveform_db.file_path}")
-            except Exception:
-                pass
+                file_name = None
+            # Include timescale info if available
+            if file_name:
+                if session.timescale:
+                    timescale_str = f"{session.timescale.factor}{session.timescale.unit.value}"
+                    self.statusBar().showMessage(f"Loaded: {file_name} (Timescale: {timescale_str})")
+                else:
+                    self.statusBar().showMessage(f"Loaded: {file_name}")
+                # Print confirmation for CLI/integration tests
+                if file_path:
+                    try:
+                        print(f"Successfully loaded waveform: {file_path}")
+                    except Exception:
+                        pass
+            else:
+                self.statusBar().showMessage("File loaded successfully")
         else:
             self.statusBar().showMessage("File loaded successfully")
             

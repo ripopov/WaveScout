@@ -379,5 +379,7 @@ class WaveformDB:
         """
         vars_list = self.get_all_vars_for_handle(handle)
         if vars_list and hasattr(vars_list[0], 'bitwidth'):
-            return int(vars_list[0].bitwidth())
+            width = vars_list[0].bitwidth()
+            if width is not None:
+                return int(width)
         return 32  # Default bit width

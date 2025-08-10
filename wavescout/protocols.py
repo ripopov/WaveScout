@@ -1,6 +1,6 @@
 """Protocol definitions for decoupling UI from WaveformDB implementation."""
 
-from typing import Protocol, Optional, Iterable
+from typing import Protocol, Optional, Iterable, Dict
 from collections.abc import Iterable as ABCIterable
 
 # Import concrete types from pywellen
@@ -110,3 +110,29 @@ class WaveformDBProtocol(Protocol):
             Timescale object if available, None otherwise
         """
         ...
+    
+    # Optional attributes and methods for extended functionality
+    @property
+    def file_path(self) -> Optional[str]:
+        """Path to the loaded waveform file.
+        
+        Returns:
+            File path if available, None otherwise
+        """
+        return None
+    
+    def get_var_to_handle_mapping(self) -> Optional[Dict[Var, SignalHandle]]:
+        """Get mapping from Var objects to handles for persistence.
+        
+        Returns:
+            Dictionary mapping Var to SignalHandle if available, None otherwise
+        """
+        return None
+    
+    def get_next_available_handle(self) -> Optional[SignalHandle]:
+        """Get next available handle for new signals.
+        
+        Returns:
+            Next available SignalHandle if supported, None otherwise
+        """
+        return None
