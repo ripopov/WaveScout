@@ -176,11 +176,7 @@ def generate_signal_draw_commands(
         
         # Get signal bit width for data format conversion
         # We need to get it from the variable, not the signal object
-        bit_width = 32  # Default
-        if hasattr(waveform_db, '_var_map') and signal.handle in waveform_db._var_map:
-            var_list = waveform_db._var_map[signal.handle]
-            if var_list and hasattr(var_list[0], 'bitwidth'):
-                bit_width = var_list[0].bitwidth()
+        bit_width = waveform_db.get_var_bitwidth(signal.handle)
         
         drawing_data = SignalDrawingData(samples=[])
         time_per_pixel = (end_time - start_time) / canvas_width if canvas_width > 0 else 1

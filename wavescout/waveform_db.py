@@ -1,10 +1,10 @@
 """WaveformDB implementation using Wellen library."""
 
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict
 from .data_model import Time, SignalHandle, Timescale, TimeUnit
 
 try:
-    from pywellen import Waveform
+    from pywellen import Waveform, Var, Hierarchy, Signal, TimeTable
 except ImportError:
     raise ImportError(
         "Failed to import pywellen. Please build it first:\n"
@@ -16,11 +16,11 @@ class WaveformDB:
     """Waveform database using Wellen library for reading VCD/FST files."""
     
     def __init__(self):
-        self.waveform: Optional[Any] = None
-        self.hierarchy: Optional[Any] = None
+        self.waveform: Optional[Waveform] = None
+        self.hierarchy: Optional[Hierarchy] = None
         self.uri: Optional[str] = None
-        self._var_map: Dict[SignalHandle, List[Any]] = {}  # Map handles to list of variables (for aliases)
-        self._signal_cache: Dict[SignalHandle, Any] = {}  # Cache loaded signals
+        self._var_map: Dict[SignalHandle, List[Var]] = {}  # Map handles to list of variables (for aliases)
+        self._signal_cache: Dict[SignalHandle, Signal] = {}  # Cache loaded signals
         self._timescale: Optional[Timescale] = None  # Store parsed timescale
         self._var_name_to_handle: Dict[str, SignalHandle] = {}  # Map var full name to handle
         self._signal_ref_to_handle: Dict[int, SignalHandle] = {}  # Map SignalRef to our handle (for O(1) alias detection)
@@ -238,22 +238,22 @@ class WaveformDB:
             total += len(vars_list)
         return total
         
-    def get_var(self, handle: SignalHandle):
+    def get_var(self, handle: SignalHandle) -> Optional[Var]:
         """Get variable by handle. Returns pywellen Var object."""
         vars_list = self._var_map.get(handle, [])
         return vars_list[0] if vars_list else None
     
-    def get_all_vars_for_handle(self, handle: SignalHandle) -> List[Any]:
+    def get_all_vars_for_handle(self, handle: SignalHandle) -> List[Var]:
         """Get all variables (including aliases) for a handle."""
         return self._var_map.get(handle, [])
     
-    def get_time_table(self):
+    def get_time_table(self) -> Optional[TimeTable]:
         """Get the time table from the waveform. Returns pywellen TimeTable object."""
         if self.waveform and hasattr(self.waveform, 'time_table'):
             return self.waveform.time_table
         return None
     
-    def get_signal(self, handle: SignalHandle):
+    def get_signal(self, handle: SignalHandle) -> Optional[Signal]:
         """Get the signal object for the given handle. Returns pywellen Signal object.
         
         This method implements lazy loading - signals are only loaded when first requested.
@@ -304,7 +304,7 @@ class WaveformDB:
         """
         return self._var_name_to_handle.get(name)
     
-    def get_var_to_handle_mapping(self) -> Dict[Any, int]:
+    def get_var_to_handle_mapping(self) -> Dict[Var, int]:
         """Get complete variable-to-handle mapping.
         
         Returns:
@@ -337,10 +337,47 @@ class WaveformDB:
         """
         return handle in self._signal_cache
     
-    def iter_handles_and_vars(self) -> List[Tuple[int, List[Any]]]:
+    def iter_handles_and_vars(self) -> List[Tuple[int, List[Var]]]:
         """Iterate over all handles and their associated variables.
         
         Returns:
             List of tuples (handle, vars_list)
         """
         return list(self._var_map.items())
+    
+    def find_handle_by_path(self, path: str) -> Optional[SignalHandle]:
+        """Find handle by hierarchical path.
+        
+        First tries to find by exact name. If not found and path doesn't
+        contain a dot, tries with 'TOP.' prefix.
+        
+        Args:
+            path: Signal path (e.g., "signal" or "TOP.module.signal")
+            
+        Returns:
+            Handle ID if found, None otherwise
+        """
+        # First try exact match
+        handle = self.find_handle_by_name(path)
+        if handle is not None:
+            return handle
+        
+        # If not found and no dot in path, try with TOP prefix
+        if '.' not in path:
+            return self.find_handle_by_name(f"TOP.{path}")
+        
+        return None
+    
+    def get_var_bitwidth(self, handle: SignalHandle) -> int:
+        """Get bit width for a signal.
+        
+        Args:
+            handle: Signal handle
+            
+        Returns:
+            Bit width of the signal (defaults to 32 if unknown)
+        """
+        vars_list = self.get_all_vars_for_handle(handle)
+        if vars_list and hasattr(vars_list[0], 'bitwidth'):
+            return int(vars_list[0].bitwidth())
+        return 32  # Default bit width

@@ -209,11 +209,10 @@ class DesignTreeModel(QAbstractItemModel):
         # OPTIMIZATION: Build a reverse mapping from variables to handles once
         # This allows O(1) handle lookups instead of O(n) searches
         self._var_to_handle: Optional[Dict[int, Any]] = {}
-        if hasattr(self.waveform_db, 'iter_handles_and_vars'):
-            for handle, vars_list in self.waveform_db.iter_handles_and_vars():
-                # Map each variable in the list to the same handle
-                for var in vars_list:
-                    self._var_to_handle[id(var)] = handle
+        for handle, vars_list in self.waveform_db.iter_handles_and_vars():
+            # Map each variable in the list to the same handle
+            for var in vars_list:
+                self._var_to_handle[id(var)] = handle
 
         # Build hierarchy from scopes
         self._build_scope_recursive(hierarchy.top_scopes(), self.root_node, hierarchy)

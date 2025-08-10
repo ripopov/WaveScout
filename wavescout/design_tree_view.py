@@ -7,7 +7,7 @@ A standalone widget providing two viewing modes for the design hierarchy:
 """
 
 from enum import Enum
-from typing import Optional, List, Any, cast
+from typing import Optional, List, Any, cast, TYPE_CHECKING
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeView, QPushButton,
     QLabel, QStackedWidget, QSplitter, QLineEdit, QTableView,
@@ -20,6 +20,9 @@ from .design_tree_model import DesignTreeModel, DesignTreeNode
 from .data_model import SignalNode, RenderType, DisplayFormat, SignalHandle
 from .scope_tree_model import ScopeTreeModel
 from .vars_view import VarsView
+
+if TYPE_CHECKING:
+    from .protocols import WaveformDBProtocol
 
 
 class DesignTreeViewMode(Enum):
@@ -40,7 +43,7 @@ class DesignTreeView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         
-        self.waveform_db: Optional[Any] = None
+        self.waveform_db: Optional['WaveformDBProtocol'] = None
         self.design_tree_model: Optional[DesignTreeModel] = None
         self.scope_tree_model: Optional[ScopeTreeModel] = None
         self.vars_view: Optional[VarsView] = None
@@ -112,7 +115,7 @@ class DesignTreeView(QWidget):
         
         self.content_stack.addWidget(self.split_widget)
     
-    def set_waveform_db(self, waveform_db: Any):
+    def set_waveform_db(self, waveform_db: Optional['WaveformDBProtocol']):
         """Set the waveform database and initialize models"""
         self.waveform_db = waveform_db
         
@@ -257,18 +260,9 @@ class DesignTreeView(QWidget):
         if not self.waveform_db:
             return None
         
-        # Try direct lookup
-        if full_path in self.waveform_db._var_map:
-            handle: SignalHandle = self.waveform_db._var_map[full_path]
-            return handle
-        
-        # Try with TOP prefix
-        top_path = f"TOP.{full_path}"
-        if top_path in self.waveform_db._var_map:
-            top_handle: SignalHandle = self.waveform_db._var_map[top_path]
-            return top_handle
-        
-        return None
+        # Use the public find_handle_by_path method
+        handle = self.waveform_db.find_handle_by_path(full_path)
+        return handle
     
     def add_selected_signals(self):
         """Add currently selected signals to waveform (called by 'I' shortcut)"""

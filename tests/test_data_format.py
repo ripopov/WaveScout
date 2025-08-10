@@ -206,11 +206,11 @@ def test_with_vcd_file():
     # Get hierarchy
     hierarchy = db.hierarchy
     
-    # Get all variables
-    var_map = db._var_map
+    # Get all variables using public API
+    handles_and_vars = db.iter_handles_and_vars()
     
     # Test a few signals with different formats
-    for handle, var_list in var_map.items():
+    for handle, var_list in handles_and_vars:
         # Skip if empty list
         if not var_list:
             continue
@@ -227,7 +227,7 @@ def test_with_vcd_file():
             continue
             
         # Get bit width
-        bit_width = signal_obj.bit_width() if hasattr(signal_obj, 'bit_width') else 32
+        bit_width = db.get_var_bitwidth(handle)
         
         # Sample at time 0
         value = db.sample(handle, 0)
