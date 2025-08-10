@@ -156,45 +156,44 @@ class SignalNamesView(BaseColumnView):
             render_group = QActionGroup(self)
             render_group.setExclusive(True)
             
-            # Define render type options
-            render_options = [
-                ("Bus", RenderType.BUS),
-                ("Analog", RenderType.ANALOG)
-            ]
+            # Bus option
+            bus_action = QAction("Bus", self)
+            bus_action.setCheckable(True)
+            bus_action.setChecked(node.format.render_type == RenderType.BUS)
+            bus_action.triggered.connect(lambda: self._apply_to_selected_signals(
+                lambda n: self._set_render_type(n, RenderType.BUS), 
+                predicate=lambda n: getattr(n, 'is_multi_bit', False)
+            ))
+            render_group.addAction(bus_action)
+            render_menu.addAction(bus_action)
             
-            # Create actions for each render type
-            for display_name, render_value in render_options:
-                action = QAction(display_name, self)
-                action.setCheckable(True)
-                action.setChecked(node.format.render_type == render_value)
-                action.setData(render_value)
-                action.triggered.connect(lambda checked, r=render_value: self._apply_to_selected_signals(lambda n: self._set_render_type(n, r), predicate=lambda n: getattr(n, 'is_multi_bit', False)))
-                render_group.addAction(action)
-                render_menu.addAction(action)
+            # Analog Scale All option
+            analog_all_action = QAction("Analog Scale All", self)
+            analog_all_action.setCheckable(True)
+            analog_all_action.setChecked(
+                node.format.render_type == RenderType.ANALOG and 
+                node.format.analog_scaling_mode == AnalogScalingMode.SCALE_TO_ALL_DATA
+            )
+            analog_all_action.triggered.connect(lambda: self._apply_to_selected_signals(
+                lambda n: self._set_render_type_with_scaling(n, RenderType.ANALOG, AnalogScalingMode.SCALE_TO_ALL_DATA),
+                predicate=lambda n: getattr(n, 'is_multi_bit', False)
+            ))
+            render_group.addAction(analog_all_action)
+            render_menu.addAction(analog_all_action)
             
-            # Add analog scaling submenu if render type is analog
-            if node.format.render_type == RenderType.ANALOG:
-                analog_menu = menu.addMenu("Analog Scaling")
-                
-                # Create action group for analog scaling options
-                analog_group = QActionGroup(self)
-                analog_group.setExclusive(True)
-                
-                # Define analog scaling options
-                analog_options = [
-                    ("Scale to All Data", AnalogScalingMode.SCALE_TO_ALL_DATA),
-                    ("Scale to Visible Data", AnalogScalingMode.SCALE_TO_VISIBLE_DATA)
-                ]
-                
-                # Create actions for each analog scaling option
-                for display_name, scaling_value in analog_options:
-                    action = QAction(display_name, self)
-                    action.setCheckable(True)
-                    action.setChecked(node.format.analog_scaling_mode == scaling_value)
-                    action.setData(scaling_value)
-                    action.triggered.connect(lambda checked, s=scaling_value: self._apply_to_selected_signals(lambda n: self._set_analog_scaling(n, s), predicate=lambda n: bool(getattr(n, 'format', None) and n.format.render_type == RenderType.ANALOG)))
-                    analog_group.addAction(action)
-                    analog_menu.addAction(action)
+            # Analog Scale Visible option
+            analog_visible_action = QAction("Analog Scale Visible", self)
+            analog_visible_action.setCheckable(True)
+            analog_visible_action.setChecked(
+                node.format.render_type == RenderType.ANALOG and 
+                node.format.analog_scaling_mode == AnalogScalingMode.SCALE_TO_VISIBLE_DATA
+            )
+            analog_visible_action.triggered.connect(lambda: self._apply_to_selected_signals(
+                lambda n: self._set_render_type_with_scaling(n, RenderType.ANALOG, AnalogScalingMode.SCALE_TO_VISIBLE_DATA),
+                predicate=lambda n: getattr(n, 'is_multi_bit', False)
+            ))
+            render_group.addAction(analog_visible_action)
+            render_menu.addAction(analog_visible_action)
         
         # Add height scaling submenu
         height_menu = menu.addMenu("Set Height Scaling")
@@ -279,6 +278,33 @@ class SignalNamesView(BaseColumnView):
                     # Trigger layout change to refresh rendering
                     self.model().layoutChanged.emit()
                     
+    def _set_render_type_with_scaling(self, node: SignalNode, render_type: RenderType, scaling_mode: AnalogScalingMode) -> None:
+        """Set both render type and analog scaling mode for the given signal node."""
+        changed = False
+        
+        if node.format.render_type != render_type:
+            node.format.render_type = render_type
+            changed = True
+            
+        if node.format.analog_scaling_mode != scaling_mode:
+            node.format.analog_scaling_mode = scaling_mode
+            changed = True
+            
+        if changed:
+            # Notify the model that the data has changed
+            if self.model():
+                # Find the index for this node
+                index = self._find_node_index(node)
+                if index.isValid():
+                    # Emit dataChanged for all columns to update all views
+                    self.model().dataChanged.emit(
+                        self.model().index(index.row(), 0, index.parent()),
+                        self.model().index(index.row(), self.model().columnCount() - 1, index.parent()),
+                        [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.UserRole]
+                    )
+                    # Trigger layout change to refresh rendering
+                    self.model().layoutChanged.emit()
+    
     def _set_analog_scaling(self, node: SignalNode, scaling_mode: AnalogScalingMode) -> None:
         """Set the analog scaling mode for the given signal node."""
         if node.format.analog_scaling_mode != scaling_mode:

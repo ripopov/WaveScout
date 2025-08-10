@@ -855,3 +855,96 @@ def test_event_signal_render_type_assignment(qtbot):
         helper.save_and_verify_yaml(session, yaml_path, verify_event_render_type)
     
     window.close()
+
+
+# ========================================================================
+# Analog Render Mode Tests
+# ========================================================================
+
+def test_analog_scale_visible_menu_integration(qtbot):
+    """
+    Test the new unified "Set Render Type" menu with Analog Scale Visible option.
+    
+    This test verifies that the refactored context menu correctly sets analog
+    render mode with "scale to visible data" option and that this setting is
+    properly persisted to YAML.
+    
+    Test scenario:
+    1. Load waveform file (apb_sim.vcd)
+    2. Add a multi-bit signal (apb_testbench.prdata)
+    3. Change signal render mode to "Analog Scale Visible" via the new API
+    4. Save session to YAML
+    5. Verify YAML contains correct render_type and analog_scaling_mode
+    """
+    helper = WaveScoutTestHelper()
+    window = helper.setup_main_window_with_vcd(TestPaths.APB_SIM_VCD, qtbot)
+    
+    # Wait for loading to complete
+    helper.wait_for_session_loaded(window, qtbot)
+    
+    design_view = window.design_tree_view.unified_tree
+    model = window.design_tree_view.design_tree_model
+    
+    # Navigate to apb_testbench scope
+    root = QModelIndex()
+    apb_idx = helper.find_child_by_name(model, root, "apb_testbench")
+    assert apb_idx and apb_idx.isValid(), "apb_testbench scope not found"
+    
+    design_view.expand(apb_idx)
+    qtbot.wait(50)
+    
+    # Find and add prdata signal (multi-bit signal)
+    prdata_idx = helper.find_child_by_name(model, apb_idx, "prdata")
+    assert prdata_idx and prdata_idx.isValid(), "prdata signal not found"
+    
+    # Add signal to waveform
+    assert helper.add_signal_from_index(window, prdata_idx), "Failed to add prdata signal"
+    qtbot.wait(100)
+    
+    # Get the signal node from session
+    session = window.wave_widget.session
+    prdata_node = next(
+        n for n in session.root_nodes 
+        if n.name.endswith("apb_testbench.prdata")
+    )
+    
+    # Import necessary enums for setting render mode
+    from wavescout.data_model import RenderType, AnalogScalingMode
+    
+    # Verify signal is multi-bit
+    assert prdata_node.is_multi_bit, "prdata should be a multi-bit signal"
+    
+    # Change render mode to Analog Scale Visible using the new combined method
+    names_view = window.wave_widget._names_view
+    names_view._set_render_type_with_scaling(
+        prdata_node, 
+        RenderType.ANALOG, 
+        AnalogScalingMode.SCALE_TO_VISIBLE_DATA
+    )
+    
+    # Verify the settings were applied
+    assert prdata_node.format.render_type == RenderType.ANALOG
+    assert prdata_node.format.analog_scaling_mode == AnalogScalingMode.SCALE_TO_VISIBLE_DATA
+    
+    # Save session to YAML and verify
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yaml_path = Path(tmpdir) / "test_analog_scale_visible.yaml"
+        
+        def verify_analog_scale_visible(data):
+            nodes = data.get("root_nodes", [])
+            prdata_yaml = next(
+                (n for n in nodes if n.get("name", "").endswith("apb_testbench.prdata")),
+                None
+            )
+            assert prdata_yaml is not None, "prdata node not found in saved YAML"
+            
+            # Check format section
+            format_data = prdata_yaml.get("format", {})
+            assert format_data.get("render_type") == "analog", \
+                f"Expected render_type 'analog', got {format_data.get('render_type')}"
+            assert format_data.get("analog_scaling_mode") == "scale_to_visible", \
+                f"Expected analog_scaling_mode 'scale_to_visible', got {format_data.get('analog_scaling_mode')}"
+        
+        helper.save_and_verify_yaml(session, yaml_path, verify_analog_scale_visible)
+    
+    window.close()
