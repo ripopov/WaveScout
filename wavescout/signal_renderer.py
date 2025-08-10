@@ -687,31 +687,22 @@ def draw_analog_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sig
         # Single point - draw a small circle
         painter.drawEllipse(points[0], 2, 2)
     
-    # Draw aliasing indicators as vertical dashed lines
+    # Draw aliasing indicators as very subtle vertical dashed lines
     if aliasing_regions:
-        # Create a darker/lighter shade of the signal color for aliasing indicators
-        # This makes the sampled value more visible
+        # Create a semi-transparent version of the signal color
+        # Very low opacity (20-30) to make it almost invisible
         aliasing_color = QColor(color)
-        if aliasing_color.lightness() > 128:
-            # For light colors, make it darker
-            aliasing_color = aliasing_color.darker(150)  # 150% darker
-        else:
-            # For dark colors, make it lighter
-            aliasing_color = aliasing_color.lighter(150)  # 150% lighter
+        aliasing_color.setAlpha(40)  # Very low alpha for minimal visibility
         
-        # Use dashed pen style with the adjusted color
-        aliasing_pen = QPen(aliasing_color, 0, Qt.PenStyle.DashLine)
-        aliasing_pen.setWidth(0)
+        # Use dotted pen style with semi-transparent color
+        aliasing_pen = QPen(aliasing_color, 1, Qt.PenStyle.DotLine)
         aliasing_pen.setCosmetic(True)
         painter.setPen(aliasing_pen)
         
         for x_pos in aliasing_regions:
             x_int = int(x_pos)
-            # Draw primary vertical line
+            # Draw single subtle vertical line
             painter.drawLine(x_int, y_top, x_int, y_bottom)
-            # Draw secondary line for better visibility (like digital signals)
-            if x_int + 1 < params['width']:
-                painter.drawLine(x_int + 1, y_top, x_int + 1, y_bottom)
 
 
 def draw_event_signal(painter: QPainter, node_info: NodeInfo, drawing_data: SignalDrawingData, 
