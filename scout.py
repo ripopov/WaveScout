@@ -344,11 +344,14 @@ class WaveScoutMainWindow(QMainWindow):
         # Update status bar
         self.statusBar().showMessage(f"Loading {file_name}...")
         
-        # Create and run loader
+        # Create and run loader, but defer start slightly to ensure dialog paints first
         loader = LoaderRunnable(create_sample_session, file_path)
         loader.signals.finished.connect(self._on_waveform_load_finished)
         loader.signals.error.connect(self._on_waveform_load_error)
-        self.thread_pool.start(loader)
+        # Process events so the dialog is shown before starting heavy work
+        QApplication.processEvents()
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, lambda: self.thread_pool.start(loader))
         
     def _on_waveform_load_finished(self, session):
         """Handle successful waveform load."""
@@ -527,11 +530,14 @@ class WaveScoutMainWindow(QMainWindow):
         # Store file path for later use
         self._loading_session_path = file_path
         
-        # Create and run loader
+        # Create and run loader, but defer start slightly to ensure dialog paints first
         loader = LoaderRunnable(load_session, Path(file_path))
         loader.signals.finished.connect(self._on_session_load_finished)
         loader.signals.error.connect(self._on_session_load_error)
-        self.thread_pool.start(loader)
+        # Process events so the dialog is shown before starting heavy work
+        QApplication.processEvents()
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, lambda: self.thread_pool.start(loader))
         
     def _on_session_load_finished(self, session):
         """Handle successful session load."""
