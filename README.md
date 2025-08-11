@@ -6,12 +6,14 @@ PySide6 Digital/Mixed-Signal Waveform Viewer. AI-generated code.
 
 WaveformScout is a high-performance waveform viewer widget built with PySide6 (Qt6) for viewing digital and mixed-signal waveforms from VCD, FST, and other formats. It uses a Rust backend ([Wellen library](https://github.com/ekiwi/wellen)) for fast waveform processing.
 
-## Architecture Highlights
+## Requirements
 
-- **Pure Python Dataclasses**: Core data model using `@dataclass` for clean separation of data and UI
-- **Qt Model/View Bridge**: `WaveformItemModel` exposes dataclasses through Qt's Model/View API
-- **Normalized Coordinates**: Viewport uses 0.0-1.0 coordinates for elegant zoom/pan calculations
-- **Optimized Rendering Pipeline**: Transforms signal data to drawing commands for efficient display
+- Python 3.12+
+- Rust toolchain (for building pywellen)
+- Poetry
+- Make
+
+Once all those tools are installed and in PATH, you can use the provided `Makefile` to manage the project.
 
 ## Installation
 
@@ -70,13 +72,6 @@ WaveformScout/
 ├── scout.py               # Main application
 └── tests/                 # Test suite
 ```
-
-## Requirements
-
-- Python 3.12+
-- PySide6 (Qt6 for Python)
-- Rust toolchain (for building pywellen)
-- Poetry for dependency management
 
 ## Documentation
 
