@@ -44,6 +44,39 @@ class LoaderRunnable(QRunnable):
             self.signals.error.emit(error_msg)
 
 
+class SignalLoaderSignals(QObject):
+    """Signals for signal loader runnable."""
+    finished = Signal()
+    error = Signal(str)
+
+
+class SignalLoaderRunnable(QRunnable):
+    """Runnable for loading signals in background thread."""
+    
+    def __init__(self, waveform_db, handles):
+        """Initialize the signal loader.
+        
+        Args:
+            waveform_db: WaveformDB instance to load signals from
+            handles: List of signal handles to preload
+        """
+        super().__init__()
+        self.waveform_db = waveform_db
+        self.handles = handles
+        self.signals = SignalLoaderSignals()
+        
+    def run(self):
+        """Execute signal loading in background thread."""
+        try:
+            # Preload signals using the efficient batch API
+            self.waveform_db.preload_signals(self.handles)
+            self.signals.finished.emit()
+        except Exception as e:
+            import traceback
+            error_msg = f"Signal loading failed: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+            self.signals.error.emit(error_msg)
+
+
 class WaveScoutMainWindow(QMainWindow):
     """Main window for WaveScout App."""
     
@@ -644,9 +677,102 @@ class WaveScoutMainWindow(QMainWindow):
         """Handle signals selected from the design tree view."""
         if not self.wave_widget.session:
             return
-            
+        
+        # Extract handles from signal nodes
+        handles = []
         for node in signal_nodes:
-            self._add_node_to_session(node)
+            if node.handle is not None:
+                handles.append(node.handle)
+        
+        if not handles:
+            # No valid handles, just add nodes directly
+            for node in signal_nodes:
+                self._add_node_to_session(node)
+            return
+        
+        # Check if signals are already cached
+        waveform_db = self.wave_widget.session.waveform_db
+        if not waveform_db:
+            return
+            
+        if waveform_db.are_signals_cached(handles):
+            # All signals cached, add immediately
+            for node in signal_nodes:
+                self._add_node_to_session(node)
+        else:
+            # Need to load signals asynchronously
+            self._load_signals_async(signal_nodes, handles)
+    
+    def _load_signals_async(self, signal_nodes, handles):
+        """Load signals asynchronously with progress dialog.
+        
+        Args:
+            signal_nodes: List of SignalNode objects to add after loading
+            handles: List of signal handles to preload
+        """
+        waveform_db = self.wave_widget.session.waveform_db
+        if not waveform_db:
+            return
+        
+        # Create progress dialog
+        num_signals = len(handles)
+        self.signal_loading_dialog = QProgressDialog(
+            f"Loading {num_signals} signal{'s' if num_signals != 1 else ''}...",
+            None,  # No cancel button
+            0,
+            0,  # Indeterminate progress
+            self
+        )
+        self.signal_loading_dialog.setWindowTitle("Loading Signals")
+        self.signal_loading_dialog.setWindowModality(Qt.WindowModal)
+        self.signal_loading_dialog.setMinimumDuration(0)  # Show immediately
+        self.signal_loading_dialog.show()
+        
+        # Process events to ensure dialog is rendered
+        QApplication.processEvents()
+        
+        # Store nodes for later addition
+        self._pending_signal_nodes = signal_nodes
+        
+        # Create and start the signal loader
+        loader = SignalLoaderRunnable(waveform_db, handles)
+        loader.signals.finished.connect(self._on_signals_loaded)
+        loader.signals.error.connect(self._on_signal_load_error)
+        
+        # Start loading after a brief delay to ensure dialog is visible
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(10, lambda: self.thread_pool.start(loader))
+    
+    def _on_signals_loaded(self):
+        """Handle successful signal loading."""
+        # Close progress dialog
+        if hasattr(self, 'signal_loading_dialog') and self.signal_loading_dialog:
+            self.signal_loading_dialog.close()
+            self.signal_loading_dialog = None
+        
+        # Add the pending nodes to session
+        if hasattr(self, '_pending_signal_nodes'):
+            for node in self._pending_signal_nodes:
+                self._add_node_to_session(node)
+            delattr(self, '_pending_signal_nodes')
+        
+        # Update status
+        self.statusBar().showMessage("Signals loaded successfully", 2000)
+    
+    def _on_signal_load_error(self, error_msg):
+        """Handle signal loading error."""
+        # Close progress dialog
+        if hasattr(self, 'signal_loading_dialog') and self.signal_loading_dialog:
+            self.signal_loading_dialog.close()
+            self.signal_loading_dialog = None
+        
+        # Clear pending nodes
+        if hasattr(self, '_pending_signal_nodes'):
+            delattr(self, '_pending_signal_nodes')
+        
+        # Show error message
+        QMessageBox.critical(self, "Signal Loading Error", error_msg)
+        self.statusBar().showMessage("Failed to load signals", 3000)
         
     def _add_node_to_session(self, new_node):
         """Add a node to the waveform session after the last selected node."""

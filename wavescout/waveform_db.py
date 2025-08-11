@@ -272,6 +272,65 @@ class WaveformDB:
             
         return self._signal_cache.get(handle)
     
+    def are_signals_cached(self, handles: List[SignalHandle]) -> bool:
+        """Check if all specified signals are already cached.
+        
+        Args:
+            handles: List of signal handles to check
+            
+        Returns:
+            True if all signals are cached, False otherwise
+        """
+        return all(handle in self._signal_cache for handle in handles)
+    
+    def preload_signals(self, handles: List[SignalHandle]) -> None:
+        """Preload multiple signals using efficient batch loading.
+        
+        This method uses pywellen's load_signals_multithreaded for optimal performance.
+        Should be called from a background thread to avoid blocking the UI.
+        
+        Args:
+            handles: List of signal handles to preload
+        """
+        if not self.waveform:
+            return
+            
+        # Filter out already cached signals and invalid handles
+        handles_to_load = [
+            h for h in handles 
+            if h not in self._signal_cache and h in self._var_map
+        ]
+        
+        if not handles_to_load:
+            return  # All signals already cached
+            
+        # Convert handles to Var objects
+        vars_to_load = []
+        handle_to_var_map = {}
+        for handle in handles_to_load:
+            vars_list = self._var_map.get(handle, [])
+            if vars_list:
+                var = vars_list[0]  # Use first var for each handle
+                vars_to_load.append(var)
+                handle_to_var_map[id(var)] = handle
+        
+        if not vars_to_load:
+            return
+            
+        # Batch load signals using multithreaded API
+        try:
+            loaded_signals = self.waveform.load_signals_multithreaded(vars_to_load)
+            
+            # Cache the loaded signals
+            for var, signal in zip(vars_to_load, loaded_signals):
+                handle_or_none = handle_to_var_map.get(id(var))
+                if handle_or_none is not None and signal is not None:
+                    self._signal_cache[handle_or_none] = signal
+                    
+        except Exception as e:
+            # Re-raise the exception to be handled by the caller
+            raise RuntimeError(f"Failed to load signals: {str(e)}")
+    
     # Public APIs for accessing protected members
     
     def get_all_handles(self) -> List[SignalHandle]:
