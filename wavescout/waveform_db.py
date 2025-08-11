@@ -287,7 +287,7 @@ class WaveformDB:
         """Preload multiple signals using efficient batch loading.
         
         This method uses pywellen's load_signals_multithreaded for optimal performance.
-        Should be called from a background thread to avoid blocking the UI.
+        With the GIL release fix in pywellen, this can be safely called from a background thread.
         
         Args:
             handles: List of signal handles to preload
@@ -318,6 +318,7 @@ class WaveformDB:
             return
             
         # Batch load signals using multithreaded API
+        # GIL is now properly released in pywellen during the heavy I/O
         try:
             loaded_signals = self.waveform.load_signals_multithreaded(vars_to_load)
             

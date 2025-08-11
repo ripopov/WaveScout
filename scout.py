@@ -388,14 +388,25 @@ class WaveScoutMainWindow(QMainWindow):
         
     def _on_waveform_load_finished(self, session):
         """Handle successful waveform load."""
-        # Don't close progress dialog yet - keep it open during UI updates
-        if self.progress_dialog:
-            self.progress_dialog.setLabelText("Setting up UI...")
+        # Store session for later use
+        self._pending_session = session
+        
+        # Extract handles and preload signals in background
+        handles = self._extract_session_handles(session)
+        if handles and session.waveform_db and not session.waveform_db.are_signals_cached(handles):
+            # Need to preload signals
+            if self.progress_dialog:
+                self.progress_dialog.setLabelText(f"Preloading {len(handles)} signals...")
+                QApplication.processEvents()
             
-        # Enable waveform-related actions
-        self._set_waveform_actions_enabled(True)
-            
-        self.on_load_finished(session)
+            # Load signals in background
+            loader = SignalLoaderRunnable(session.waveform_db, handles)
+            loader.signals.finished.connect(self._on_session_signals_preloaded)
+            loader.signals.error.connect(self._on_session_preload_error)
+            self.thread_pool.start(loader)
+        else:
+            # No preloading needed, continue directly
+            self._finalize_waveform_load()
         
     def _on_waveform_load_error(self, error_msg):
         """Handle waveform load error."""
@@ -574,57 +585,25 @@ class WaveScoutMainWindow(QMainWindow):
         
     def _on_session_load_finished(self, session):
         """Handle successful session load."""
-        # Don't close progress dialog yet - keep it open during UI updates
-        if self.progress_dialog:
-            self.progress_dialog.setLabelText("Setting up UI...")
-            
-        # Enable waveform-related actions
-        self._set_waveform_actions_enabled(True)
-            
-        # Update UI
-        self.wave_widget.setSession(session)
+        # Store session for later use
+        self._pending_loaded_session = session
         
-        
-        session_file = getattr(self, '_loading_session_path', 'session')
-        self.statusBar().showMessage(f"Session loaded from: {Path(session_file).name}")
-        print(f"Successfully loaded session from: {session_file}")
-        
-        # Defer heavy UI updates to allow UI to remain responsive
-        from PySide6.QtCore import QTimer
-        from PySide6.QtWidgets import QApplication
-        
-        def update_design_tree():
-            if session.waveform_db:
-                # Show progress for tree building
-                tree_progress = QProgressDialog(
-                    "Building design hierarchy...",
-                    None,  # No cancel button
-                    0,
-                    0,
-                    self
-                )
-                tree_progress.setWindowTitle("Processing")
-                tree_progress.setWindowModality(Qt.WindowModal)
-                tree_progress.show()
+        # Extract handles and preload signals in background
+        handles = self._extract_session_handles(session)
+        if handles and session.waveform_db and not session.waveform_db.are_signals_cached(handles):
+            # Need to preload signals
+            if self.progress_dialog:
+                self.progress_dialog.setLabelText(f"Preloading {len(handles)} signals...")
                 QApplication.processEvents()
-                
-                self.design_tree_view.set_waveform_db(session.waveform_db)
-                    
-                tree_progress.close()
-                
-                # Close the main progress dialog now that everything is done
-                if self.progress_dialog:
-                    self.progress_dialog.close()
-                    self.progress_dialog = None
-                
-        # Use timer to defer tree update, allowing UI to update first
-        QTimer.singleShot(100, update_design_tree)
-        
-        # Clean up stored path
-        # Note: hasattr check needed because _loading_session_path is a temporary attribute
-        # that may not exist if loading was interrupted
-        if hasattr(self, '_loading_session_path'):
-            delattr(self, '_loading_session_path')
+            
+            # Load signals in background
+            loader = SignalLoaderRunnable(session.waveform_db, handles)
+            loader.signals.finished.connect(self._on_loaded_session_signals_preloaded)
+            loader.signals.error.connect(self._on_loaded_session_preload_error)
+            self.thread_pool.start(loader)
+        else:
+            # No preloading needed, continue directly
+            self._finalize_session_load()
             
     def _on_session_load_error(self, error_msg):
         """Handle session load error."""
@@ -647,6 +626,51 @@ class WaveScoutMainWindow(QMainWindow):
         # that may not exist if loading was interrupted
         if hasattr(self, '_loading_session_path'):
             delattr(self, '_loading_session_path')
+    
+    def _on_loaded_session_signals_preloaded(self):
+        """Handle completion of session signal preloading."""
+        self._finalize_session_load()
+    
+    def _on_loaded_session_preload_error(self, error_msg):
+        """Handle error during session signal preloading."""
+        print(f"Warning: Failed to preload session signals: {error_msg}")
+        # Continue anyway - signals will load lazily if needed
+        self._finalize_session_load()
+    
+    def _finalize_session_load(self):
+        """Complete the session loading process after signals are preloaded."""
+        if not hasattr(self, '_pending_loaded_session'):
+            return
+            
+        session = self._pending_loaded_session
+        delattr(self, '_pending_loaded_session')
+        
+        # Close progress dialog
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog = None
+        
+        # Set the session on the widget
+        self.wave_widget.setSession(session)
+        
+        # Store the session file path
+        if hasattr(self, '_loading_session_path'):
+            session_file = self._loading_session_path
+            self.statusBar().showMessage(f"Session loaded from: {Path(session_file).name}")
+            print(f"Successfully loaded session from: {session_file}")
+            delattr(self, '_loading_session_path')
+        
+        # Update design tree if we have a waveform
+        if session.waveform_db:
+            # Defer heavy UI updates to allow UI to remain responsive
+            from PySide6.QtCore import QTimer
+            
+            def update_design_tree():
+                """Update design tree with loaded waveform."""
+                if session.waveform_db and self.design_tree_view:
+                    self.design_tree_view.set_waveform_db(session.waveform_db)
+            
+            QTimer.singleShot(10, update_design_tree)
 
     def _expand_tree_levels(self, tree_view: QTreeView, levels: int, parent=None):
         """Recursively expand tree to specified number of levels."""
@@ -702,6 +726,80 @@ class WaveScoutMainWindow(QMainWindow):
         else:
             # Need to load signals asynchronously
             self._load_signals_async(signal_nodes, handles)
+    
+    def _extract_session_handles(self, session):
+        """Extract all signal handles from a session.
+        
+        Args:
+            session: WaveformSession to extract handles from
+            
+        Returns:
+            List of signal handles
+        """
+        if not session:
+            return []
+            
+        handles = []
+        
+        def extract_handles(nodes):
+            """Recursively extract handles from nodes."""
+            for node in nodes:
+                if node.handle is not None:
+                    handles.append(node.handle)
+                if hasattr(node, 'children') and node.children:
+                    extract_handles(node.children)
+        
+        extract_handles(session.root_nodes)
+        return handles
+    
+    def _on_session_signals_preloaded(self):
+        """Handle completion of session signal preloading."""
+        self._finalize_waveform_load()
+    
+    def _on_session_preload_error(self, error_msg):
+        """Handle error during session signal preloading."""
+        print(f"Warning: Failed to preload session signals: {error_msg}")
+        # Continue anyway - signals will load lazily if needed
+        self._finalize_waveform_load()
+    
+    def _finalize_waveform_load(self):
+        """Complete the waveform loading process after signals are preloaded."""
+        if not hasattr(self, '_pending_session'):
+            return
+            
+        session = self._pending_session
+        delattr(self, '_pending_session')
+        
+        # Close progress dialog
+        if self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog = None
+            
+        # Enable waveform-related actions
+        self._set_waveform_actions_enabled(True)
+        
+        # Set the session on the widget
+        self.wave_widget.setSession(session)
+        
+        # Get filename and update status
+        if session.waveform_db:
+            file_path = session.waveform_db.file_path
+            if file_path:
+                self.current_wave_file = Path(file_path)
+                self.setWindowTitle(f"WaveScout - {Path(file_path).name}")
+                self.statusBar().showMessage(f"Loaded: {Path(file_path).name}")
+                print(f"Successfully loaded waveform: {file_path}")
+            
+            # Update design tree if we have a waveform
+            # Defer heavy UI updates to allow UI to remain responsive
+            from PySide6.QtCore import QTimer
+            
+            def update_design_tree():
+                """Update design tree with loaded waveform."""
+                if session.waveform_db and self.design_tree_view:
+                    self.design_tree_view.set_waveform_db(session.waveform_db)
+            
+            QTimer.singleShot(10, update_design_tree)
     
     def _load_signals_async(self, signal_nodes, handles):
         """Load signals asynchronously with progress dialog.
