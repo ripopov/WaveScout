@@ -255,6 +255,11 @@ class WaveScoutMainWindow(QMainWindow):
         self.drop_marker_action.triggered.connect(self._drop_marker)
         edit_menu.addAction(self.drop_marker_action)
         
+        # Markers window action
+        self.markers_window_action = QAction("&Markers...", self)
+        self.markers_window_action.triggered.connect(self._show_markers_window)
+        edit_menu.addAction(self.markers_window_action)
+        
         # View menu
         view_menu = menubar.addMenu("&View")
         view_menu.addAction(self.zoom_in_action)
@@ -346,13 +351,6 @@ class WaveScoutMainWindow(QMainWindow):
         qlight_action.triggered.connect(lambda: self._set_qdarkstyle("light"))
         self.style_action_group.addAction(qlight_action)
         style_menu.addAction(qlight_action)
-        
-        view_menu.addSeparator()
-        
-        # Markers window action
-        self.markers_window_action = QAction("&Markers...", self)
-        self.markers_window_action.triggered.connect(self._show_markers_window)
-        view_menu.addAction(self.markers_window_action)
         
         view_menu.addSeparator()
         
