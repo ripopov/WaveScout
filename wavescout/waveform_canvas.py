@@ -544,11 +544,12 @@ class WaveformCanvas(QWidget):
         
         # Add visible nodes info
         key_params.append(len(params['visible_nodes_info']))
-        # Include node handles, height scaling, and data format to detect changes
+        # Include node handles, height scaling, data format, and COLOR to detect changes
         if 'visible_nodes' in params:
             key_params.append(
                 tuple((node.handle, node.name, node.height_scaling, 
-                       node.format.data_format if not node.is_group else None) 
+                       node.format.data_format if not node.is_group else None,
+                       node.format.color if not node.is_group else None)  # Include color for theme changes
                       for node in params['visible_nodes'])
             )
         # Include row heights to detect layout changes
