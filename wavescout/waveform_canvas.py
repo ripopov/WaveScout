@@ -612,11 +612,41 @@ class WaveformCanvas(QWidget):
         # Timing for draw command generation
         draw_cmd_start = time_module.time()
         
-        # Generate draw commands
+        # Generate draw commands only for signals in the render area
         if params['waveform_db']:
-            visible_signal_node = [node for node in params['visible_nodes'] if not node.is_group and node.handle is not None]
+            # Calculate which signals are in the render area (with buffer)
+            y_offset = params.get('header_height', RENDERING.DEFAULT_HEADER_HEIGHT)
+            viewport_top = y_offset
+            viewport_bottom = params['height']
+            
+            # Add buffer zones for smooth scrolling
+            base_row_height = params.get('base_row_height', 20)
+            buffer_rows = 3
+            buffer_distance = buffer_rows * base_row_height * 2
+            render_top = viewport_top - buffer_distance
+            render_bottom = viewport_bottom + buffer_distance
+            
+            # Filter signals that are in the render area
+            cumulative_y = y_offset
+            row_heights = params.get('row_heights', {})
+            signals_to_render = []
+            
+            for row, node in enumerate(params['visible_nodes']):
+                row_height = row_heights.get(row, base_row_height)
+                y = cumulative_y - params['scroll_value']
+                row_bottom = y + row_height
+                
+                # Check if this row is in the render area
+                if not (row_bottom < render_top or y > render_bottom):
+                    # Row is in render area, include it if it's a signal
+                    if not node.is_group and node.handle is not None:
+                        signals_to_render.append(node)
+                
+                cumulative_y += row_height
+            
+            # Generate draw commands only for signals in render area
             draw_commands = self._generate_all_draw_commands(
-                visible_signal_node,
+                signals_to_render,
                 params['start_time'],
                 params['end_time'],
                 params['width'],
@@ -700,10 +730,22 @@ class WaveformCanvas(QWidget):
         # Set clipping to prevent drawing outside the waveform area
         painter.setClipRect(0, y_offset, params['width'], params['height'] - y_offset)
 
+        # Calculate visible viewport bounds for culling with buffer zones
+        viewport_top = y_offset
+        viewport_bottom = params['height']
+        
+        # Add buffer zones: render 3 extra rows above and below visible area for smooth scrolling
+        base_row_height = params.get('base_row_height', 20)
+        buffer_rows = 3
+        buffer_distance = buffer_rows * base_row_height * 2  # Use 2x base height as conservative estimate
+        
+        # Expand the render bounds by the buffer distance
+        render_top = viewport_top - buffer_distance
+        render_bottom = viewport_bottom + buffer_distance
+        
         # Draw each visible row
         cumulative_y = y_offset
         row_heights = params.get('row_heights', {})
-        base_row_height = params.get('base_row_height', 20)
         
         for row, node_info in enumerate(params['visible_nodes_info']):
             # Get the height for this row
@@ -712,7 +754,14 @@ class WaveformCanvas(QWidget):
             # Calculate y position: cumulative position minus scroll offset
             y = cumulative_y - params['scroll_value']
             
-            # The painter's clipping will handle not drawing rows outside the viewport.
+            # Viewport culling with buffer: skip rows that are completely outside the extended render area
+            row_bottom = y + row_height
+            if row_bottom < render_top or y > render_bottom:
+                # Row is completely outside render area (including buffer), skip rendering
+                cumulative_y += row_height
+                continue
+            
+            # Draw the row (it's in the render area)
             self._draw_row(painter, node_info, draw_commands, row, y, row_height, params)
             
             # Update cumulative y for next row
