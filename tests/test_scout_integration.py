@@ -486,19 +486,19 @@ def test_signal_grouping_and_reordering(qtbot):
     design_view = window.design_tree_view.unified_tree
     model = window.design_tree_view.design_tree_model
     
-    # Add 5 signals using depth-first search
-    added = 0
+    # Collect signals to add
+    signals_to_add = []
     root = QModelIndex()
     
-    # Expand first level
+    # Expand first level to find signals
     for r in range(model.rowCount(root)):
         idx = model.index(r, 0, root)
         if idx.isValid():
             design_view.expand(idx)
     
-    # Find and add leaf signals
+    # Find leaf signals using depth-first search
     stack = [QModelIndex()]
-    while stack and added < 5:
+    while stack and len(signals_to_add) < 5:
         parent = stack.pop()
         rows = model.rowCount(parent)
         for r in range(rows):
@@ -511,15 +511,39 @@ def test_signal_grouping_and_reordering(qtbot):
                 design_view.expand(idx)
                 stack.append(idx)
             else:
-                if helper.add_signal_from_index(window, idx):
-                    qtbot.wait(10)
-                    added += 1
+                # Found a signal, add to list
+                signals_to_add.append(idx)
             
-            if added >= 5:
+            if len(signals_to_add) >= 5:
                 break
     
+    # Preload all signals to cache them (avoiding async loading issues)
     session = window.wave_widget.session
-    assert len(session.root_nodes) >= 5, f"Expected at least 5 root nodes"
+    waveform_db = session.waveform_db
+    if waveform_db:
+        handles_to_preload = []
+        for idx in signals_to_add:
+            node_ptr = idx.internalPointer()
+            if node_ptr and not node_ptr.is_scope:
+                signal_node = window.design_tree_view._create_signal_node(node_ptr)
+                if signal_node and signal_node.handle is not None:
+                    handles_to_preload.append(signal_node.handle)
+        
+        # Preload signals into cache
+        if handles_to_preload:
+            waveform_db.preload_signals(handles_to_preload)
+    
+    # Now add signals (they should be cached and add immediately)
+    for idx in signals_to_add:
+        helper.add_signal_from_index(window, idx)
+        qtbot.wait(10)
+    
+    # Wait for signals to be added to session
+    def signals_added():
+        return len(session.root_nodes) >= 5
+    qtbot.waitUntil(signals_added, timeout=2000)
+    
+    assert len(session.root_nodes) >= 5, f"Expected at least 5 root nodes, got {len(session.root_nodes)}"
     
     # Group first three signals
     wave_widget = window.wave_widget
