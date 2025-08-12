@@ -478,13 +478,6 @@ class WaveScoutMainWindow(QMainWindow):
                 if self.progress_dialog:
                     self.progress_dialog.close()
                     self.progress_dialog = None
-                # In integration/test mode, exit after load completes
-                if getattr(self, 'exit_after_load', False):
-                    try:
-                        print("Waveform load completed, exiting as requested.")
-                    except Exception:
-                        pass
-                    QTimer.singleShot(0, lambda: QApplication.exit(0))
                 
         # Use timer to defer tree update, allowing UI to update first
         QTimer.singleShot(100, update_design_tree)
@@ -768,6 +761,14 @@ class WaveScoutMainWindow(QMainWindow):
             return
             
         session = self._pending_session
+        
+        # In test mode, exit immediately after loading
+        if getattr(self, 'exit_after_load', False):
+            import sys
+            print("Successfully loaded waveform: " + str(self.current_wave_file))
+            sys.stdout.flush()
+            QApplication.instance().quit()
+            return
         delattr(self, '_pending_session')
         
         # Close progress dialog

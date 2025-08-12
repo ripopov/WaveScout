@@ -231,7 +231,7 @@ def test_load_wave_apb_sim_vcd():
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        timeout=120,
+        timeout=30,
     )
 
     # Debug help on failure
