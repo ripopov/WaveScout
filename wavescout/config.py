@@ -47,6 +47,9 @@ class RenderingConfig:
     MAX_MARKERS: int = 9
     MARKER_NAVIGATION_OFFSET: int = 10  # Pixels from left edge when navigating to marker
     
+    # ROI overlay settings
+    ROI_GUIDE_LINE_WIDTH: int = 1
+    
     # Debug display settings
     DEBUG_FONT_FAMILY: str = "Consolas"
     DEBUG_FONT_SIZE: int = 10
@@ -79,6 +82,11 @@ class ColorScheme:
     SELECTION: str = "#094771"
     CURSOR: str = "#ff0000"
     MARKER_DEFAULT_COLOR: str = "#00ff00"
+    
+    # ROI selection colors
+    ROI_SELECTION_COLOR: str = "#4A90E2"  # Blue fill color (will apply opacity separately)
+    ROI_GUIDE_LINE_COLOR: str = "#4A90E2"  # Guide line color
+    ROI_SELECTION_OPACITY: float = 0.2      # Fill opacity 0..1
     
     # Debug colors
     DEBUG_TEXT: str = "#ffff00"  # Yellow

@@ -86,6 +86,8 @@ class WaveScoutWidget(QWidget):
         
         # Connect signals
         self._canvas.cursorMoved.connect(self._on_cursor_moved)
+        # ROI zoom wiring: when canvas emits selection, delegate zoom to controller
+        self._canvas.roiSelected.connect(lambda s, e: self.controller.zoom_to_roi(s, e))
         
         # Sync header heights across panels
         self._sync_header_heights()

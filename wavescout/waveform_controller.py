@@ -360,6 +360,54 @@ class WaveformController:
             ))
         self._emit("viewport_changed")
 
+    def zoom_to_roi(self, start_time: int, end_time: int) -> None:
+        """Zoom viewport to exactly cover the given time ROI.
+
+        Args:
+            start_time: Start time in timescale units (inclusive)
+            end_time: End time in timescale units (inclusive/exclusive semantics not critical here)
+        """
+        if not self.session:
+            return
+        vp = self.session.viewport
+        if vp.total_duration <= 0:
+            return
+        # Order times
+        t0 = min(start_time, end_time)
+        t1 = max(start_time, end_time)
+        # Enforce minimum width in time units
+        min_width_time = max(1, vp.config.minimum_width_time)
+        if t1 - t0 < min_width_time:
+            center = (t0 + t1) // 2
+            half = min_width_time // 2
+            t0 = center - half
+            t1 = t0 + min_width_time
+        # Clamp to [-(edge_space)*duration, (1+edge_space)*duration]
+        edge = vp.config.edge_space
+        min_time_allowed = int(-edge * vp.total_duration)
+        max_time_allowed = int((1.0 + edge) * vp.total_duration)
+        if t0 < min_time_allowed:
+            shift = min_time_allowed - t0
+            t0 = min_time_allowed
+            t1 += shift
+        if t1 > max_time_allowed:
+            shift = t1 - max_time_allowed
+            t1 = max_time_allowed
+            t0 -= shift
+        # Convert to relative
+        new_left = t0 / float(vp.total_duration)
+        new_right = t1 / float(vp.total_duration)
+        old_left, old_right = vp.left, vp.right
+        vp.left, vp.right = new_left, new_right
+        if old_left != new_left or old_right != new_right:
+            self.event_bus.publish(ViewportChangedEvent(
+                old_left=old_left,
+                old_right=old_right,
+                new_left=new_left,
+                new_right=new_right
+            ))
+        self._emit("viewport_changed")
+
     # ---- Helpers ----
     def _iter_all_nodes(self) -> Iterable[SignalNode]:
         if not self.session:

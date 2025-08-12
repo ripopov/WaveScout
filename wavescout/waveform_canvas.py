@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import QWidget, QScrollBar
 from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer, QRectF, QRect
-from PySide6.QtGui import QPainter, QPen, QColor, QFont, QFontMetrics, QImage, QResizeEvent, QPaintEvent, QShowEvent, QMouseEvent, QCloseEvent
+from PySide6.QtGui import QPainter, QPen, QColor, QFont, QFontMetrics, QImage, QResizeEvent, QPaintEvent, QShowEvent, QMouseEvent, QCloseEvent, QKeyEvent
 from typing import List, Tuple, Dict, Optional, Union
 from .waveform_item_model import WaveformItemModel
 from dataclasses import dataclass, field
@@ -73,6 +73,7 @@ class WaveformCanvas(QWidget):
     """Optimized widget for drawing waveforms with caching."""
 
     cursorMoved = Signal(object)  # Emitted when cursor is moved (using object to handle large integers)
+    roiSelected = Signal(object, object)  # Emitted on ROI selection release: (start_time, end_time)
 
     def __init__(self, model: Optional[WaveformItemModel], parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -122,6 +123,11 @@ class WaveformCanvas(QWidget):
         self._render_complete_counter = 0  # Incremented when render completes
         self._last_paint_time_ms = 0.0  # Time taken by last paintEvent
         self._last_render_time_ms = 0.0  # Time taken by last render
+
+        # ROI selection state
+        self._roi_selection_active: bool = False
+        self._roi_start_x: Optional[int] = None
+        self._roi_current_x: Optional[int] = None
     
     def __del__(self) -> None:
         """Clean up on destruction."""
@@ -438,7 +444,7 @@ class WaveformCanvas(QWidget):
             painter.drawImage(0, 0, self._rendered_image)
     
     def _paint_overlays(self, painter: QPainter, update_rect: QRect, is_partial_update: bool) -> None:
-        """Paint overlays on top of waveforms (boundary lines, ruler, markers, cursor)."""
+        """Paint overlays on top of waveforms (boundary lines, ruler, markers, cursor, ROI)."""
         # Draw boundary lines
         if not is_partial_update:
             self._draw_boundary_lines(painter)
@@ -446,6 +452,9 @@ class WaveformCanvas(QWidget):
         # Draw time ruler
         if not is_partial_update:
             self._draw_time_ruler(painter)
+        
+        # Draw ROI overlay before markers and cursor for proper layering
+        self._paint_roi_overlay(painter)
         
         # Draw markers (before cursor so cursor is always on top)
         self._paint_markers(painter, update_rect, is_partial_update)
@@ -1072,12 +1081,15 @@ class WaveformCanvas(QWidget):
         return int(x / self._time_scale + self._start_time)
         
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        """Handle mouse clicks to set cursor."""
+        """Handle mouse presses: left sets cursor, right starts ROI selection."""
         if event.button() == Qt.MouseButton.LeftButton:
             time = self._x_to_time(int(event.position().x()))
             self._cursor_time = max(self._start_time, min(time, self._end_time))
             self.cursorMoved.emit(self._cursor_time)
             self.update()
+        elif event.button() == Qt.MouseButton.RightButton:
+            x = int(event.position().x())
+            self._start_roi_selection(x)
     
     def _paint_background_with_boundaries(self, painter: QPainter) -> None:
         """Paint background with different colors for valid/invalid time ranges."""
@@ -1153,6 +1165,88 @@ class WaveformCanvas(QWidget):
         
         # Restore painter state
         painter.restore()
+    
+    # ---- ROI selection helpers ----
+    def _start_roi_selection(self, x: int) -> None:
+        self._roi_selection_active = True
+        self._roi_start_x = max(0, min(x, self.width()))
+        self._roi_current_x = self._roi_start_x
+        # Force overlay-only update
+        self.update()
+    
+    def _update_roi_selection(self, x: int) -> None:
+        if not self._roi_selection_active:
+            return
+        self._roi_current_x = max(0, min(int(x), self.width()))
+        # Trigger overlay repaint for smooth feedback
+        self.update()
+    
+    def _finish_roi_selection(self) -> None:
+        if not self._roi_selection_active or self._roi_start_x is None or self._roi_current_x is None:
+            self._clear_roi_selection()
+            return
+        x0 = self._roi_start_x
+        x1 = self._roi_current_x
+        if x0 == x1:
+            # No selection; clear and return
+            self._clear_roi_selection()
+            return
+        left_x = min(x0, x1)
+        right_x = max(x0, x1)
+        start_time = self._x_to_time(left_x)
+        end_time = self._x_to_time(right_x)
+        # Emit signal; controller will enforce min width and clamp
+        self.roiSelected.emit(start_time, end_time)
+        self._clear_roi_selection()
+    
+    def _clear_roi_selection(self) -> None:
+        self._roi_selection_active = False
+        self._roi_start_x = None
+        self._roi_current_x = None
+        self.update()
+    
+    def _paint_roi_overlay(self, painter: QPainter) -> None:
+        if not self._roi_selection_active or self._roi_start_x is None or self._roi_current_x is None:
+            return
+        x0 = self._roi_start_x
+        x1 = self._roi_current_x
+        left_x = min(x0, x1)
+        right_x = max(x0, x1)
+        # Draw semi-transparent fill
+        color = QColor(COLORS.ROI_SELECTION_COLOR)
+        # Apply opacity
+        alpha = int(max(0.0, min(1.0, COLORS.ROI_SELECTION_OPACITY)) * 255)
+        fill_color = QColor(color.red(), color.green(), color.blue(), alpha)
+        painter.fillRect(left_x, 0, right_x - left_x, self.height(), fill_color)
+        # Draw guide lines
+        pen = QPen(QColor(COLORS.ROI_GUIDE_LINE_COLOR))
+        pen.setWidth(RENDERING.ROI_GUIDE_LINE_WIDTH)
+        pen.setCosmetic(True)
+        pen.setStyle(Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        painter.drawLine(left_x, 0, left_x, self.height())
+        painter.drawLine(right_x, 0, right_x, self.height())
+    
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if self._roi_selection_active:
+            self._update_roi_selection(int(event.position().x()))
+        else:
+            super().mouseMoveEvent(event)
+    
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.RightButton and self._roi_selection_active:
+            self._finish_roi_selection()
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+    
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        # Escape cancels ROI selection if active
+        if event.key() == Qt.Key.Key_Escape and self._roi_selection_active:
+            self._clear_roi_selection()
+            event.accept()
+            return
+        super().keyPressEvent(event)
     
     def closeEvent(self, event: QCloseEvent) -> None:
         """Clean up resources when closing."""
