@@ -15,6 +15,7 @@ from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from wavescout import WaveScoutWidget, create_sample_session, save_session, load_session
 from wavescout.design_tree_view import DesignTreeView
 from wavescout.config import RENDERING
+from wavescout.theme import theme_manager, ThemeName, apply_saved_theme
 
 
 class LoaderSignals(QObject):
@@ -94,6 +95,12 @@ class WaveScoutMainWindow(QMainWindow):
         
         # Store current UI scale
         self.current_ui_scale = self.settings.value("ui_scale", 1.0, type=float)
+        
+        # Apply saved theme
+        apply_saved_theme(self.settings)
+        
+        # Connect theme change signal for automatic repainting
+        theme_manager.themeChanged.connect(self._on_theme_changed)
         
         # Store current waveform file for reload
         self.current_wave_file: str | None = None
@@ -280,6 +287,22 @@ class WaveScoutMainWindow(QMainWindow):
             action.triggered.connect(lambda checked, s=scale: self._set_ui_scale(s))
             ui_scaling_group.addAction(action)
             ui_scaling_menu.addAction(action)
+        
+        view_menu.addSeparator()
+        
+        # Theme submenu for waveform colors
+        theme_menu = view_menu.addMenu("&Theme")
+        self.theme_action_group = QActionGroup(self)
+        self.theme_action_group.setExclusive(True)
+        
+        # Add theme options
+        for theme in ThemeName:
+            action = QAction(theme.value, self)
+            action.setCheckable(True)
+            action.setChecked(theme == theme_manager.current_theme_name())
+            action.triggered.connect(lambda checked, t=theme: self._set_theme(t))
+            self.theme_action_group.addAction(action)
+            theme_menu.addAction(action)
         
         view_menu.addSeparator()
         
@@ -956,6 +979,63 @@ class WaveScoutMainWindow(QMainWindow):
         
         # The actual scaling will be applied through environment variable
         # on next application start
+
+    def _set_theme(self, theme_name: ThemeName):
+        """Set the waveform color theme and persist the choice."""
+        # Apply the theme
+        theme_manager.set_theme(theme_name)
+        
+        # Save the theme preference
+        theme_manager.save_to_settings(self.settings, theme_name)
+        
+        # Update status bar
+        self.statusBar().showMessage(f"Theme changed to: {theme_name.value}", 2000)
+    
+    def _on_theme_changed(self, color_scheme):
+        """Handle theme change signal by repainting widgets."""
+        # Update existing signal colors to use new theme default
+        if self.wave_widget and hasattr(self.wave_widget, 'session') and self.wave_widget.session:
+            self._update_signal_colors_to_theme()
+        
+        # Trigger repaint of all widgets
+        if self.wave_widget:
+            self.wave_widget.update()
+            # Update child widgets that depend on colors
+            if hasattr(self.wave_widget, 'canvas'):
+                self.wave_widget.canvas.update()
+            if hasattr(self.wave_widget, 'names_view'):
+                self.wave_widget.names_view.update()
+            if hasattr(self.wave_widget, 'values_view'):
+                self.wave_widget.values_view.update()
+        
+        # Update design tree view if it exists
+        if hasattr(self, 'design_tree_view'):
+            self.design_tree_view.update()
+    
+    def _update_signal_colors_to_theme(self):
+        """Update all signal colors that are using the old default to use the new theme default."""
+        from wavescout import config
+        new_default = config.COLORS.DEFAULT_SIGNAL
+        
+        # Walk through all signals in the session and update colors
+        if not self.wave_widget or not self.wave_widget.session:
+            return
+            
+        def update_node_colors(node):
+            """Recursively update node colors."""
+            # Update this node's color if it's using a default
+            # (We check common default colors from all themes)
+            default_colors = ["#33C3F0", "#56B6C2", "#8BE9FD"]
+            if hasattr(node, 'format') and node.format.color in default_colors:
+                node.format.color = new_default
+            
+            # Process children
+            for child in node.children:
+                update_node_colors(child)
+        
+        # Update all root nodes
+        for node in self.wave_widget.session.root_nodes:
+            update_node_colors(node)
 
     def _set_ui_style(self, style_name: str):
         """Set the Qt widget style at runtime and persist the choice."""

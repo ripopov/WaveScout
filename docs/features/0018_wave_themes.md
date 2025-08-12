@@ -1,6 +1,6 @@
 # Waveform Themes: Technical Specification
 
-This document specifies a theming feature to make colors in the waveform canvas and signal renderer configurable at runtime via the main application menu. Three color themes are included: Default, One Dark, and Dracula.
+This document specifies a theming feature to make colors in the waveform canvas and signal renderer configurable at runtime via the main application menu. Three color themes are included: Default, DarkOne, and Dracula.
 
 Date: 2025-08-11
 Owner: WaveScout maintainers
@@ -42,7 +42,7 @@ Implication: We can introduce a theme registry and runtime update mechanism to r
 ## 3. Requirements
 
 Functional:
-1. Provide three selectable themes via menu: Default, One Dark, Dracula.
+1. Provide three selectable themes via menu: Default, DarkOne, Dracula.
 2. Persist selected theme to QSettings under e.g. key `theme_name`.
 3. On switch, immediately update colors used by:
    - Waveform canvas backgrounds, grid, ruler, boundary lines, text, cursor.
@@ -99,7 +99,7 @@ Data structure
 ## 5. Theme Palettes
 
 Sources referenced:
-- One Dark (Notepad++): https://raw.githubusercontent.com/60ss/Npp-1-Dark/refs/heads/master/Npp-1-Dark.xml
+- DarkOne (based on One Dark Notepad++): https://raw.githubusercontent.com/60ss/Npp-1-Dark/refs/heads/master/Npp-1-Dark.xml
 - Dracula (Notepad++): https://raw.githubusercontent.com/dracula/notepad-plus-plus/master/Dracula.xml
 
 The following colors are selected to best fit waveform rendering (clear contrast, distinct accents, readable text):
@@ -127,7 +127,7 @@ A) Default (existing) — keep current values from config.py
 - ANALOG_UNDEFINED_FILL: (255, 0, 0, 100)
 - ANALOG_HIGHZ_FILL: (255, 255, 0, 100)
 
-B) One Dark
+B) DarkOne
 - Base palette reference (Atom One Dark / NPP One Dark):
   - Background: #282C34, Foreground: #ABB2BF, Comments/Muted: #5C6370
   - Accents: Blue #61AFEF, Green #98C379, Purple #C678DD, Red #E06C75, Yellow #E5C07B, Orange #D19A66, Cyan #56B6C2
@@ -187,7 +187,7 @@ C) Dracula
 Introduce a lightweight ThemeManager to own the current ColorScheme and broadcast changes:
 
 - Module: wavescout/theme.py
-  - Enum ThemeName = { "Default", "One Dark", "Dracula" }
+  - Enum ThemeName = { "Default", "DarkOne", "Dracula" }
   - Dataclass ColorScheme (reuse existing, extended roles) — or retain in config.py.
   - Registry: THEMES: dict[ThemeName, ColorScheme]
   - Signal source: a QObject subclass ThemeManager with `themeChanged` Signal(ColorScheme)
@@ -222,7 +222,7 @@ Introduce a lightweight ThemeManager to own the current ColorScheme and broadcas
 
 - Location: MenuBar -> View -> Theme
 - Control: QActionGroup with three checkable QAction entries, mutually exclusive.
-- Labels: "Default", "One Dark", "Dracula"
+- Labels: "Default", "DarkOne", "Dracula"
 - Behavior:
   - On select, call ThemeManager.set_theme(theme_name) and persist to QSettings under key `theme_name`.
   - Immediately repaint canvas and related widgets.
@@ -260,7 +260,7 @@ Introduce a lightweight ThemeManager to own the current ColorScheme and broadcas
 ## 9. Persistence
 
 - QSettings organization is already WaveScout/Scout.
-- Key: `theme_name` value: one of "Default", "One Dark", "Dracula".
+- Key: `theme_name` value: one of "Default", "DarkOne", "Dracula".
 - On first run: default to "Default".
 
 
@@ -300,7 +300,7 @@ Introduce a lightweight ThemeManager to own the current ColorScheme and broadcas
 ## 14. Implementation Steps (Checklist)
 
 1. Extend ColorScheme with ANALOG_UNDEFINED_FILL and ANALOG_HIGHZ_FILL; add RGBA alias. ✓
-2. Create wavescout/theme.py with ThemeName enum, theme palettes (Default, One Dark, Dracula), ThemeManager singleton, and settings helpers. 
+2. Create wavescout/theme.py with ThemeName enum, theme palettes (Default, DarkOne, Dracula), ThemeManager singleton, and settings helpers. 
 3. Update signal_renderer.py to use theme overlay colors instead of hard-coded RGBA. 
 4. Add View -> Theme menu in scout.py; wire actions to ThemeManager and QSettings; connect themeChanged to repaint. 
 5. On app start, apply saved theme. 
@@ -313,7 +313,7 @@ Introduce a lightweight ThemeManager to own the current ColorScheme and broadcas
 The following constants should be used to construct ColorScheme instances in wavescout/theme.py.
 
 - Default: use current config.py values exactly (see Section 5A).
-- One Dark: use Section 5B.
+- DarkOne: use Section 5B.
 - Dracula: use Section 5C.
 
 

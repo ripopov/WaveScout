@@ -5,7 +5,10 @@ used throughout the application to improve maintainability and consistency.
 """
 
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional, List, TypeAlias
+
+# Type alias for RGBA tuples
+RGBA: TypeAlias = tuple[int, int, int, int]
 
 # Marker labels
 MARKER_LABELS: List[str] = ["A", "B", "C", "D", "E", "F", "G", "H", "I"]
@@ -77,6 +80,7 @@ class ColorScheme:
     # Text
     TEXT: str = "#cccccc"
     TEXT_MUTED: str = "#808080"
+    BUS_TEXT: str = "#ffffff"  # Text color for values inside bus signals
     
     # Selections and highlights
     SELECTION: str = "#094771"
@@ -90,10 +94,14 @@ class ColorScheme:
     
     # Debug colors
     DEBUG_TEXT: str = "#ffff00"  # Yellow
-    DEBUG_BACKGROUND: tuple[int, int, int, int] = (0, 0, 0, 200)  # RGBA
+    DEBUG_BACKGROUND: RGBA = (0, 0, 0, 200)  # RGBA
     
     # Default signal color
     DEFAULT_SIGNAL: str = "#33C3F0"
+    
+    # Analog signal overlays
+    ANALOG_UNDEFINED_FILL: RGBA = (255, 0, 0, 100)  # Semi-transparent red for undefined regions
+    ANALOG_HIGHZ_FILL: RGBA = (255, 255, 0, 100)  # Semi-transparent yellow for high-Z regions
     
     # Splitter
     SPLITTER_HANDLE: str = "#3e3e42"

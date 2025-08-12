@@ -9,7 +9,9 @@ from PySide6.QtCore import Qt, Signal, QModelIndex, QPersistentModelIndex
 from PySide6.QtGui import QColor, QKeyEvent, QCloseEvent, QCursor, QPainter, QBrush
 from typing import Optional
 from .waveform_controller import WaveformController
-from .config import MARKER_LABELS, COLORS, RENDERING
+from . import config
+MARKER_LABELS = config.MARKER_LABELS
+RENDERING = config.RENDERING
 from .data_model import Marker
 
 
@@ -165,7 +167,7 @@ class MarkersWindow(QDialog):
                         self.controller.update_marker_time(row, timestamp)
                     else:
                         # Create new marker with default color
-                        self.controller.add_marker(row, timestamp, COLORS.MARKER_DEFAULT_COLOR)
+                        self.controller.add_marker(row, timestamp, config.COLORS.MARKER_DEFAULT_COLOR)
                 except ValueError:
                     # Invalid timestamp, restore previous value
                     marker = self.controller.get_marker(row)

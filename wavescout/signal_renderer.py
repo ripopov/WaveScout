@@ -26,7 +26,8 @@ from PySide6.QtGui import QPainter, QPen, QColor, QFont, QPolygonF
 from PySide6.QtCore import Qt, QPointF
 from .data_model import RenderType, Time, AnalogScalingMode, SignalHandle, SignalNodeID, DisplayFormat, SignalNode, SignalRangeCache
 from .signal_sampling import SignalDrawingData, ValueKind
-from .config import RENDERING, COLORS
+from . import config
+RENDERING = config.RENDERING
 import math
 from .protocols import WaveformDBProtocol
 
@@ -373,11 +374,19 @@ def draw_bus_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Signal
                 text = value_text
                 text_width = fm.horizontalAdvance(text)
                 if text_width < interior_width - 10:
+                    # Save current pen and set bus text color
+                    old_pen = painter.pen()
+                    text_pen = QPen(QColor(config.COLORS.BUS_TEXT))
+                    painter.setPen(text_pen)
+                    
                     text_x_start = int(current_x + actual_trans_width + 5)
                     text_width_available = int(interior_width - 10)
                     painter.drawText(text_x_start, y_top, 
                                    text_width_available, height,
                                    Qt.AlignmentFlag.AlignCenter, text)
+                    
+                    # Restore original pen for drawing lines
+                    painter.setPen(old_pen)
 
 
 def compute_signal_range(drawing_data: SignalDrawingData, start_time: Optional[Time] = None, end_time: Optional[Time] = None) -> Tuple[float, float]:
@@ -628,7 +637,7 @@ def draw_analog_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sig
     if height_scaling > 1:
         font = QFont("Monospace", 8)
         painter.setFont(font)
-        text_color = QColor(COLORS.TEXT_MUTED)
+        text_color = QColor(config.COLORS.TEXT_MUTED)
         text_pen = QPen(text_color)
         text_pen.setWidth(0)
         painter.setPen(text_pen)
@@ -674,9 +683,10 @@ def draw_analog_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sig
             else:
                 region_end = min(params['width'], max_valid_pixel)
             
-            # Save current pen and set red color for undefined
+            # Save current pen and set theme color for undefined
             old_pen = painter.pen()
-            undefined_color = QColor(255, 0, 0, 100)  # Semi-transparent red
+            r, g, b, a = config.COLORS.ANALOG_UNDEFINED_FILL
+            undefined_color = QColor(r, g, b, a)
             painter.fillRect(int(x), y_top, int(region_end - x), signal_height, undefined_color)
             painter.setPen(old_pen)
             
@@ -693,9 +703,10 @@ def draw_analog_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sig
             else:
                 region_end = min(params['width'], max_valid_pixel)
             
-            # Save current pen and set yellow color for high impedance
+            # Save current pen and set theme color for high impedance
             old_pen = painter.pen()
-            highz_color = QColor(255, 255, 0, 100)  # Semi-transparent yellow
+            r, g, b, a = config.COLORS.ANALOG_HIGHZ_FILL
+            highz_color = QColor(r, g, b, a)
             painter.fillRect(int(x), y_top, int(region_end - x), signal_height, highz_color)
             painter.setPen(old_pen)
             

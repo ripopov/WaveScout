@@ -15,7 +15,9 @@ from .signal_renderer import (
     draw_digital_signal, draw_bus_signal, draw_analog_signal, draw_event_signal,
     NodeInfo, RenderParams
 )
-from .config import RENDERING, COLORS, MARKER_LABELS
+from . import config
+RENDERING = config.RENDERING
+MARKER_LABELS = config.MARKER_LABELS
 import time as time_module
 import math
 from .protocols import WaveformDBProtocol
@@ -515,7 +517,7 @@ class WaveformCanvas(QWidget):
             # Only draw cursor if it's in the update region (or full update)
             if not is_partial_update or (x >= update_rect.left() - RENDERING.CURSOR_PADDING and 
                                         x <= update_rect.right() + RENDERING.CURSOR_PADDING):
-                pen = QPen(QColor(COLORS.CURSOR))
+                pen = QPen(QColor(config.COLORS.CURSOR))
                 pen.setWidth(0)  # cosmetic 1 device-pixel
                 painter.setPen(pen)
                 painter.drawLine(x, 0, x, self.height())
@@ -636,7 +638,7 @@ class WaveformCanvas(QWidget):
         image = QImage(w_px, h_px, QImage.Format.Format_ARGB32_Premultiplied)
         image.setDevicePixelRatio(dpr)
         # Use darker background color by default (for invalid ranges)
-        image.fill(QColor(COLORS.BACKGROUND_INVALID))
+        image.fill(QColor(config.COLORS.BACKGROUND_INVALID))
         
         # Create painter; disable geometry antialiasing for crisp lines, keep text AA
         painter = QPainter(image)
@@ -658,7 +660,7 @@ class WaveformCanvas(QWidget):
                     
                     # Paint the valid time range with lighter background
                     if x_max > x_min:
-                        painter.fillRect(x_min, 0, x_max - x_min, params['height'], QColor(COLORS.BACKGROUND))
+                        painter.fillRect(x_min, 0, x_max - x_min, params['height'], QColor(config.COLORS.BACKGROUND))
                 
                 # Render normal waveforms
                 self._render_waveforms(painter, params)
@@ -685,7 +687,7 @@ class WaveformCanvas(QWidget):
         draw_commands = params.get('draw_commands', {})
         if not draw_commands:
             # Show loading message
-            painter.setPen(QColor(COLORS.TEXT_MUTED))
+            painter.setPen(QColor(config.COLORS.TEXT_MUTED))
             painter.setFont(QFont("Arial", RENDERING.FONT_SIZE_LARGE))
             painter.drawText(params['width'] // 2 - 50, params['height'] // 2, "Loading waveforms...")
             return
@@ -721,18 +723,18 @@ class WaveformCanvas(QWidget):
     
     def _draw_time_ruler_simple(self, painter: QPainter, params: RenderParams) -> None:
         """Simple version of time ruler drawing."""
-        # Use default config since we can't access model from thread
-        config = TimeRulerConfig()
+        # Use default ruler config since we can't access model from thread
+        ruler_config = TimeRulerConfig()
         
         # Draw ruler background
-        painter.fillRect(0, 0, params['width'], RENDERING.DEFAULT_HEADER_HEIGHT, QColor(COLORS.HEADER_BACKGROUND))
-        pen = QPen(QColor(COLORS.RULER_LINE))
+        painter.fillRect(0, 0, params['width'], RENDERING.DEFAULT_HEADER_HEIGHT, QColor(config.COLORS.HEADER_BACKGROUND))
+        pen = QPen(QColor(config.COLORS.RULER_LINE))
         pen.setWidth(0)
         painter.setPen(pen)
         painter.drawLine(0, RENDERING.DEFAULT_HEADER_HEIGHT - 1, params['width'], RENDERING.DEFAULT_HEADER_HEIGHT - 1)
         
         # Simple time labels
-        painter.setPen(QColor(COLORS.TEXT))
+        painter.setPen(QColor(config.COLORS.TEXT))
         painter.setFont(QFont(RENDERING.FONT_FAMILY, RENDERING.FONT_SIZE_NORMAL))
         
         # Draw some time markers
@@ -752,10 +754,10 @@ class WaveformCanvas(QWidget):
         """Thread-safe version of row drawing."""
         # Draw background
         if row % 2 == 0:
-            painter.fillRect(0, y, params['width'], row_height, QColor(COLORS.ALTERNATE_ROW))
+            painter.fillRect(0, y, params['width'], row_height, QColor(config.COLORS.ALTERNATE_ROW))
         
         # Draw border
-        border_pen = QPen(QColor(COLORS.BORDER))
+        border_pen = QPen(QColor(config.COLORS.BORDER))
         border_pen.setWidth(0)  # cosmetic 1 device-pixel
         painter.setPen(border_pen)
         painter.drawLine(0, y + row_height - 1, params['width'], y + row_height - 1)
@@ -781,7 +783,7 @@ class WaveformCanvas(QWidget):
             x = int((params['cursor_time'] - params['start_time']) * params['width'] / 
                    (params['end_time'] - params['start_time']))
             
-            painter.setPen(QPen(QColor(COLORS.CURSOR), RENDERING.CURSOR_WIDTH))
+            painter.setPen(QPen(QColor(config.COLORS.CURSOR), RENDERING.CURSOR_WIDTH))
             painter.drawLine(x, 0, x, params['height'])
 
 
@@ -789,17 +791,17 @@ class WaveformCanvas(QWidget):
         """Calculate and store ruler information for grid drawing."""
         # Get configuration from session if available
         if self._model and self._model._session:
-            config = self._model._session.time_ruler_config
+            ruler_config = self._model._session.time_ruler_config
         else:
             # Default configuration
-            config = TimeRulerConfig()
+            ruler_config = TimeRulerConfig()
         
         # Calculate tick positions and step size
-        tick_positions, step_size = self._calculate_time_ruler_ticks(config)
+        tick_positions, step_size = self._calculate_time_ruler_ticks(ruler_config)
         
         # Store tick positions for grid drawing
         self._last_tick_positions = tick_positions
-        self._last_ruler_config = config
+        self._last_ruler_config = ruler_config
         
     def _draw_time_ruler(self, painter: QPainter) -> None:
         """Draw the time ruler according to spec 4.11."""
@@ -810,27 +812,27 @@ class WaveformCanvas(QWidget):
 
         # Use stored configuration if available
         if self._last_ruler_config is not None:
-            config = self._last_ruler_config
+            ruler_config = self._last_ruler_config
             tick_positions = self._last_tick_positions
-            _, step_size = self._calculate_time_ruler_ticks(config)
+            _, step_size = self._calculate_time_ruler_ticks(ruler_config)
         else:
             # Fallback: calculate now
             self._calculate_and_store_ruler_info()
             if self._last_ruler_config is None:
                 return  # Cannot proceed without config
-            config = self._last_ruler_config
+            ruler_config = self._last_ruler_config
             tick_positions = self._last_tick_positions
-            _, step_size = self._calculate_time_ruler_ticks(config)
+            _, step_size = self._calculate_time_ruler_ticks(ruler_config)
         
         # Draw ruler background
-        painter.fillRect(0, 0, self.width(), self._header_height, QColor(COLORS.HEADER_BACKGROUND))
-        pen = QPen(QColor(COLORS.RULER_LINE))
+        painter.fillRect(0, 0, self.width(), self._header_height, QColor(config.COLORS.HEADER_BACKGROUND))
+        pen = QPen(QColor(config.COLORS.RULER_LINE))
         pen.setWidth(0)  # cosmetic 1 device-pixel
         painter.setPen(pen)
         painter.drawLine(0, self._header_height - 1, self.width(), self._header_height - 1)
         
         # Draw ticks and labels
-        font = QFont(RENDERING.FONT_FAMILY_MONO, config.text_size)
+        font = QFont(RENDERING.FONT_FAMILY_MONO, ruler_config.text_size)
         painter.setFont(font)
         
         # Get font metrics for accurate text measurement
@@ -839,14 +841,14 @@ class WaveformCanvas(QWidget):
         for time_value, pixel_x in tick_positions:
             if 0 <= pixel_x <= self.width():
                 # Draw tick mark with cosmetic pen
-                tick_pen = QPen(QColor(COLORS.RULER_LINE))
+                tick_pen = QPen(QColor(config.COLORS.RULER_LINE))
                 tick_pen.setWidth(0)
                 painter.setPen(tick_pen)
                 painter.drawLine(int(pixel_x), self._header_height - 6, int(pixel_x), self._header_height - 1)
                 
                 # Format and draw label
                 # Use the session's timescale unit if available, otherwise fall back to config
-                display_unit = config.time_unit
+                display_unit = ruler_config.time_unit
                 if self._model and self._model._session and self._model._session.timescale:
                     display_unit = self._model._session.timescale.unit
                 label = self._format_time_label(time_value, display_unit, step_size)
@@ -861,7 +863,7 @@ class WaveformCanvas(QWidget):
                 text_y = 5  # Increased margin from top for better spacing
                 
                 # Draw text using simpler drawText overload
-                painter.setPen(QColor(COLORS.TEXT))
+                painter.setPen(QColor(config.COLORS.TEXT))
                 painter.drawText(text_x, text_y + fm.ascent(), label)
     
     def _calculate_time_ruler_ticks(self, config: TimeRulerConfig) -> Tuple[List[Tuple[float, int]], float]:
@@ -1094,7 +1096,7 @@ class WaveformCanvas(QWidget):
     def _paint_background_with_boundaries(self, painter: QPainter) -> None:
         """Paint background with different colors for valid/invalid time ranges."""
         # Default background color for entire canvas
-        painter.fillRect(self.rect(), QColor(COLORS.BACKGROUND_DARK))  # Darker for invalid ranges
+        painter.fillRect(self.rect(), QColor(config.COLORS.BACKGROUND_DARK))  # Darker for invalid ranges
         
         # If we have valid waveform bounds, paint the valid range differently
         if self._waveform_max_time is not None and self.width() > 0:
@@ -1108,7 +1110,7 @@ class WaveformCanvas(QWidget):
             
             # Paint the valid time range with a lighter background
             if x_max > x_min:
-                painter.fillRect(x_min, 0, x_max - x_min, self.height(), QColor(COLORS.BACKGROUND))
+                painter.fillRect(x_min, 0, x_max - x_min, self.height(), QColor(config.COLORS.BACKGROUND))
     
     def _draw_boundary_lines(self, painter: QPainter) -> None:
         """Draw vertical lines at waveform time boundaries."""
@@ -1116,7 +1118,7 @@ class WaveformCanvas(QWidget):
             return
         
         # Set up pen for boundary lines (cosmetic for HiDPI)
-        pen = QPen(QColor(COLORS.BOUNDARY_LINE))
+        pen = QPen(QColor(config.COLORS.BOUNDARY_LINE))
         pen.setWidth(0)  # 1 device pixel
         painter.setPen(pen)
         
@@ -1157,10 +1159,10 @@ class WaveformCanvas(QWidget):
         padding = RENDERING.DEBUG_TEXT_PADDING // 2
         bg_rect = QRectF(x - padding, y - text_rect.height() - padding, 
                         text_rect.width() + 2 * padding, text_rect.height() + 2 * padding)
-        painter.fillRect(bg_rect, QColor(*COLORS.DEBUG_BACKGROUND))
+        painter.fillRect(bg_rect, QColor(*config.COLORS.DEBUG_BACKGROUND))
         
         # Draw text
-        painter.setPen(QColor(COLORS.DEBUG_TEXT))
+        painter.setPen(QColor(config.COLORS.DEBUG_TEXT))
         painter.drawText(x, y, debug_text)
         
         # Restore painter state
@@ -1213,13 +1215,13 @@ class WaveformCanvas(QWidget):
         left_x = min(x0, x1)
         right_x = max(x0, x1)
         # Draw semi-transparent fill
-        color = QColor(COLORS.ROI_SELECTION_COLOR)
+        color = QColor(config.COLORS.ROI_SELECTION_COLOR)
         # Apply opacity
-        alpha = int(max(0.0, min(1.0, COLORS.ROI_SELECTION_OPACITY)) * 255)
+        alpha = int(max(0.0, min(1.0, config.COLORS.ROI_SELECTION_OPACITY)) * 255)
         fill_color = QColor(color.red(), color.green(), color.blue(), alpha)
         painter.fillRect(left_x, 0, right_x - left_x, self.height(), fill_color)
         # Draw guide lines
-        pen = QPen(QColor(COLORS.ROI_GUIDE_LINE_COLOR))
+        pen = QPen(QColor(config.COLORS.ROI_GUIDE_LINE_COLOR))
         pen.setWidth(RENDERING.ROI_GUIDE_LINE_WIDTH)
         pen.setCosmetic(True)
         pen.setStyle(Qt.PenStyle.DashLine)

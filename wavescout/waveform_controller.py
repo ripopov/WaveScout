@@ -16,7 +16,9 @@ from .data_model import (
     WaveformSession, Viewport, SignalNode, Marker, Time, SignalNodeID,
     DataFormat, GroupRenderMode, DisplayFormat, RenderType
 )
-from .config import COLORS, MARKER_LABELS, RENDERING
+from . import config
+MARKER_LABELS = config.MARKER_LABELS
+RENDERING = config.RENDERING
 from .application.event_bus import EventBus
 from .application.events import (
     Event, StructureChangedEvent, FormatChangedEvent, ViewportChangedEvent,
@@ -144,7 +146,7 @@ class WaveformController:
             if existing and existing.color:
                 color = existing.color
             else:
-                color = COLORS.MARKER_DEFAULT_COLOR
+                color = config.COLORS.MARKER_DEFAULT_COLOR
         
         # Create or update marker
         label = MARKER_LABELS[index]
