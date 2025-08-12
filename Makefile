@@ -1,4 +1,4 @@
-.PHONY: install build clean test help
+.PHONY: install build clean test help compile
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -13,11 +13,11 @@ build:  ## Build the project
 	poetry build
 
 clean:  ## Clean build artifacts
-	rm -rf dist/
-	rm -rf build/
-	rm -rf *.egg-info
-	find . -type d -name __pycache__ -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
+	if exist dist rmdir /s /q dist
+	if exist build rmdir /s /q build
+	if exist *.egg-info rmdir /s /q *.egg-info
+	for /d /r . %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d"
+	for /r . %%f in (*.pyc) do @if exist "%%f" del "%%f"
 
 test:  ## Run tests
 	poetry run pytest tests/ --ignore=wellen/
@@ -25,5 +25,23 @@ test:  ## Run tests
 typecheck:  ## Run mypy type checker (strict mode)
 	poetry run mypy wavescout/ --strict --config-file mypy.ini
 
-dev:  ## Run the demo application
+dev: install  ## Run the demo application
 	poetry run python scout.py
+
+compile: install  ## Compile scout.py into executable using Nuitka
+	poetry add --group dev nuitka setuptools wheel
+	poetry run pip install --upgrade setuptools wheel
+	poetry run python -m nuitka --standalone --onefile \
+		--enable-plugin=pyside6 \
+		--include-package=wavescout \
+		--include-package=numpy \
+		--include-package=yaml \
+		--include-package=rapidfuzz \
+		--include-package=qdarkstyle \
+		--include-data-dir=wellen=wellen \
+		--windows-console-mode=disable \
+		--assume-yes-for-downloads \
+		--no-progress-bar \
+		--output-filename=WaveformScout.exe \
+		--output-dir=dist \
+		scout.py

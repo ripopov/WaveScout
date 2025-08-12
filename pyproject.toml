@@ -21,6 +21,9 @@ psutil = "^7.0.0"
 maturin = "^1.7"
 mypy = "^1.16"
 types-PyYAML = "^6.0"
+nuitka = "^2.7.12"
+setuptools = "^80.9.0"
+wheel = "^0.45.1"
 
 [tool.poetry.scripts]
 build-pywellen = "scripts.build_pywellen:main"
