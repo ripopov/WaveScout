@@ -646,9 +646,10 @@ def draw_analog_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sig
     pen_wave.setWidth(0)
     painter.setPen(pen_wave)
     
-    # Draw the waveform
-    points = []
+    # Draw the waveform as a step diagram (staircase)
     aliasing_regions = []  # Track regions with multiple transitions
+    prev_x = None
+    prev_y = None
     
     for i in range(len(drawing_data.samples)):
         x, sample = drawing_data.samples[i]
@@ -663,28 +664,77 @@ def draw_analog_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sig
         if sample.has_multiple_transitions:
             aliasing_regions.append(x)
         
-        # Use the new value_float field
-        if sample.value_float is not None and not math.isnan(sample.value_float):
+        # Handle different value kinds
+        if sample.value_kind == ValueKind.UNDEFINED:
+            # Draw UNDEFINED region as red rectangle
+            # Determine the width of this region
+            if i + 1 < len(drawing_data.samples):
+                next_x, _ = drawing_data.samples[i + 1]
+                region_end = min(next_x, max_valid_pixel)
+            else:
+                region_end = min(params['width'], max_valid_pixel)
+            
+            # Save current pen and set red color for undefined
+            old_pen = painter.pen()
+            undefined_color = QColor(255, 0, 0, 100)  # Semi-transparent red
+            painter.fillRect(int(x), y_top, int(region_end - x), signal_height, undefined_color)
+            painter.setPen(old_pen)
+            
+            # Reset the staircase
+            prev_x = None
+            prev_y = None
+            
+        elif sample.value_kind == ValueKind.HIGH_IMPEDANCE:
+            # Draw HIGH_IMPEDANCE region as yellow rectangle
+            # Determine the width of this region
+            if i + 1 < len(drawing_data.samples):
+                next_x, _ = drawing_data.samples[i + 1]
+                region_end = min(next_x, max_valid_pixel)
+            else:
+                region_end = min(params['width'], max_valid_pixel)
+            
+            # Save current pen and set yellow color for high impedance
+            old_pen = painter.pen()
+            highz_color = QColor(255, 255, 0, 100)  # Semi-transparent yellow
+            painter.fillRect(int(x), y_top, int(region_end - x), signal_height, highz_color)
+            painter.setPen(old_pen)
+            
+            # Reset the staircase
+            prev_x = None
+            prev_y = None
+            
+        elif sample.value_float is not None and not math.isnan(sample.value_float):
+            # Normal numeric value - draw as part of staircase
             # Map value to y coordinate
             normalized = (sample.value_float - min_val) / value_range
             # Clamp normalized value to [0, 1]
             normalized = max(0.0, min(1.0, normalized))
             y_pos = y_bottom - (normalized * signal_height)
-            points.append(QPointF(x, y_pos))
-        elif sample.value_kind == ValueKind.UNDEFINED or sample.value_kind == ValueKind.HIGH_IMPEDANCE:
-            # Handle undefined/high-impedance values - draw as gap or dashed line
-            if points:
-                # Draw accumulated points before the gap
-                if len(points) > 1:
-                    painter.drawPolyline(QPolygonF(points))
-                points = []
+            
+            if prev_x is not None and prev_y is not None:
+                # Draw horizontal line at previous value level until current x
+                painter.drawLine(int(prev_x), int(prev_y), int(x), int(prev_y))
+                # Draw vertical line at current x connecting previous and current value
+                painter.drawLine(int(x), int(prev_y), int(x), int(y_pos))
+            
+            # Update previous values
+            prev_x = x
+            prev_y = y_pos
     
-    # Draw accumulated points
-    if len(points) > 1:
-        painter.drawPolyline(QPolygonF(points))
-    elif len(points) == 1:
-        # Single point - draw a small circle
-        painter.drawEllipse(points[0], 2, 2)
+    # Draw the final horizontal line to the end of the viewport if we have a value
+    if prev_x is not None and prev_y is not None:
+        # Determine the end x position
+        if len(drawing_data.samples) > 0:
+            # Get the next sample's x position if available
+            last_idx = len(drawing_data.samples) - 1
+            for j in range(last_idx, -1, -1):
+                last_x, last_sample = drawing_data.samples[j]
+                if last_x <= max_valid_pixel:
+                    # Draw horizontal line from last value to edge of viewport
+                    end_x = min(params['width'], max_valid_pixel)
+                    if prev_x < end_x:
+                        painter.drawLine(int(prev_x), int(prev_y), int(end_x), int(prev_y))
+                    break
     
     # Draw aliasing indicators as very subtle vertical dashed lines
     if aliasing_regions:
