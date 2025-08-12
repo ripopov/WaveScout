@@ -781,7 +781,8 @@ def draw_event_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sign
         row_height: Row height in pixels.
         params: Dict with width, start_time, end_time, optional waveform_max_time.
     """
-    color = QColor(node_info['format'].color)
+    # Use dedicated event arrow color from theme
+    color = QColor(config.COLORS.EVENT_ARROW)
     if color.alpha() != 255:
         color.setAlpha(255)
     pen = QPen(color)
@@ -792,7 +793,7 @@ def draw_event_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sign
     y_top, y_bottom, y_middle = calculate_signal_bounds(y, row_height)
     
     # Arrow dimensions
-    arrow_height = (y_bottom - y_top) * 0.8  # 80% of available height
+    arrow_height = (y_bottom - y_top) * 0.95  # 95% of available height
     arrow_head_height = 3  # Height of arrow head in pixels
     
     # Get valid pixel range for clipping

@@ -99,6 +99,9 @@ class ColorScheme:
     # Default signal color
     DEFAULT_SIGNAL: str = "#33C3F0"
     
+    # Event signal arrow color
+    EVENT_ARROW: str = "#FFB84D"  # Orange for event arrows
+    
     # Analog signal overlays
     ANALOG_UNDEFINED_FILL: RGBA = (255, 0, 0, 100)  # Semi-transparent red for undefined regions
     ANALOG_HIGHZ_FILL: RGBA = (255, 255, 0, 100)  # Semi-transparent yellow for high-Z regions

@@ -48,6 +48,8 @@ THEMES: Dict[ThemeName, ColorScheme] = {
         DEBUG_BACKGROUND=(0, 0, 0, 200),
         # Default signal color - Blue-tinted green, less harsh than pure bright green
         DEFAULT_SIGNAL="#00e676",  # Softer blue-green for waveforms
+        # Event signal arrow color
+        EVENT_ARROW="#FFB84D",  # Orange for event arrows
         # Analog signal overlays
         ANALOG_UNDEFINED_FILL=(255, 0, 0, 100),
         ANALOG_HIGHZ_FILL=(255, 255, 0, 100),
@@ -84,6 +86,8 @@ THEMES: Dict[ThemeName, ColorScheme] = {
         DEBUG_BACKGROUND=(0, 0, 0, 200),
         # Default signal color
         DEFAULT_SIGNAL="#56B6C2",
+        # Event signal arrow color
+        EVENT_ARROW="#D19A66",  # Orange accent for event arrows
         # Analog signal overlays
         ANALOG_UNDEFINED_FILL=(224, 108, 117, 100),  # E06C75 at ~40% alpha
         ANALOG_HIGHZ_FILL=(229, 192, 123, 100),  # E5C07B at ~40% alpha
@@ -120,6 +124,8 @@ THEMES: Dict[ThemeName, ColorScheme] = {
         DEBUG_BACKGROUND=(0, 0, 0, 200),
         # Default signal color
         DEFAULT_SIGNAL="#8BE9FD",
+        # Event signal arrow color
+        EVENT_ARROW="#FFB86C",  # Orange for event arrows
         # Analog signal overlays
         ANALOG_UNDEFINED_FILL=(255, 85, 85, 100),  # FF5555
         ANALOG_HIGHZ_FILL=(241, 250, 140, 100),  # F1FA8C
