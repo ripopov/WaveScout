@@ -129,9 +129,6 @@ class DesignTreeView(QWidget):
         self.design_tree_model = DesignTreeModel(waveform_db)
         self.unified_tree.setModel(self.design_tree_model)
         
-        # Optimize: Expand only first scope instead of all
-        self.unified_tree.expandToDepth(1)
-        
         # Update split mode models if needed
         if self.current_mode == DesignTreeViewMode.SPLIT:
             self._update_split_mode_models()
@@ -170,7 +167,6 @@ class DesignTreeView(QWidget):
             self.scope_tree_model = ScopeTreeModel(self.waveform_db)
             self.scope_tree.setModel(self.scope_tree_model)
             self.scope_tree.selectionModel().currentChanged.connect(self._on_scope_selection_changed)
-            self.scope_tree.expandToDepth(1)  # Expand first level
         else:
             self.scope_tree_model.load_hierarchy(self.waveform_db)
         
