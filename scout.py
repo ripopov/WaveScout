@@ -16,6 +16,7 @@ from wavescout import WaveScoutWidget, create_sample_session, save_session, load
 from wavescout.design_tree_view import DesignTreeView
 from wavescout.config import RENDERING
 from wavescout.theme import theme_manager, ThemeName, apply_saved_theme
+import qdarkstyle
 
 
 class LoaderSignals(QObject):
@@ -310,18 +311,41 @@ class WaveScoutMainWindow(QMainWindow):
         style_menu = view_menu.addMenu("&Style")
         self.style_action_group = QActionGroup(self)
         self.style_action_group.setExclusive(True)
+        
+        # Track current style (default or qdarkstyle)
+        self.current_style_type = self.settings.value("style_type", "default", type=str)
+        
+        # Add default Qt styles
         available_styles = QStyleFactory.keys()
-        # Determine current style name in the same case as keys
         current_style = QApplication.instance().style().objectName() if QApplication.instance() else ""
-        # Normalize comparison
+        
         for name in available_styles:
             act = QAction(name, self)
             act.setCheckable(True)
-            if current_style and name.lower() == current_style.lower():
+            # Check if this is the current style and we're not using qdarkstyle
+            if self.current_style_type == "default" and current_style and name.lower() == current_style.lower():
                 act.setChecked(True)
             act.triggered.connect(lambda checked, n=name: self._set_ui_style(n))
             self.style_action_group.addAction(act)
             style_menu.addAction(act)
+        
+        # Add separator before QDarkStyle options
+        style_menu.addSeparator()
+        
+        # Add QDarkStyle options
+        qdark_action = QAction("QDarkStyle (Dark)", self)
+        qdark_action.setCheckable(True)
+        qdark_action.setChecked(self.current_style_type == "qdarkstyle_dark")
+        qdark_action.triggered.connect(lambda: self._set_qdarkstyle("dark"))
+        self.style_action_group.addAction(qdark_action)
+        style_menu.addAction(qdark_action)
+        
+        qlight_action = QAction("QDarkStyle (Light)", self)
+        qlight_action.setCheckable(True)
+        qlight_action.setChecked(self.current_style_type == "qdarkstyle_light")
+        qlight_action.triggered.connect(lambda: self._set_qdarkstyle("light"))
+        self.style_action_group.addAction(qlight_action)
+        style_menu.addAction(qlight_action)
         
         view_menu.addSeparator()
         
@@ -1047,16 +1071,57 @@ class WaveScoutMainWindow(QMainWindow):
         app = QApplication.instance()
         if not app:
             return
+        
+        # Clear any QDarkStyle stylesheet first
+        app.setStyleSheet("")
+        
         # Apply the style
         style = QStyleFactory.create(style_name)
         if style is None:
             QMessageBox.warning(self, "Style Error", f"Failed to create style '{style_name}'.")
             return
         app.setStyle(style)
+        
         # Persist user choice
         self.settings.setValue("ui_style", style_name)
+        self.settings.setValue("style_type", "default")
+        self.current_style_type = "default"
+        
         # Feedback to user
         self.statusBar().showMessage(f"Style: {style_name}", 2000)
+    
+    def _set_qdarkstyle(self, palette: str):
+        """Apply QDarkStyle with the specified palette."""
+        app = QApplication.instance()
+        if not app:
+            return
+        
+        try:
+            if palette == "dark":
+                stylesheet = qdarkstyle.load_stylesheet(palette=qdarkstyle.DarkPalette)
+                style_type = "qdarkstyle_dark"
+                msg = "QDarkStyle (Dark)"
+            else:  # light
+                stylesheet = qdarkstyle.load_stylesheet(palette=qdarkstyle.LightPalette)
+                style_type = "qdarkstyle_light"
+                msg = "QDarkStyle (Light)"
+            
+            # Apply the stylesheet
+            app.setStyleSheet(stylesheet)
+            
+            # Persist user choice
+            self.settings.setValue("style_type", style_type)
+            self.current_style_type = style_type
+            
+            # Feedback to user
+            self.statusBar().showMessage(f"Style: {msg}", 2000)
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Style Error", f"Failed to apply QDarkStyle: {str(e)}")
+            # Fall back to default style
+            app.setStyleSheet("")
+            self.settings.setValue("style_type", "default")
+            self.current_style_type = "default"
         # Optionally refresh icons to the new style's standard icons
         new_style = self.style()
         if new_style:
@@ -1092,15 +1157,33 @@ def main():
     app = QApplication(sys.argv)
     
     # Apply saved UI style if available
-    saved_style = settings.value("ui_style", "", type=str)
-    if saved_style:
+    style_type = settings.value("style_type", "default", type=str)
+    
+    if style_type == "qdarkstyle_dark":
+        # Apply QDarkStyle dark theme
         try:
-            if saved_style in QStyleFactory.keys():
-                style_obj = QStyleFactory.create(saved_style)
-                if style_obj is not None:
-                    app.setStyle(style_obj)
+            stylesheet = qdarkstyle.load_stylesheet(palette=qdarkstyle.DarkPalette)
+            app.setStyleSheet(stylesheet)
         except Exception:
             pass
+    elif style_type == "qdarkstyle_light":
+        # Apply QDarkStyle light theme
+        try:
+            stylesheet = qdarkstyle.load_stylesheet(palette=qdarkstyle.LightPalette)
+            app.setStyleSheet(stylesheet)
+        except Exception:
+            pass
+    else:
+        # Apply saved Qt style
+        saved_style = settings.value("ui_style", "", type=str)
+        if saved_style:
+            try:
+                if saved_style in QStyleFactory.keys():
+                    style_obj = QStyleFactory.create(saved_style)
+                    if style_obj is not None:
+                        app.setStyle(style_obj)
+            except Exception:
+                pass
     
     # Create main window with optional session or wave file
     window = WaveScoutMainWindow(session_file=args.load_session, wave_file=args.load_wave, exit_after_load=args.exit_after_load)
