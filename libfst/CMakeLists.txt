@@ -1,24 +1,68 @@
-cmake_minimum_required (VERSION 3.10)
+cmake_minimum_required(VERSION 3.15)
+project(libfst C)
 
-project (fstlib)
+# Set C standard
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
-########################################################################################################################
-# Easiest way to get ZLib on windows is using vcpkg, to load vcpkg:
-# cmake -DCMAKE_TOOLCHAIN_FILE=[path to vcpkg]/scripts/buildsystems/vcpkg.cmake
-if(CMAKE_TOOLCHAIN_FILE)
-    message(STATUS "Using VCPKG from ${CMAKE_TOOLCHAIN_FILE}")
-endif()
-########################################################################################################################
+# Find required packages
 find_package(ZLIB REQUIRED)
 
-add_library(fstapi SHARED fstapi.c fastlz.c lz4.c fstapi.h fst_win_unistd.h)
-target_link_libraries(fstapi PRIVATE ZLIB::ZLIB)
-# hack to avoid creating dummy config.h
-target_compile_definitions(fstapi PRIVATE -DFST_CONFIG_INCLUDE="fstapi.h")
-set_target_properties(fstapi PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# Define source files
+set(SOURCES
+    fstapi.c
+    fastlz.c
+    lz4.c
+)
 
+# Define header files
+set(HEADERS
+    fstapi.h
+    fastlz.h
+    lz4.h
+    fst_config_stub.h
+    fst_win_unistd.h
+)
+
+# Create the library
+add_library(fst STATIC ${SOURCES} ${HEADERS})
+
+# Set compiler-specific flags
 if(MSVC)
-    # define __MINGW32__ to minimize changes to upstream
-    target_compile_definitions(fstapi PRIVATE __MINGW32__  _CRT_SECURE_NO_WARNINGS  FST_DO_MISALIGNED_OPS)
-    target_compile_options(fstapi PRIVATE /wd4244 /wd4267 /wd4146 /wd4996)
+    # MSVC specific flags
+    target_compile_definitions(fst PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_options(fst PRIVATE /W3)
+    # Use our config stub instead of config.h
+    target_compile_definitions(fst PRIVATE FST_CONFIG_INCLUDE="fst_config_stub.h")
+else()
+    # GCC/Clang flags
+    target_compile_options(fst PRIVATE -Wall -Wextra)
+    # Use our config stub instead of config.h
+    target_compile_definitions(fst PRIVATE FST_CONFIG_INCLUDE="fst_config_stub.h")
 endif()
+
+# Include directories
+target_include_directories(fst PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Link with zlib
+target_link_libraries(fst PRIVATE ZLIB::ZLIB)
+
+# Platform-specific definitions
+if(WIN32)
+    target_compile_definitions(fst PRIVATE WIN32 _WIN32)
+    if(MSVC)
+        target_compile_definitions(fst PRIVATE _MSC_VER)
+    endif()
+endif()
+
+# Set output name
+set_target_properties(fst PROPERTIES OUTPUT_NAME "fst")
+
+# Install target
+install(TARGETS fst
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+
+install(FILES ${HEADERS} DESTINATION include)

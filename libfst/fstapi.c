@@ -82,6 +82,14 @@
 
 #if defined(_MSC_VER)
 typedef int64_t fst_off_t;
+/* POSIX compatibility for MSVC */
+#define strdup _strdup
+#define getpid _getpid
+#define dup _dup
+#define close _close
+#define write _write
+#pragma warning(push)
+#pragma warning(disable: 4244 4267 4146 4996)
 #else
 typedef off_t fst_off_t;
 #endif
@@ -160,6 +168,14 @@ void **JenkinsIns(void *base_i, const unsigned char *mem, uint32_t length, uint3
 /***********************/
 
 #ifdef __MINGW32__
+#include <io.h>
+#ifndef HAVE_FSEEKO
+#define ftello _ftelli64
+#define fseeko _fseeki64
+#endif
+#endif
+
+#ifdef _MSC_VER
 #include <io.h>
 #ifndef HAVE_FSEEKO
 #define ftello _ftelli64
@@ -341,8 +357,13 @@ return(NULL);
 /*
  * mmap compatibility
  */
-#if defined __MINGW32__
+#if defined __MINGW32__ || defined _MSC_VER
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #include <limits.h>
+#include <io.h>
 #define fstMmap(__addr,__len,__prot,__flags,__fd,__off) fstMmap2((__len), (__fd), (__off))
 #define fstMunmap(__addr,__len)                         UnmapViewOfFile((LPCVOID)__addr)
 
@@ -550,9 +571,9 @@ return(rc);
 
 static uint32_t fstReaderVarint32(FILE *f)
 {
-const int chk_len_max = 5; /* TALOS-2023-1783 */
-int chk_len = chk_len_max;
-unsigned char buf[chk_len_max];
+#define CHK_LEN_MAX 5 /* TALOS-2023-1783 */
+int chk_len = CHK_LEN_MAX;
+unsigned char buf[CHK_LEN_MAX];
 unsigned char *mem = buf;
 uint32_t rc = 0;
 int ch;
@@ -583,9 +604,9 @@ return(rc);
 
 static uint32_t fstReaderVarint32WithSkip(FILE *f, uint32_t *skiplen)
 {
-const int chk_len_max = 5; /* TALOS-2023-1783 */
-int chk_len = chk_len_max;
-unsigned char buf[chk_len_max];
+#define CHK_LEN_MAX2 5 /* TALOS-2023-1783 */
+int chk_len = CHK_LEN_MAX2;
+unsigned char buf[CHK_LEN_MAX2];
 unsigned char *mem = buf;
 uint32_t rc = 0;
 int ch;
@@ -617,9 +638,9 @@ return(rc);
 
 static uint64_t fstReaderVarint64(FILE *f)
 {
-const int chk_len_max = 16; /* TALOS-2023-1783 */
-int chk_len = chk_len_max;
-unsigned char buf[chk_len_max];
+#define CHK_LEN_MAX3 16 /* TALOS-2023-1783 */
+int chk_len = CHK_LEN_MAX3;
+unsigned char buf[CHK_LEN_MAX3];
 unsigned char *mem = buf;
 uint64_t rc = 0;
 int ch;
@@ -7218,3 +7239,7 @@ if(etab)
 	free(etab);
 	}
 }
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
