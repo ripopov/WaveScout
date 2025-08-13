@@ -8,10 +8,12 @@ use crate::ffi::{
     FST_ST_VCD_MODULE, FST_ST_VCD_TASK, FST_VD_IMPLICIT, FST_VD_INOUT, FST_VD_INPUT,
     FST_VD_OUTPUT, FST_VT_VCD_EVENT, FST_VT_VCD_INTEGER, FST_VT_VCD_PARAMETER,
     FST_VT_VCD_PORT, FST_VT_VCD_REAL, FST_VT_VCD_REAL_PARAMETER, FST_VT_VCD_REG,
-    FST_VT_VCD_REALTIME, FST_VT_VCD_SPARRAY, FST_VT_VCD_STRING, FST_VT_VCD_SUPPLY0, FST_VT_VCD_SUPPLY1, FST_VT_VCD_TIME,
+    FST_VT_VCD_REALTIME, FST_VT_VCD_SPARRAY, FST_VT_VCD_STRING, FST_VT_GEN_STRING,
+    FST_VT_VCD_SUPPLY0, FST_VT_VCD_SUPPLY1, FST_VT_VCD_TIME,
     FST_VT_VCD_TRI, FST_VT_VCD_TRI0, FST_VT_VCD_TRI1, FST_VT_VCD_TRIAND,
     FST_VT_VCD_TRIOR, FST_VT_VCD_TRIREG, FST_VT_VCD_WAND, FST_VT_VCD_WIRE,
-    FST_VT_VCD_WOR,
+    FST_VT_VCD_WOR, FST_VT_SV_BIT, FST_VT_SV_LOGIC, FST_VT_SV_INT, FST_VT_SV_SHORTINT,
+    FST_VT_SV_LONGINT, FST_VT_SV_BYTE, FST_VT_SV_ENUM, FST_VT_SV_SHORTREAL,
 };
 
 /// Reference types for efficient indexing
@@ -141,8 +143,18 @@ impl VarType {
             FST_VT_VCD_WAND => VarType::WAnd,
             FST_VT_VCD_WIRE => VarType::Wire,
             FST_VT_VCD_WOR => VarType::WOr,
-            FST_VT_VCD_STRING => VarType::String,
+            FST_VT_VCD_STRING | FST_VT_GEN_STRING => VarType::String,
             FST_VT_VCD_PORT => VarType::Port,
+            FST_VT_VCD_SPARRAY => VarType::SparseArray,
+            FST_VT_VCD_REALTIME => VarType::RealTime,
+            FST_VT_SV_BIT => VarType::Bit,
+            FST_VT_SV_LOGIC => VarType::Logic,
+            FST_VT_SV_INT => VarType::Int,
+            FST_VT_SV_SHORTINT => VarType::ShortInt,
+            FST_VT_SV_LONGINT => VarType::LongInt,
+            FST_VT_SV_BYTE => VarType::Byte,
+            FST_VT_SV_ENUM => VarType::Enum,
+            FST_VT_SV_SHORTREAL => VarType::ShortReal,
             _ => VarType::Wire, // Default to wire for unknown types
         }
     }
@@ -460,7 +472,8 @@ impl Hierarchy {
                     let scope = scope_stack.last().copied();
                     let var_ref = VarRef(hierarchy.vars.len());
                     
-                    hierarchy.vars.push(Var::new(
+                    // Create the variable (which will parse and clean the name)
+                    let var = Var::new(
                         name.clone(),
                         var_type,
                         direction,
@@ -468,18 +481,20 @@ impl Hierarchy {
                         signal_ref,
                         var_data.handle,
                         scope,
-                    ));
+                    );
+                    
+                    // Build full path for lookup using the cleaned name
+                    let mut full_path = current_path.clone();
+                    full_path.push(var.name.clone());
+                    let path_str = full_path.join(".");
+                    
+                    hierarchy.vars.push(var);
+                    hierarchy.path_to_var.insert(path_str, var_ref);
                     
                     // Update scope's vars
                     if let Some(scope_ref) = scope {
                         hierarchy.scopes[scope_ref.0].vars.push(var_ref);
                     }
-                    
-                    // Build full path for lookup
-                    let mut full_path = current_path.clone();
-                    full_path.push(name);
-                    let path_str = full_path.join(".");
-                    hierarchy.path_to_var.insert(path_str, var_ref);
                 }
                 
                 FST_HT_ATTRBEGIN => {
@@ -544,19 +559,10 @@ impl Hierarchy {
             path.reverse();
         }
         
-        // Add variable name
+        // Add variable name (without bit range - it's stored separately in index)
         path.push(var.name.clone());
         
-        // Add bit range if present
-        let mut full_name = path.join(".");
-        if let Some(ref idx) = var.index {
-            if idx.msb == idx.lsb {
-                full_name.push_str(&format!("[{}]", idx.msb));
-            } else {
-                full_name.push_str(&format!("[{}:{}]", idx.msb, idx.lsb));
-            }
-        }
-        
-        full_name
+        // Don't add bit range to match pywellen behavior
+        path.join(".")
     }
 }

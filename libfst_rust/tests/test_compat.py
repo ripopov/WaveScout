@@ -283,6 +283,173 @@ def test_signal_types():
             break
 
 
+@pytest.mark.skipif(
+    pylibfst is None or pywellen is None,
+    reason="Both pylibfst and pywellen required for comparison"
+)
+def test_hierarchy_deep_comparison():
+    """Deep comparison of hierarchy traversal between pywellen and pylibfst"""
+    # Look for vcd_extensions.fst
+    test_files = [
+        "../test_inputs/vcd_extensions.fst",
+        "../../test_inputs/vcd_extensions.fst",
+        "../../../test_inputs/vcd_extensions.fst",
+    ]
+    
+    fst_file = None
+    for path in test_files:
+        full_path = Path(__file__).parent / path
+        if full_path.exists():
+            fst_file = str(full_path.resolve())
+            break
+    
+    if not fst_file:
+        pytest.skip("vcd_extensions.fst not found")
+    
+    print(f"\nComparing hierarchy for: {fst_file}")
+    
+    # Load with both libraries
+    pw_wave = pywellen.Waveform(fst_file)
+    lf_wave = pylibfst.Waveform(fst_file)
+    
+    pw_hier = pw_wave.hierarchy
+    lf_hier = lf_wave.hierarchy
+    
+    # Compare metadata
+    assert lf_hier.file_format() == pw_hier.file_format()
+    print(f"  File format: {lf_hier.file_format()}")
+    
+    # Helper function to recursively collect all scopes
+    def collect_all_scopes(hier, scope_iter):
+        """Recursively collect all scopes with their full paths"""
+        scopes_dict = {}
+        for scope in scope_iter:
+            full_name = scope.full_name(hier).strip()
+            scope_type = scope.scope_type()
+            scopes_dict[full_name] = {
+                'type': scope_type,
+                'scope': scope,
+                'children': collect_all_scopes(hier, scope.scopes(hier))
+            }
+        return scopes_dict
+    
+    # Collect all scopes from both libraries
+    print("\n  Collecting scopes...")
+    pw_scopes = collect_all_scopes(pw_hier, pw_hier.top_scopes())
+    lf_scopes = collect_all_scopes(lf_hier, lf_hier.top_scopes())
+    
+    # Compare scope names and types
+    pw_scope_names = set(pw_scopes.keys())
+    lf_scope_names = set(lf_scopes.keys())
+    
+    print(f"  Pywellen scopes: {len(pw_scope_names)}")
+    print(f"  Pylibfst scopes: {len(lf_scope_names)}")
+    
+    # Check for missing scopes
+    missing_in_lf = pw_scope_names - lf_scope_names
+    missing_in_pw = lf_scope_names - pw_scope_names
+    
+    if missing_in_lf:
+        print(f"  ⚠ Scopes in pywellen but not pylibfst: {missing_in_lf}")
+    if missing_in_pw:
+        print(f"  ⚠ Scopes in pylibfst but not pywellen: {missing_in_pw}")
+    
+    # Compare scope types for common scopes
+    common_scopes = pw_scope_names & lf_scope_names
+    scope_type_mismatches = 0
+    for scope_name in sorted(common_scopes)[:20]:  # Check first 20 for brevity
+        pw_type = pw_scopes[scope_name]['type']
+        lf_type = lf_scopes[scope_name]['type']
+        if pw_type != lf_type:
+            print(f"    Scope type mismatch for '{scope_name}': pywellen={pw_type}, pylibfst={lf_type}")
+            scope_type_mismatches += 1
+    
+    if scope_type_mismatches == 0:
+        print(f"  ✓ All checked scope types match")
+    
+    # Collect all variables from both libraries
+    print("\n  Collecting variables...")
+    
+    def collect_vars_with_path(hier, var_iter):
+        """Collect variables with their full paths and properties"""
+        vars_dict = {}
+        for var in var_iter:
+            full_name = var.full_name(hier).strip()
+            vars_dict[full_name] = {
+                'name': var.name(hier).strip(),
+                'type': var.var_type(),
+                'direction': var.direction(),
+                'is_real': var.is_real(),
+                'is_string': var.is_string(),
+                'var': var
+            }
+        return vars_dict
+    
+    pw_vars = collect_vars_with_path(pw_hier, pw_hier.all_vars())
+    lf_vars = collect_vars_with_path(lf_hier, lf_hier.all_vars())
+    
+    pw_var_names = set(pw_vars.keys())
+    lf_var_names = set(lf_vars.keys())
+    
+    print(f"  Pywellen variables: {len(pw_var_names)}")
+    print(f"  Pylibfst variables: {len(lf_var_names)}")
+    
+    # Check for missing variables
+    missing_vars_in_lf = pw_var_names - lf_var_names
+    missing_vars_in_pw = lf_var_names - pw_var_names
+    
+    if len(missing_vars_in_lf) > 0:
+        print(f"  ⚠ Variables in pywellen but not pylibfst: {len(missing_vars_in_lf)}")
+        for var_name in list(missing_vars_in_lf)[:5]:
+            print(f"    - {var_name}")
+    
+    if len(missing_vars_in_pw) > 0:
+        print(f"  ⚠ Variables in pylibfst but not pywellen: {len(missing_vars_in_pw)}")
+        for var_name in list(missing_vars_in_pw)[:5]:
+            print(f"    - {var_name}")
+    
+    # Compare variable types for common variables
+    common_vars = pw_var_names & lf_var_names
+    var_type_mismatches = 0
+    var_name_mismatches = 0
+    
+    for var_path in sorted(common_vars)[:50]:  # Check first 50 for brevity
+        pw_info = pw_vars[var_path]
+        lf_info = lf_vars[var_path]
+        
+        # Compare short names
+        if pw_info['name'] != lf_info['name']:
+            print(f"    Variable name mismatch for '{var_path}': pywellen={pw_info['name']}, pylibfst={lf_info['name']}")
+            var_name_mismatches += 1
+        
+        # Compare variable types
+        if pw_info['type'] != lf_info['type']:
+            print(f"    Variable type mismatch for '{var_path}': pywellen={pw_info['type']}, pylibfst={lf_info['type']}")
+            var_type_mismatches += 1
+    
+    if var_type_mismatches == 0 and var_name_mismatches == 0:
+        print(f"  ✓ All checked variable names and types match")
+    
+    # Summary
+    print("\n  Summary:")
+    print(f"    Common scopes: {len(common_scopes)}")
+    print(f"    Common variables: {len(common_vars)}")
+    print(f"    Scope type mismatches: {scope_type_mismatches}")
+    print(f"    Variable type mismatches: {var_type_mismatches}")
+    print(f"    Variable name mismatches: {var_name_mismatches}")
+    
+    # Assert reasonable compatibility
+    # Allow some differences due to alias handling, but core signals should match
+    assert len(common_scopes) > 0, "No common scopes found"
+    assert len(common_vars) > 0, "No common variables found"
+    
+    # We expect most variables to be present in both
+    common_ratio = len(common_vars) / max(len(pw_var_names), len(lf_var_names))
+    assert common_ratio > 0.8, f"Only {common_ratio:.1%} of variables are common"
+    
+    print(f"\n  ✓ Hierarchy comparison test passed ({common_ratio:.1%} variable overlap)")
+
+
 if __name__ == "__main__":
     # Run basic tests
     print("Testing pylibfst API compatibility...")
@@ -306,7 +473,10 @@ if __name__ == "__main__":
         if pywellen:
             test_api_compatibility()
             print("✓ API compatibility test passed")
+            
+            test_hierarchy_deep_comparison()
+            print("✓ Hierarchy deep comparison test passed")
         else:
-            print("⚠ Skipping API compatibility test (pywellen not available)")
+            print("⚠ Skipping API compatibility tests (pywellen not available)")
     else:
         print("⚠ pylibfst not built. Run 'maturin develop' first.")

@@ -82,6 +82,15 @@ pub const FST_VT_VCD_WOR: u8 = 17;
 pub const FST_VT_VCD_PORT: u8 = 18;
 pub const FST_VT_VCD_SPARRAY: u8 = 19;
 pub const FST_VT_VCD_REALTIME: u8 = 20;
+pub const FST_VT_GEN_STRING: u8 = 21;
+pub const FST_VT_SV_BIT: u8 = 22;
+pub const FST_VT_SV_LOGIC: u8 = 23;
+pub const FST_VT_SV_INT: u8 = 24;
+pub const FST_VT_SV_SHORTINT: u8 = 25;
+pub const FST_VT_SV_LONGINT: u8 = 26;
+pub const FST_VT_SV_BYTE: u8 = 27;
+pub const FST_VT_SV_ENUM: u8 = 28;
+pub const FST_VT_SV_SHORTREAL: u8 = 29;
 pub const FST_VT_VCD_STRING: u8 = 253;
 pub const FST_VT_VCD_REAL_PARAMETER: u8 = 254;  // Not sure about this one
 
