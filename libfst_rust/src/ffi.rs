@@ -217,7 +217,7 @@ impl FstReader {
             if ptr.is_null() {
                 String::new()
             } else {
-                CStr::from_ptr(ptr).to_string_lossy().to_string()
+                CStr::from_ptr(ptr).to_string_lossy().trim().to_string()
             }
         }
     }
@@ -229,7 +229,7 @@ impl FstReader {
             if ptr.is_null() {
                 String::new()
             } else {
-                CStr::from_ptr(ptr).to_string_lossy().to_string()
+                CStr::from_ptr(ptr).to_string_lossy().trim().to_string()
             }
         }
     }

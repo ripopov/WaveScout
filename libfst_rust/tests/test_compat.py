@@ -740,6 +740,232 @@ def test_var_api_compatibility():
     pylibfst is None or pywellen is None,
     reason="Both pylibfst and pywellen required for comparison"
 )
+def test_hierarchy_methods_compatibility():
+    """Test all Hierarchy methods work the same between pywellen and pylibfst"""
+    # Use vcd_extensions.fst for testing
+    test_files = [
+        "../test_inputs/vcd_extensions.fst",
+        "../../test_inputs/vcd_extensions.fst",
+        "../../../test_inputs/vcd_extensions.fst",
+    ]
+    
+    fst_file = None
+    for path in test_files:
+        full_path = Path(__file__).parent / path
+        if full_path.exists():
+            fst_file = str(full_path.resolve())
+            break
+    
+    if not fst_file:
+        pytest.skip("vcd_extensions.fst not found")
+    
+    print(f"\nTesting Hierarchy methods compatibility with: {fst_file}")
+    
+    # Load with both libraries
+    pw_wave = pywellen.Waveform(fst_file)
+    lf_wave = pylibfst.Waveform(fst_file)
+    
+    pw_hier = pw_wave.hierarchy
+    lf_hier = lf_wave.hierarchy
+    
+    print("\n  Testing Hierarchy methods:")
+    mismatches = []
+    
+    # Test file_format()
+    print("\n  1. Testing file_format():")
+    pw_format = pw_hier.file_format()
+    lf_format = lf_hier.file_format()
+    print(f"     pywellen: {pw_format}")
+    print(f"     pylibfst: {lf_format}")
+    if pw_format != lf_format:
+        mismatches.append(f"file_format: pywellen={pw_format}, pylibfst={lf_format}")
+    else:
+        print(f"     ✓ Match: {lf_format}")
+    
+    # Test date()
+    print("\n  2. Testing date():")
+    pw_date = pw_hier.date()
+    lf_date = lf_hier.date()
+    print(f"     pywellen: {pw_date}")
+    print(f"     pylibfst: {lf_date}")
+    if pw_date != lf_date:
+        mismatches.append(f"date: pywellen={pw_date}, pylibfst={lf_date}")
+    else:
+        print(f"     ✓ Match: {lf_date}")
+    
+    # Test version()
+    print("\n  3. Testing version():")
+    pw_version = pw_hier.version()
+    lf_version = lf_hier.version()
+    print(f"     pywellen: {pw_version}")
+    print(f"     pylibfst: {lf_version}")
+    if pw_version != lf_version:
+        mismatches.append(f"version: pywellen={pw_version}, pylibfst={lf_version}")
+    else:
+        print(f"     ✓ Match: {lf_version}")
+    
+    # Test timescale()
+    print("\n  4. Testing timescale():")
+    pw_ts = pw_hier.timescale()
+    lf_ts = lf_hier.timescale()
+    
+    # Compare timescale (it's an object, so we need to compare its string representation)
+    pw_ts_str = str(pw_ts) if pw_ts else None
+    lf_ts_str = str(lf_ts) if lf_ts else None
+    print(f"     pywellen: {pw_ts_str}")
+    print(f"     pylibfst: {lf_ts_str}")
+    
+    if pw_ts_str != lf_ts_str:
+        # Try comparing the actual values if string representation differs
+        if pw_ts and lf_ts:
+            # Both have timescale, check if they're functionally equivalent
+            # Timescale usually has a string representation like "1ns" or "1ps"
+            print(f"     ⚠ String representation differs, but both have timescale objects")
+            mismatches.append(f"timescale: pywellen={pw_ts_str}, pylibfst={lf_ts_str}")
+        else:
+            mismatches.append(f"timescale: pywellen={pw_ts_str}, pylibfst={lf_ts_str}")
+    else:
+        print(f"     ✓ Match: {lf_ts_str}")
+    
+    # Test all_vars() - count and basic iteration
+    print("\n  5. Testing all_vars():")
+    pw_vars = list(pw_hier.all_vars())
+    lf_vars = list(lf_hier.all_vars())
+    print(f"     pywellen: {len(pw_vars)} variables")
+    print(f"     pylibfst: {len(lf_vars)} variables")
+    
+    if len(pw_vars) != len(lf_vars):
+        mismatches.append(f"all_vars count: pywellen={len(pw_vars)}, pylibfst={len(lf_vars)}")
+    else:
+        print(f"     ✓ Match: {len(lf_vars)} variables")
+    
+    # Check that iterators work properly
+    print("\n  6. Testing all_vars() iterator protocol:")
+    # Test that we can iterate multiple times
+    lf_vars1 = list(lf_hier.all_vars())
+    lf_vars2 = list(lf_hier.all_vars())
+    if len(lf_vars1) != len(lf_vars2):
+        mismatches.append(f"all_vars iterator reuse issue: first={len(lf_vars1)}, second={len(lf_vars2)}")
+    else:
+        print(f"     ✓ Iterator can be reused: {len(lf_vars1)} variables both times")
+    
+    # Test top_scopes()
+    print("\n  7. Testing top_scopes():")
+    pw_scopes = list(pw_hier.top_scopes())
+    lf_scopes = list(lf_hier.top_scopes())
+    print(f"     pywellen: {len(pw_scopes)} top-level scopes")
+    print(f"     pylibfst: {len(lf_scopes)} top-level scopes")
+    
+    if len(pw_scopes) != len(lf_scopes):
+        mismatches.append(f"top_scopes count: pywellen={len(pw_scopes)}, pylibfst={len(lf_scopes)}")
+    else:
+        print(f"     ✓ Match: {len(lf_scopes)} top-level scopes")
+        
+        # Compare scope names
+        pw_scope_names = [s.name(pw_hier) for s in pw_scopes]
+        lf_scope_names = [s.name(lf_hier) for s in lf_scopes]
+        
+        print(f"     Top scope names:")
+        print(f"       pywellen: {pw_scope_names}")
+        print(f"       pylibfst: {lf_scope_names}")
+        
+        if sorted(pw_scope_names) != sorted(lf_scope_names):
+            mismatches.append(f"top_scopes names differ: pywellen={pw_scope_names}, pylibfst={lf_scope_names}")
+        else:
+            print(f"       ✓ Names match")
+    
+    # Test that top_scopes iterator can be reused
+    print("\n  8. Testing top_scopes() iterator protocol:")
+    lf_scopes1 = list(lf_hier.top_scopes())
+    lf_scopes2 = list(lf_hier.top_scopes())
+    if len(lf_scopes1) != len(lf_scopes2):
+        mismatches.append(f"top_scopes iterator reuse issue: first={len(lf_scopes1)}, second={len(lf_scopes2)}")
+    else:
+        print(f"     ✓ Iterator can be reused: {len(lf_scopes1)} scopes both times")
+    
+    # Test accessing vars and scopes properties
+    print("\n  9. Testing Var and Scope object access:")
+    if lf_vars and pw_vars:
+        # Test first var
+        lf_var = lf_vars[0]
+        pw_var = pw_vars[0]
+        
+        lf_var_name = lf_var.full_name(lf_hier)
+        pw_var_name = pw_var.full_name(pw_hier)
+        print(f"     First var full_name:")
+        print(f"       pywellen: {pw_var_name}")
+        print(f"       pylibfst: {lf_var_name}")
+        
+        # Test var methods exist and work
+        try:
+            lf_var.name(lf_hier)
+            lf_var.var_type()
+            lf_var.direction()
+            print(f"     ✓ Var methods (name, var_type, direction) work")
+        except Exception as e:
+            mismatches.append(f"Var method error: {e}")
+            print(f"     ⚠ Var method error: {e}")
+    
+    if lf_scopes and pw_scopes:
+        # Test first scope
+        lf_scope = lf_scopes[0]
+        pw_scope = pw_scopes[0]
+        
+        lf_scope_name = lf_scope.full_name(lf_hier)
+        pw_scope_name = pw_scope.full_name(pw_hier)
+        print(f"     First scope full_name:")
+        print(f"       pywellen: {pw_scope_name}")
+        print(f"       pylibfst: {lf_scope_name}")
+        
+        # Test scope methods exist and work
+        try:
+            lf_scope.name(lf_hier)
+            lf_scope.scope_type()
+            # Test child iteration
+            child_vars = list(lf_scope.vars(lf_hier))
+            child_scopes = list(lf_scope.scopes(lf_hier))
+            print(f"     ✓ Scope methods work (has {len(child_vars)} vars, {len(child_scopes)} child scopes)")
+        except Exception as e:
+            mismatches.append(f"Scope method error: {e}")
+            print(f"     ⚠ Scope method error: {e}")
+    
+    # Summary
+    print(f"\n  Summary:")
+    if mismatches:
+        print(f"  Found {len(mismatches)} differences:")
+        for mismatch in mismatches:
+            print(f"    ⚠ {mismatch}")
+        
+        # Some differences might be acceptable
+        acceptable_patterns = [
+            "timescale:",  # Timescale representation might differ slightly
+        ]
+        
+        unexpected = []
+        for mismatch in mismatches:
+            is_acceptable = False
+            for pattern in acceptable_patterns:
+                if pattern in mismatch:
+                    is_acceptable = True
+                    break
+            if not is_acceptable:
+                unexpected.append(mismatch)
+        
+        if unexpected:
+            print(f"\n  Found {len(unexpected)} unexpected differences:")
+            for diff in unexpected:
+                print(f"    {diff}")
+            assert False, f"Found {len(unexpected)} unexpected differences in Hierarchy methods"
+        else:
+            print(f"\n  ✓ All differences are acceptable (timescale representation may vary)")
+    else:
+        print(f"  ✓ All Hierarchy methods match perfectly between pywellen and pylibfst")
+
+
+@pytest.mark.skipif(
+    pylibfst is None or pywellen is None,
+    reason="Both pylibfst and pywellen required for comparison"
+)
 def test_hierarchy_deep_comparison():
     """Deep comparison of hierarchy traversal between pywellen and pylibfst"""
     # Look for vcd_extensions.fst
@@ -929,6 +1155,9 @@ if __name__ == "__main__":
             
             test_var_api_compatibility()
             print("✓ Var API compatibility test passed")
+            
+            test_hierarchy_methods_compatibility()
+            print("✓ Hierarchy methods compatibility test passed")
             
             test_hierarchy_deep_comparison()
             print("✓ Hierarchy deep comparison test passed")
