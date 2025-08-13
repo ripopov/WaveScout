@@ -527,6 +527,219 @@ def test_time_range_comparison():
     pylibfst is None or pywellen is None,
     reason="Both pylibfst and pywellen required for comparison"
 )
+def test_var_api_compatibility():
+    """Test Var API compatibility between pywellen and pylibfst using vcd_extensions.fst"""
+    # Look for vcd_extensions.fst file
+    test_files = [
+        "../test_inputs/vcd_extensions.fst",
+        "../../test_inputs/vcd_extensions.fst",
+        "../../../test_inputs/vcd_extensions.fst",
+    ]
+    
+    fst_file = None
+    for path in test_files:
+        full_path = Path(__file__).parent / path
+        if full_path.exists():
+            fst_file = str(full_path.resolve())
+            break
+    
+    if not fst_file:
+        pytest.skip("vcd_extensions.fst not found")
+    
+    print(f"\nTesting Var API compatibility with: {fst_file}")
+    
+    # Load with both libraries
+    pw_wave = pywellen.Waveform(fst_file)
+    lf_wave = pylibfst.Waveform(fst_file)
+    
+    pw_hier = pw_wave.hierarchy
+    lf_hier = lf_wave.hierarchy
+    
+    # Get all variables from both libraries
+    pw_vars = list(pw_hier.all_vars())
+    lf_vars = list(lf_hier.all_vars())
+    
+    print(f"  Found {len(pw_vars)} pywellen vars, {len(lf_vars)} pylibfst vars")
+    
+    # Create a mapping by full name for comparison
+    pw_var_map = {}
+    for var in pw_vars:
+        full_name = var.full_name(pw_hier).strip()
+        pw_var_map[full_name] = var
+    
+    lf_var_map = {}
+    for var in lf_vars:
+        full_name = var.full_name(lf_hier).strip()
+        lf_var_map[full_name] = var
+    
+    # Find common variables
+    common_names = set(pw_var_map.keys()) & set(lf_var_map.keys())
+    print(f"  Found {len(common_names)} common variables")
+    
+    # Test API on ALL variables
+    tested_count = 0
+    api_mismatches = []
+    vars_with_mismatches = []
+    
+    print(f"\n  Testing all {len(common_names)} common variables...")
+    
+    for var_name in sorted(common_names):
+        pw_var = pw_var_map[var_name]
+        lf_var = lf_var_map[var_name]
+        
+        tested_count += 1
+        var_mismatches = []
+        
+        # Determine category for display
+        if pw_var.is_real():
+            category = "real"
+        elif pw_var.is_string():
+            category = "string"
+        elif pw_var.is_1bit():
+            category = "1bit"
+        else:
+            category = f"{pw_var.length() or 'unknown'}-bit"
+        
+        # Test var_type
+        pw_type = pw_var.var_type()
+        lf_type = lf_var.var_type()
+        if pw_type != lf_type:
+            msg = f"var_type: pywellen={pw_type}, pylibfst={lf_type}"
+            var_mismatches.append(msg)
+            api_mismatches.append(f"{var_name}: {msg}")
+        
+        # Test enum_type
+        pw_enum = pw_var.enum_type(pw_hier)
+        lf_enum = lf_var.enum_type(lf_hier)
+        if pw_enum != lf_enum:
+            msg = f"enum_type: pywellen={pw_enum}, pylibfst={lf_enum}"
+            var_mismatches.append(msg)
+            api_mismatches.append(f"{var_name}: {msg}")
+        
+        # Test vhdl_type_name
+        pw_vhdl = pw_var.vhdl_type_name(pw_hier)
+        lf_vhdl = lf_var.vhdl_type_name(lf_hier)
+        if pw_vhdl != lf_vhdl:
+            msg = f"vhdl_type_name: pywellen={pw_vhdl}, pylibfst={lf_vhdl}"
+            var_mismatches.append(msg)
+            api_mismatches.append(f"{var_name}: {msg}")
+        
+        # Test direction
+        pw_dir = pw_var.direction()
+        lf_dir = lf_var.direction()
+        if pw_dir != lf_dir:
+            msg = f"direction: pywellen={pw_dir}, pylibfst={lf_dir}"
+            var_mismatches.append(msg)
+            api_mismatches.append(f"{var_name}: {msg}")
+        
+        # Test length
+        pw_len = pw_var.length()
+        lf_len = lf_var.length()
+        if pw_len != lf_len:
+            msg = f"length: pywellen={pw_len}, pylibfst={lf_len}"
+            var_mismatches.append(msg)
+            api_mismatches.append(f"{var_name}: {msg}")
+        
+        # Test is_real
+        pw_real = pw_var.is_real()
+        lf_real = lf_var.is_real()
+        if pw_real != lf_real:
+            msg = f"is_real: pywellen={pw_real}, pylibfst={lf_real}"
+            var_mismatches.append(msg)
+            api_mismatches.append(f"{var_name}: {msg}")
+        
+        # Test is_string
+        pw_str = pw_var.is_string()
+        lf_str = lf_var.is_string()
+        if pw_str != lf_str:
+            msg = f"is_string: pywellen={pw_str}, pylibfst={lf_str}"
+            var_mismatches.append(msg)
+            api_mismatches.append(f"{var_name}: {msg}")
+        
+        # Note: is_bit_vector is not applicable to libfst - it's a pywellen-specific encoding concept
+        # so we skip comparing it
+        
+        # Test is_1bit
+        pw_1bit = pw_var.is_1bit()
+        lf_1bit = lf_var.is_1bit()
+        if pw_1bit != lf_1bit:
+            msg = f"is_1bit: pywellen={pw_1bit}, pylibfst={lf_1bit}"
+            var_mismatches.append(msg)
+            api_mismatches.append(f"{var_name}: {msg}")
+        
+        # Test index
+        pw_idx = pw_var.index()
+        lf_idx = lf_var.index()
+        # Compare index values - both might be None or have msb/lsb attributes
+        if (pw_idx is None) != (lf_idx is None):
+            msg = f"index: pywellen={pw_idx}, pylibfst={lf_idx}"
+            var_mismatches.append(msg)
+            api_mismatches.append(f"{var_name}: {msg}")
+        elif pw_idx is not None and lf_idx is not None:
+            # Both have indices, compare msb and lsb
+            pw_msb = pw_idx.msb() if hasattr(pw_idx, 'msb') else None
+            pw_lsb = pw_idx.lsb() if hasattr(pw_idx, 'lsb') else None
+            lf_msb = lf_idx.msb() if hasattr(lf_idx, 'msb') else None
+            lf_lsb = lf_idx.lsb() if hasattr(lf_idx, 'lsb') else None
+            if pw_msb != lf_msb or pw_lsb != lf_lsb:
+                msg = f"index: pywellen=[{pw_msb}:{pw_lsb}], pylibfst=[{lf_msb}:{lf_lsb}]"
+                var_mismatches.append(msg)
+                api_mismatches.append(f"{var_name}: {msg}")
+        
+        # If this variable had mismatches, record it
+        if var_mismatches:
+            vars_with_mismatches.append((var_name, category, var_mismatches))
+    
+    # Print details for variables with mismatches
+    if vars_with_mismatches:
+        print(f"\n  Variables with mismatches ({len(vars_with_mismatches)} out of {tested_count}):")
+        for var_name, category, mismatches in vars_with_mismatches:
+            print(f"\n  {var_name} ({category}):")
+            for mismatch in mismatches:
+                print(f"    ⚠ {mismatch}")
+    else:
+        print(f"\n  ✓ All {tested_count} variables match perfectly!")
+    
+    # Summary
+    print(f"\n  Summary: Tested {tested_count} variables")
+    if api_mismatches:
+        print(f"  Found {len(api_mismatches)} API differences (may be intentional):")
+        for mismatch in api_mismatches[:10]:  # Show first 10
+            print(f"    {mismatch}")
+        
+        # Check if these are known/acceptable differences
+        # Some differences might be due to different interpretations of the FST format
+        # or differences in how pywellen vs pylibfst handle certain edge cases
+        known_patterns = [
+            ": length: pywellen=None, pylibfst=8",  # Real variables report None in pywellen but 8 (bytes) in pylibfst
+        ]
+        
+        unexpected_mismatches = []
+        for mismatch in api_mismatches:
+            is_known = False
+            for pattern in known_patterns:
+                if pattern in mismatch:
+                    is_known = True
+                    break
+            if not is_known:
+                unexpected_mismatches.append(mismatch)
+        
+        if unexpected_mismatches:
+            print(f"\n  ⚠ Found {len(unexpected_mismatches)} unexpected API mismatches:")
+            for mismatch in unexpected_mismatches:
+                print(f"    {mismatch}")
+            assert False, f"Found {len(unexpected_mismatches)} unexpected API mismatches"
+        else:
+            print(f"\n  ✓ All API differences are known/expected")
+            print(f"  Note: Real variables report length=8 in pylibfst (8 bytes for double precision float)")
+    else:
+        print(f"  ✓ All Var API methods match perfectly between pywellen and pylibfst")
+
+
+@pytest.mark.skipif(
+    pylibfst is None or pywellen is None,
+    reason="Both pylibfst and pywellen required for comparison"
+)
 def test_hierarchy_deep_comparison():
     """Deep comparison of hierarchy traversal between pywellen and pylibfst"""
     # Look for vcd_extensions.fst
@@ -713,6 +926,9 @@ if __name__ == "__main__":
         if pywellen:
             test_api_compatibility()
             print("✓ API compatibility test passed")
+            
+            test_var_api_compatibility()
+            print("✓ Var API compatibility test passed")
             
             test_hierarchy_deep_comparison()
             print("✓ Hierarchy deep comparison test passed")

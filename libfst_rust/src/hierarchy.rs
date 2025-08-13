@@ -260,11 +260,11 @@ impl Var {
         self.var_type.is_string()
     }
     
-    pub fn is_bit_vector(&self) -> bool {
-        self.length.unwrap_or(1) > 1
-    }
-    
     pub fn is_1bit(&self) -> bool {
+        // Strings and real values are never 1-bit wires
+        if self.is_string() || self.is_real() {
+            return false;
+        }
         self.length.unwrap_or(1) == 1
     }
     

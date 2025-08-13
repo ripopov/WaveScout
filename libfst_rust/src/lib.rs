@@ -247,7 +247,24 @@ impl PyVar {
             hierarchy::VarType::WOr => "WOr",
             hierarchy::VarType::String => "String",
             hierarchy::VarType::Port => "Port",
-            _ => "Wire",
+            hierarchy::VarType::SparseArray => "SparseArray",
+            hierarchy::VarType::RealTime => "RealTime",
+            // SystemVerilog types
+            hierarchy::VarType::Bit => "Bit",
+            hierarchy::VarType::Logic => "Logic",
+            hierarchy::VarType::Int => "Int",
+            hierarchy::VarType::ShortInt => "ShortInt",
+            hierarchy::VarType::LongInt => "LongInt",
+            hierarchy::VarType::Byte => "Byte",
+            hierarchy::VarType::Enum => "Enum",
+            hierarchy::VarType::ShortReal => "ShortReal",
+            // VHDL types (though FST may not use these)
+            hierarchy::VarType::Boolean => "Boolean",
+            hierarchy::VarType::BitVector => "BitVector",
+            hierarchy::VarType::StdLogic => "StdLogic",
+            hierarchy::VarType::StdLogicVector => "StdLogicVector",
+            hierarchy::VarType::StdULogic => "StdULogic",
+            hierarchy::VarType::StdULogicVector => "StdULogicVector",
         }
     }
     
@@ -281,10 +298,6 @@ impl PyVar {
     
     fn is_string(&self) -> bool {
         self.inner.is_string()
-    }
-    
-    fn is_bit_vector(&self) -> bool {
-        self.inner.is_bit_vector()
     }
     
     fn is_1bit(&self) -> bool {
