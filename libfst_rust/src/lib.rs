@@ -567,10 +567,8 @@ impl PyWaveform {
     }
     
     #[getter]
-    fn time_table(&self) -> Option<PyTimeTable> {
-        self.inner.time_table.as_ref().map(|tt| PyTimeTable {
-            inner: tt.clone(),
-        })
+    fn time_range(&self) -> Option<(u64, u64)> {
+        self.inner.time_range
     }
     
     fn load_body(&mut self) -> PyResult<()> {

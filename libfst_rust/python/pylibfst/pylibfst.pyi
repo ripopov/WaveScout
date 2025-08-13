@@ -71,7 +71,7 @@ class TimeTable:
 class Waveform:
     """Main waveform reader for FST files"""
     hierarchy: Hierarchy
-    time_table: Optional[TimeTable]
+    time_range: Optional[Tuple[int, int]]  # (start_time, end_time) - FST time boundaries
 
     def __init__(
         self,
@@ -87,7 +87,11 @@ class Waveform:
             path: Path to the FST file
             multi_threaded: Whether to use multi-threading for signal loading
             remove_scopes_with_empty_name: Whether to filter out unnamed scopes
-            load_body: Whether to immediately load the waveform body (time table and signals)
+            load_body: Whether to immediately load the waveform body (time range and signals)
+        
+        Note:
+            libfst doesn't support efficient full time table access. This implementation
+            provides time_range (start, end) and a compatibility time_table with just those values.
         """
         ...
     

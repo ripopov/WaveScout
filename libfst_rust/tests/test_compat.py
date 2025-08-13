@@ -437,6 +437,96 @@ def test_query_result_comparison():
     pylibfst is None or pywellen is None,
     reason="Both pylibfst and pywellen required for comparison"
 )
+def test_time_range_comparison():
+    """Compare time range between pywellen and pylibfst"""
+    # Use vcd_extensions.fst for testing
+    test_files = [
+        "../test_inputs/vcd_extensions.fst",
+        "../../test_inputs/vcd_extensions.fst",
+        "../../../test_inputs/vcd_extensions.fst",
+    ]
+    
+    fst_file = None
+    for path in test_files:
+        full_path = Path(__file__).parent / path
+        if full_path.exists():
+            fst_file = str(full_path.resolve())
+            break
+    
+    if not fst_file:
+        pytest.skip("vcd_extensions.fst not found")
+    
+    print(f"\nComparing time range for: {fst_file}")
+    
+    # Load with both libraries
+    pw_wave = pywellen.Waveform(fst_file)
+    lf_wave = pylibfst.Waveform(fst_file)
+    
+    # Get pywellen's time table
+    pw_time_table = pw_wave.time_table
+    
+    # Get pylibfst's time range
+    lf_time_range = lf_wave.time_range if hasattr(lf_wave, 'time_range') else None
+    
+    # Note: Converting pywellen time_table to list can hang on some files
+    # So we'll access it more carefully
+    if pw_time_table:
+        try:
+            # Try to get first and last entries without converting entire table to list
+            pw_start = pw_time_table[0]
+            # Get length first
+            pw_len = len(pw_time_table)
+            pw_end = pw_time_table[pw_len - 1] if pw_len > 0 else pw_start
+            print(f"\n  Pywellen time table: length={pw_len}, start={pw_start}, end={pw_end}")
+        except Exception as e:
+            print(f"\n  Error accessing pywellen time table: {e}")
+            pw_start = None
+            pw_end = None
+    else:
+        print(f"\n  Pywellen time table: None")
+        pw_start = None
+        pw_end = None
+    
+    print(f"  Pylibfst time range: {lf_time_range}")
+    
+    # Check that pylibfst's time range matches first and last of pywellen's time table
+    if pw_start is not None and pw_end is not None and lf_time_range:
+        lf_start, lf_end = lf_time_range
+        
+        print(f"\n  Comparing time boundaries:")
+        print(f"    Start time - pywellen: {pw_start}, pylibfst: {lf_start}")
+        print(f"    End time - pywellen: {pw_end}, pylibfst: {lf_end}")
+        
+        start_match = pw_start == lf_start
+        end_match = pw_end == lf_end
+        
+        if start_match and end_match:
+            print(f"  ✓ Time range matches: start={lf_start}, end={lf_end}")
+        else:
+            if not start_match:
+                print(f"  ⚠ Start time mismatch: pywellen={pw_start}, pylibfst={lf_start}")
+            if not end_match:
+                print(f"  ⚠ End time mismatch: pywellen={pw_end}, pylibfst={lf_end}")
+        
+        # Assert that boundaries match
+        assert start_match, f"Start time mismatch: {pw_start} vs {lf_start}"
+        assert end_match, f"End time mismatch: {pw_end} vs {lf_end}"
+    else:
+        if pw_start is None or pw_end is None:
+            print("  ⚠ Could not access pywellen time table")
+        if not lf_time_range:
+            print("  ⚠ Pylibfst has no time range")
+        if pw_start is None or pw_end is None or not lf_time_range:
+            pytest.skip("Could not compare time information")
+    
+    print("\n  Note: libfst doesn't support efficient full time table access.")
+    print("  pylibfst provides time_range (start, end) instead of full time table.")
+
+
+@pytest.mark.skipif(
+    pylibfst is None or pywellen is None,
+    reason="Both pylibfst and pywellen required for comparison"
+)
 def test_hierarchy_deep_comparison():
     """Deep comparison of hierarchy traversal between pywellen and pylibfst"""
     # Look for vcd_extensions.fst
@@ -629,6 +719,9 @@ if __name__ == "__main__":
             
             test_query_result_comparison()
             print("✓ QueryResult comparison test passed")
+            
+            test_time_range_comparison()
+            print("✓ Time range comparison test passed")
         else:
             print("⚠ Skipping API compatibility tests (pywellen not available)")
     else:

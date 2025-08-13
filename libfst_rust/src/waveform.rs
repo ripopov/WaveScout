@@ -8,7 +8,7 @@ use crate::signal::{Signal, SignalSource, TimeTable};
 pub struct Waveform {
     pub hierarchy: Arc<Hierarchy>,
     pub wave_source: Option<Arc<SignalSource>>,
-    pub time_table: Option<TimeTable>,
+    pub time_range: Option<(u64, u64)>,  // (start_time, end_time)
     reader: Option<Arc<FstReader>>,
     multi_threaded: bool,
 }
@@ -32,7 +32,7 @@ impl Waveform {
         let mut waveform = Waveform {
             hierarchy: hierarchy_arc,
             wave_source: None,
-            time_table: None,
+            time_range: None,
             reader: Some(reader_arc.clone()),
             multi_threaded,
         };
@@ -45,7 +45,7 @@ impl Waveform {
         Ok(waveform)
     }
     
-    /// Load waveform body (time table and signal source)
+    /// Load waveform body (time range and signal source)
     pub fn load_body(&mut self) -> Result<(), String> {
         if self.wave_source.is_some() {
             return Ok(()); // Already loaded
@@ -54,14 +54,10 @@ impl Waveform {
         let reader = self.reader.as_ref()
             .ok_or_else(|| "No reader available".to_string())?;
         
-        // Create time table from FST time range
+        // Store time range from FST
         let start_time = reader.start_time();
         let end_time = reader.end_time();
-        
-        // For now, create a simple time table with start and end times
-        // In a real implementation, this would be populated from actual signal changes
-        let time_table = TimeTable::from_times(vec![start_time, end_time]);
-        self.time_table = Some(time_table);
+        self.time_range = Some((start_time, end_time));
         
         // Create signal source
         let signal_source = SignalSource::new(reader.clone());
