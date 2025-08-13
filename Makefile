@@ -1,23 +1,29 @@
-.PHONY: install build clean test help compile
+.PHONY: install build clean test help compile build-libfst
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-install:  ## Install dependencies and build pywellen
+build-libfst:  ## Build libfst C library
+	@echo "Building libfst..."
+	@mkdir -p libfst/build
+	cd libfst/build && cmake .. && make
+
+install:  ## Install dependencies and build pywellen and libfst
 	poetry config virtualenvs.in-project true
 	poetry install
 	poetry run build-pywellen
+	$(MAKE) build-libfst
 
 build:  ## Build the project
 	poetry run build-pywellen
+	$(MAKE) build-libfst
 	poetry build
 
 clean:  ## Clean build artifacts
-	if exist dist rmdir /s /q dist
-	if exist build rmdir /s /q build
-	if exist *.egg-info rmdir /s /q *.egg-info
-	for /d /r . %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d"
-	for /r . %%f in (*.pyc) do @if exist "%%f" del "%%f"
+	rm -rf dist build *.egg-info
+	rm -rf libfst/build
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 
 test:  ## Run tests
 	poetry run pytest tests/ --ignore=wellen/
