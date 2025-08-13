@@ -1,10 +1,21 @@
 # WaveScout Feature Planning Guide
 
 ## Context
-WaveScout is a Digital/Mixed signal waveform viewer similar to GtkWave, Verdi, ModelSim Waveform Viewer, etc. It uses a Model-View architecture with Qt6/PySide6 for UI and a Rust backend (pywellen) for waveform data processing.
+WaveScout is a Digital/Mixed signal waveform viewer similar to GtkWave, Verdi, ModelSim Waveform Viewer, etc. 
+It uses a Model-View architecture with Qt6/PySide6 for UI and a Rust backends for waveform data processing.
 
 ## Your Task
-When a user provides a new feature or bugfix description, create a comprehensive technical plan following this guide. This plan will be used by AI Coding agent to implement the feature. And it will be reviewed by the team for clairity and correctness. Do not write empty sections or uninformative sections (for example, if UI has no changes, do not write "UI Integration" section. If algorithms are trival, do not write them.) 
+When a user provides a new feature or bugfix description, create a comprehensive technical plan following this guide. 
+This plan will be used by AI Coding agent to implement the feature. And it will be reviewed by the team for clairity and correctness.
+Do not write empty sections or uninformative sections (for example, if UI has no changes, do not write "UI Integration" section. 
+If algorithms are trival, do not write them.)
+
+## Plan structure 
+
+Generated docs/features/<N>_<BRIEF>_plan.md should contain 3 major chapters:
+- User stories and Requirements Analysis. This is the most important part of the plan. 
+- Codebase Research
+- Implementation Planning
 
 ## Step-by-Step Planning Process
 
