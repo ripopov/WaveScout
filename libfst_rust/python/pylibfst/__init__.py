@@ -54,3 +54,21 @@ __all__ = [
 ]
 
 __version__ = "0.1.0"
+
+# Re-export for type checking
+if False:  # TYPE_CHECKING
+    from .pylibfst import (
+        Waveform as Waveform,
+        Hierarchy as Hierarchy,
+        Scope as Scope,
+        Var as Var,
+        Signal as Signal,
+        TimeTable as TimeTable,
+        Timescale as Timescale,
+        TimescaleUnit as TimescaleUnit,
+        VarIndex as VarIndex,
+        VarIter as VarIter,
+        ScopeIter as ScopeIter,
+        SignalChangeIter as SignalChangeIter,
+        QueryResult as QueryResult,
+    )
