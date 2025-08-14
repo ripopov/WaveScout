@@ -66,3 +66,31 @@ install(TARGETS fst
 )
 
 install(FILES ${HEADERS} DESTINATION include)
+
+# Test executable
+option(BUILD_TESTS "Build test programs" ON)
+
+if(BUILD_TESTS)
+    # C++ test for FST reader
+    add_executable(test_fst_reader test_fst_reader.cpp)
+    
+    # Set C++ standard
+    set_target_properties(test_fst_reader PROPERTIES
+        CXX_STANDARD 11
+        CXX_STANDARD_REQUIRED ON
+    )
+    
+    # Link with fst library
+    target_link_libraries(test_fst_reader PRIVATE fst)
+    
+    # Copy test file to build directory for easier testing
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/test/vcd_extensions.fst
+                   ${CMAKE_CURRENT_BINARY_DIR}/test/vcd_extensions.fst
+                   COPYONLY)
+    
+    # Add test
+    enable_testing()
+    add_test(NAME test_fst_reader 
+             COMMAND test_fst_reader
+             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+endif()
