@@ -32,17 +32,22 @@ if (-not (Test-Path $cmakeCache)) {
     $vcpkgToolchain = Join-Path $vcpkgRoot "scripts\buildsystems\vcpkg.cmake"
     $vcpkgInstalled = Join-Path (Split-Path $PSScriptRoot) "vcpkg_installed"
     
-    # Find cl.exe for Ninja (needs explicit compiler path)
-    $clPath = (Get-Command cl.exe -ErrorAction SilentlyContinue).Source
-    if ($clPath) {
-        Write-Host "Using compiler: $clPath" -ForegroundColor Green
+    # Use environment variables CC and CXX if set (from setup_env.ps1)
+    # Otherwise find cl.exe for Ninja (needs explicit compiler path)
+    if ($env:CC -and $env:CXX) {
+        Write-Host "Using compiler from environment: $env:CC" -ForegroundColor Green
+    } else {
+        $clPath = (Get-Command cl.exe -ErrorAction SilentlyContinue).Source
+        if ($clPath) {
+            Write-Host "Using compiler: $clPath" -ForegroundColor Green
+            $env:CC = $clPath
+            $env:CXX = $clPath
+        }
     }
     
     cmake -B $buildDir `
         -G Ninja `
         -DCMAKE_BUILD_TYPE=Release `
-        -DCMAKE_C_COMPILER="$clPath" `
-        -DCMAKE_CXX_COMPILER="$clPath" `
         -DCMAKE_TOOLCHAIN_FILE="$vcpkgToolchain" `
         -DVCPKG_TARGET_TRIPLET="x64-windows" `
         -DVCPKG_INSTALLED_DIR="$vcpkgInstalled"

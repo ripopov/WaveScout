@@ -69,6 +69,7 @@ if (Test-Path $vcpkgRoot) {
 # Set vcpkg environment variables
 $env:VCPKG_ROOT = $vcpkgRoot
 $env:VCPKG_DEFAULT_TRIPLET = "x64-windows"
+$env:VCPKG_INSTALLED_DIR = Join-Path (Split-Path $PSScriptRoot) "vcpkg_installed"
 
 # Verify tools are available
 $tools = @{
@@ -96,6 +97,18 @@ if (-not $allToolsFound) {
     Write-Warning "Some tools are missing. Build may fail."
 }
 
+# Set compiler paths for Ninja (required due to spaces in paths)
+# This must be done after verifying tools are available
+$clPath = Get-Command cl.exe -ErrorAction SilentlyContinue
+if ($clPath) {
+    $env:CC = $clPath.Source
+    $env:CXX = $clPath.Source
+    Write-Host ""
+    Write-Host "Compiler environment variables set for Ninja:" -ForegroundColor Cyan
+    Write-Host "  CC=$($env:CC)" -ForegroundColor Green
+    Write-Host "  CXX=$($env:CXX)" -ForegroundColor Green
+}
+
 # Set environment marker
 $env:LIBFST_ENV_INITIALIZED = "1"
 
@@ -108,7 +121,8 @@ Write-Host "Environment setup complete!" -ForegroundColor Green
 Write-Host "You can now use cmake, cl, and vcpkg commands." -ForegroundColor Green
 Write-Host ""
 Write-Host "Quick commands:" -ForegroundColor Cyan
-$cmakeCmd = "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=`"$vcpkgRoot\scripts\buildsystems\vcpkg.cmake`""
+$vcpkgInstalledDir = Join-Path (Split-Path $PSScriptRoot) "vcpkg_installed"
+$cmakeCmd = "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=`"$vcpkgRoot\scripts\buildsystems\vcpkg.cmake`" -DVCPKG_TARGET_TRIPLET=`"x64-windows`" -DVCPKG_INSTALLED_DIR=`"$vcpkgInstalledDir`""
 Write-Host "  Configure: $cmakeCmd"
 Write-Host "  Build:     cmake --build build"
 Write-Host "  Test:      .\build\test_fst_reader.exe"
