@@ -21,6 +21,8 @@ except ImportError:
     pywellen = None
 
 import pytest
+import time
+import statistics
 
 
 def get_test_fst_file():
@@ -1127,6 +1129,270 @@ def test_hierarchy_deep_comparison():
     assert common_ratio > 0.8, f"Only {common_ratio:.1%} of variables are common"
     
     print(f"\n  ✓ Hierarchy comparison test passed ({common_ratio:.1%} variable overlap)")
+
+
+@pytest.mark.skipif(
+    pylibfst is None or pywellen is None,
+    reason="Both pylibfst and pywellen required for comparison"
+)
+def test_performance_comparison():
+    """Compare performance between pywellen and pylibfst using analog_signals_short.fst"""
+    # Look for analog_signals_short.fst (smaller test file for reasonable test time)
+    test_files = [
+        "../test_inputs/analog_signals_short.fst",
+        "../../test_inputs/analog_signals_short.fst",
+        "../../../test_inputs/analog_signals_short.fst",
+    ]
+    
+    fst_file = None
+    for path in test_files:
+        full_path = Path(__file__).parent / path
+        if full_path.exists():
+            fst_file = str(full_path.resolve())
+            break
+    
+    if not fst_file:
+        pytest.skip("analog_signals_short.fst not found")
+    
+    print(f"\n{'='*80}")
+    print(f"Performance Comparison: pywellen vs pylibfst")
+    print(f"Test file: {fst_file}")
+    print(f"{'='*80}")
+    
+    # Get file size for reference
+    file_size_mb = Path(fst_file).stat().st_size / (1024 * 1024)
+    print(f"File size: {file_size_mb:.2f} MB")
+    
+    # 1. Compare waveform loading times
+    print(f"\n1. Waveform Loading Performance:")
+    print(f"{'-'*40}")
+    
+    # For large files, only do 1 iteration
+    iterations = 1 if file_size_mb > 1000 else 2
+    
+    # Test pywellen loading
+    print(f"  Testing pywellen ({iterations} iteration{'s' if iterations > 1 else ''})...")
+    pw_load_times = []
+    for i in range(iterations):
+        start = time.perf_counter()
+        pw_wave = pywellen.Waveform(fst_file)
+        pw_load_time = time.perf_counter() - start
+        pw_load_times.append(pw_load_time)
+        print(f"    Run {i+1}: {pw_load_time * 1_000_000:.1f} μs")
+    
+    pw_avg_load = statistics.mean(pw_load_times)
+    if iterations > 1:
+        print(f"    Average: {pw_avg_load * 1_000_000:.1f} μs")
+    
+    # Test pylibfst loading
+    print(f"  Testing pylibfst ({iterations} iteration{'s' if iterations > 1 else ''})...")
+    lf_load_times = []
+    for i in range(iterations):
+        start = time.perf_counter()
+        lf_wave = pylibfst.Waveform(fst_file)
+        lf_load_time = time.perf_counter() - start
+        lf_load_times.append(lf_load_time)
+        print(f"    Run {i+1}: {lf_load_time * 1_000_000:.1f} μs")
+    
+    lf_avg_load = statistics.mean(lf_load_times)
+    if iterations > 1:
+        print(f"    Average: {lf_avg_load * 1_000_000:.1f} μs")
+    
+    speedup = pw_avg_load / lf_avg_load
+    if speedup > 1:
+        print(f"\n  ⚡ Result: pylibfst is {speedup:.2f}x faster than pywellen")
+    else:
+        print(f"\n  ⚡ Result: pywellen is {1/speedup:.2f}x faster than pylibfst")
+    
+    # 2. Compare signal loading performance
+    print(f"\n2. Signal Loading Performance:")
+    print(f"{'-'*40}")
+    
+    # Load fresh waveforms for signal testing
+    pw_wave = pywellen.Waveform(fst_file)
+    lf_wave = pylibfst.Waveform(fst_file)
+    
+    # Get all variables
+    pw_vars = list(pw_wave.hierarchy.all_vars())
+    lf_vars = list(lf_wave.hierarchy.all_vars())
+    
+    print(f"  Number of variables: pywellen={len(pw_vars)}, pylibfst={len(lf_vars)}")
+    
+    # Limit to first N signals for reasonable test time
+    # For large files, test fewer signals
+    max_signals = 20 if file_size_mb > 1000 else min(50, len(pw_vars), len(lf_vars))
+    print(f"  Testing first {max_signals} signals...")
+    
+    # Test pywellen signal loading
+    pw_signal_times = []
+    pw_signals = []
+    signal_names = []
+    
+    print(f"\n  Per-signal breakdown:")
+    print(f"  {'Signal Name':<20} {'Type':<10} {'Changes':<10} {'pywellen (μs)':>13} {'pylibfst (μs)':>13}   {'Speedup':>12}")
+    print(f"  {'-'*20} {'-'*10} {'-'*10} {'-'*13} {'-'*13}   {'-'*12}")
+    
+    for i, var in enumerate(pw_vars[:max_signals]):
+        signal_name = var.name(pw_wave.hierarchy)
+        signal_names.append(signal_name)
+        var_type = var.var_type()
+        
+        # Load with pywellen
+        start = time.perf_counter()
+        signal = pw_wave.get_signal(var)
+        pw_elapsed = time.perf_counter() - start
+        pw_signal_times.append(pw_elapsed)
+        pw_signals.append(signal)
+        
+        # Count transitions
+        num_changes = len(list(signal.all_changes()))
+    
+    # Store signal metadata
+    signal_metadata = []
+    
+    # Test pylibfst signal loading
+    lf_signal_times = []
+    lf_signals = []
+    for i, var in enumerate(lf_vars[:max_signals]):
+        # Load with pylibfst
+        start = time.perf_counter()
+        signal = lf_wave.get_signal(var)
+        lf_elapsed = time.perf_counter() - start
+        lf_signal_times.append(lf_elapsed)
+        lf_signals.append(signal)
+        
+        # Print comparison for this signal
+        if i < len(signal_names):
+            # Get metadata from pywellen var
+            pw_var = pw_vars[i]
+            var_type = pw_var.var_type()
+            num_changes = len(list(pw_signals[i].all_changes()))
+            
+            pw_time_us = pw_signal_times[i] * 1_000_000
+            lf_time_us = lf_elapsed * 1_000_000
+            if lf_elapsed > 0:
+                speedup = pw_signal_times[i] / lf_elapsed
+                if speedup > 1:
+                    speedup_str = f"{speedup:.2f}x pylib"
+                else:
+                    speedup_str = f"{1/speedup:.2f}x pywell"
+            else:
+                speedup_str = "N/A"
+            
+            # Truncate signal name if too long
+            display_name = signal_names[i][:20]
+            # Truncate type if too long
+            display_type = var_type[:10]
+            
+            print(f"  {display_name:<20} {display_type:<10} {num_changes:<10} {pw_time_us:>13.1f} {lf_time_us:>13.1f}   {speedup_str:>12}")
+    
+    # Summary statistics
+    pw_avg_signal_load = statistics.mean(pw_signal_times)
+    pw_total_signal_load = sum(pw_signal_times)
+    lf_avg_signal_load = statistics.mean(lf_signal_times)
+    lf_total_signal_load = sum(lf_signal_times)
+    
+    print(f"  {'-'*20} {'-'*10} {'-'*10} {'-'*13} {'-'*13}   {'-'*12}")
+    print(f"  {'TOTAL':<20} {'':<10} {'':<10} {pw_total_signal_load * 1_000_000:>13.1f} {lf_total_signal_load * 1_000_000:>13.1f}")
+    print(f"  {'AVERAGE':<20} {'':<10} {'':<10} {pw_avg_signal_load * 1_000_000:>13.1f} {lf_avg_signal_load * 1_000_000:>13.1f}")
+    
+    signal_speedup = pw_avg_signal_load / lf_avg_signal_load
+    if signal_speedup > 1:
+        print(f"\n  ⚡ Result: pylibfst is {signal_speedup:.2f}x faster than pywellen")
+    else:
+        print(f"\n  ⚡ Result: pywellen is {1/signal_speedup:.2f}x faster than pylibfst")
+    
+    # 3. Compare signal iteration and computation performance
+    print(f"\n3. Signal Value Iteration Performance:")
+    print(f"{'-'*40}")
+    
+    # Test iteration on just 1 signal to keep test time reasonable
+    if pw_signals and lf_signals:
+        print(f"  Testing iteration over 1 signal (first signal)...")
+        
+        # Test pywellen iteration
+        signal = pw_signals[0]
+        var_name = pw_vars[0].name(pw_wave.hierarchy) if pw_vars else "unknown"
+        print(f"  Signal: {var_name}")
+        
+        start = time.perf_counter()
+        pw_changes = 0
+        pw_values = []
+        
+        for time_val, value in signal.all_changes():
+            pw_changes += 1
+            if value is not None and isinstance(value, (int, float)):
+                pw_values.append(float(value))
+        
+        pw_iter_time = time.perf_counter() - start
+        print(f"  pywellen: {pw_iter_time * 1_000_000:.1f} μs, {pw_changes} changes")
+        if pw_values:
+            print(f"           Numeric values: {len(pw_values)}, avg: {statistics.mean(pw_values):.6f}")
+        
+        # Test pylibfst iteration
+        signal = lf_signals[0]
+        
+        start = time.perf_counter()
+        lf_changes = 0
+        lf_values = []
+        
+        for time_val, value in signal.all_changes():
+            lf_changes += 1
+            if value is not None and isinstance(value, (int, float)):
+                lf_values.append(float(value))
+        
+        lf_iter_time = time.perf_counter() - start
+        print(f"  pylibfst: {lf_iter_time * 1_000_000:.1f} μs, {lf_changes} changes")
+        if lf_values:
+            print(f"           Numeric values: {len(lf_values)}, avg: {statistics.mean(lf_values):.6f}")
+        
+        if lf_iter_time > 0:
+            iter_speedup = pw_iter_time / lf_iter_time
+            if iter_speedup > 1:
+                print(f"\n  ⚡ Result: pylibfst is {iter_speedup:.2f}x faster than pywellen")
+            else:
+                print(f"\n  ⚡ Result: pywellen is {1/iter_speedup:.2f}x faster than pylibfst")
+        else:
+            iter_speedup = 0
+    else:
+        print(f"  No signals loaded for iteration testing")
+        iter_speedup = 0
+    
+    # 4. Overall Summary
+    print(f"\n{'='*80}")
+    print(f"PERFORMANCE SUMMARY:")
+    print(f"{'-'*40}")
+    
+    # Waveform loading
+    if speedup > 1:
+        print(f"  Waveform loading: pylibfst is {speedup:.2f}x faster")
+    else:
+        print(f"  Waveform loading: pywellen is {1/speedup:.2f}x faster")
+    
+    # Signal loading
+    if signal_speedup > 1:
+        print(f"  Signal loading:   pylibfst is {signal_speedup:.2f}x faster")
+    else:
+        print(f"  Signal loading:   pywellen is {1/signal_speedup:.2f}x faster")
+    
+    # Value iteration
+    if iter_speedup > 1:
+        print(f"  Value iteration:  pylibfst is {iter_speedup:.2f}x faster")
+    elif iter_speedup > 0:
+        print(f"  Value iteration:  pywellen is {1/iter_speedup:.2f}x faster")
+    else:
+        print(f"  Value iteration:  No data available")
+    
+    # Overall average
+    if iter_speedup > 0:
+        overall_speedup = statistics.mean([speedup, signal_speedup, iter_speedup])
+        print(f"\n  Overall average:")
+        if overall_speedup > 1:
+            print(f"  🎉 pylibfst is {overall_speedup:.2f}x faster than pywellen on average")
+        else:
+            print(f"  ⚠️  pywellen is {1/overall_speedup:.2f}x faster than pylibfst on average")
+    
+    print(f"{'='*80}\n")
 
 
 if __name__ == "__main__":

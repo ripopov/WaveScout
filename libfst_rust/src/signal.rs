@@ -89,6 +89,13 @@ impl Signal {
         }
     }
     
+    /// Create a new signal with pre-allocated capacity
+    pub fn with_capacity(capacity: usize) -> Self {
+        Signal {
+            changes: Vec::with_capacity(capacity),
+        }
+    }
+    
     /// Add a change to the signal
     pub fn add_change(&mut self, time: u64, value: SignalValue) {
         self.changes.push(SignalChange { time, value });
@@ -230,7 +237,7 @@ impl TimeTable {
 
 // C callback context for signal loading
 struct SignalLoadContext {
-    signal: Arc<Mutex<Signal>>,
+    signal: *mut Signal,  // Raw pointer for direct access, no mutex needed
     is_real: bool,
     is_string: bool,
 }
@@ -244,24 +251,67 @@ unsafe extern "C" fn signal_callback(
 ) {
     let ctx = &*(user_data as *const SignalLoadContext);
     
-    // Convert value to string - FST uses null-terminated strings
-    let value_str = if value.is_null() {
-        String::new()
-    } else {
-        // Find the null terminator
-        let mut len = 0;
-        while *value.add(len) != 0 {
-            len += 1;
-        }
-        
-        // Convert to string
-        let slice = std::slice::from_raw_parts(value, len);
-        String::from_utf8_lossy(slice).to_string()
-    };
+    // Direct access to signal without mutex lock
+    let signal = &mut *ctx.signal;
     
+    if value.is_null() {
+        signal.add_change(time, SignalValue::String(String::new()));
+        return;
+    }
+    
+    // Find the null terminator more efficiently
+    let mut len = 0;
+    while *value.add(len) != 0 {
+        len += 1;
+    }
+    
+    // Get the bytes directly
+    let bytes = std::slice::from_raw_parts(value, len);
+    
+    // Fast path for real signals - parse directly from bytes
+    if ctx.is_real {
+        // Parse float directly from bytes without String allocation
+        // Use std::str::from_utf8 which doesn't allocate
+        if let Ok(s) = std::str::from_utf8(bytes) {
+            if let Ok(val) = s.parse::<f64>() {
+                signal.add_change(time, SignalValue::Real(val));
+                return;
+            }
+        }
+        // Fall through to string path if parsing fails
+    }
+    
+    // Fast path for binary signals (most common case)
+    if !ctx.is_real && !ctx.is_string {
+        // Quick check: if first byte is 0 or 1, likely binary
+        // Only do full check if it looks binary
+        if len > 0 && (bytes[0] == b'0' || bytes[0] == b'1') {
+            let mut is_binary = true;
+            let mut binary = Vec::with_capacity(len);
+            
+            for &b in bytes {
+                if b == b'0' {
+                    binary.push(0);
+                } else if b == b'1' {
+                    binary.push(1);
+                } else {
+                    is_binary = false;
+                    break;
+                }
+            }
+            
+            if is_binary {
+                signal.add_change(time, SignalValue::Binary(binary));
+                return;
+            }
+        }
+    }
+    
+    // Only allocate string for non-binary/non-real cases
+    let value_str = String::from_utf8_lossy(bytes);
     let signal_value = SignalValue::from_fst_string(&value_str, ctx.is_real, ctx.is_string);
     
-    let mut signal = ctx.signal.lock().unwrap();
+    // Add change directly without locking
     signal.add_change(time, signal_value);
 }
 
@@ -272,32 +322,27 @@ pub fn load_signal_from_fst(
     is_real: bool,
     is_string: bool,
 ) -> Result<Signal, String> {
-    let signal = Arc::new(Mutex::new(Signal::new()));
+    // Create signal with pre-allocated capacity for better performance
+    // Use larger capacity for real signals which often have many transitions
+    let capacity = if is_real { 10240 } else { 1024 };
+    let mut signal = Signal::with_capacity(capacity);
     
-    // Create context without cloning the Arc
-    {
-        let ctx = SignalLoadContext {
-            signal: signal.clone(),
-            is_real,
-            is_string,
-        };
-        
-        // Clear all masks and set only the one we want
-        reader.clear_fac_process_mask_all();
-        reader.set_fac_process_mask(handle);
-        
-        // Load signal data
-        let ctx_ptr = &ctx as *const _ as *mut std::os::raw::c_void;
-        if !reader.iterate_blocks(Some(signal_callback), ctx_ptr) {
-            return Err("Failed to iterate blocks".to_string());
-        }
-    } // ctx is dropped here, releasing the clone
+    // Create context with raw pointer to the signal
+    let ctx = SignalLoadContext {
+        signal: &mut signal as *mut Signal,
+        is_real,
+        is_string,
+    };
     
-    // Now we can extract signal from Arc<Mutex>
-    let signal = Arc::try_unwrap(signal)
-        .map_err(|_| "Failed to unwrap signal Arc")?
-        .into_inner()
-        .map_err(|_| "Failed to unwrap signal Mutex")?;
+    // Clear all masks and set only the one we want
+    reader.clear_fac_process_mask_all();
+    reader.set_fac_process_mask(handle);
+    
+    // Load signal data
+    let ctx_ptr = &ctx as *const _ as *mut std::os::raw::c_void;
+    if !reader.iterate_blocks(Some(signal_callback), ctx_ptr) {
+        return Err("Failed to iterate blocks".to_string());
+    }
     
     Ok(signal)
 }
