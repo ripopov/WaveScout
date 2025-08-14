@@ -321,13 +321,11 @@ def test_fst_loading():
         # Close window
         window.close()
         
-        return True
-        
     except Exception as e:
         print(f"\n✗ TEST FAILED: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
         
     finally:
         # Clean up temp file

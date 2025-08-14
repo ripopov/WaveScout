@@ -24,9 +24,11 @@ types-PyYAML = "^6.0"
 nuitka = "^2.7.12"
 setuptools = "^80.9.0"
 wheel = "^0.45.1"
+patchelf = "^0.17.2.4"
 
 [tool.poetry.scripts]
 build-pywellen = "scripts.build_pywellen:main"
+build-pylibfst = "scripts.build_pylibfst:main"
 
 [build-system]
 requires = ["poetry-core"]

@@ -107,6 +107,9 @@ class MarkerTestHelper:
                     signal_node = window.design_tree_view._create_signal_node(node)
                     if signal_node:
                         window.design_tree_view.signals_selected.emit([signal_node])
+                        # Wait for signal to be processed
+                        QTest.qWait(200)
+                        QApplication.processEvents()
                         return signal_node
                 
                 # Recurse into children
@@ -212,11 +215,13 @@ def test_marker_integration():
         signal_node = helper.find_and_add_first_signal(window)
         assert signal_node is not None, "No signal found to add"
         
-        QTest.qWait(100)
+        # Wait longer for signal to be fully processed
+        QTest.qWait(300)
+        QApplication.processEvents()
         
         # Verify signal added
         session = window.wave_widget.session
-        assert len(session.root_nodes) == 1, "Signal not added to session"
+        assert len(session.root_nodes) == 1, f"Signal not added to session (found {len(session.root_nodes)} nodes)"
         print(f"   ✓ Added signal: {signal_node.name}")
         
         # Step 3: Place 3 markers at different positions
@@ -320,13 +325,11 @@ def test_marker_integration():
         # Close window
         window.close()
         
-        return True
-        
     except Exception as e:
         print(f"\n✗ TEST FAILED: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
         
     finally:
         # Clean up temp file

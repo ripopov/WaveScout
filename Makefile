@@ -17,16 +17,16 @@ else
     PATHSEP := /
 endif
 
-.PHONY: install build clean test help compile build-libfst build-pylibfst
+.PHONY: install build clean clean-venv test help compile build-pylibfst
 
 help:  ## Show this help
 ifeq ($(detected_OS),Windows)
 	@echo Available targets:
-	@echo   install      - Install dependencies and build pywellen, libfst and pylibfst
+	@echo   install      - Install dependencies and build pywellen and pylibfst
 	@echo   build        - Build the project
-	@echo   build-libfst - Build libfst C library
-	@echo   build-pylibfst - Build pylibfst Rust extension
+	@echo   build-pylibfst - Build pylibfst Rust extension (includes libfst)
 	@echo   clean        - Clean build artifacts
+	@echo   clean-venv   - Remove virtual environment
 	@echo   test         - Run tests
 	@echo   typecheck    - Run mypy type checker
 	@echo   dev          - Run the demo application
@@ -35,49 +35,42 @@ else
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 endif
 
-build-pylibfst:  ## Build pylibfst Rust extension
-	@echo "Building pylibfst..."
-	cd pylibfst && ../.venv/bin/maturin develop --release
+build-pylibfst:  ## Build pylibfst Rust extension (includes libfst)
+	poetry run build-pylibfst
 
-build-libfst:  ## Build libfst C library
-ifeq ($(detected_OS),Windows)
-	@echo Building libfst...
-	@if not exist libfst$(PATHSEP)build $(MKDIR) libfst$(PATHSEP)build
-	@if defined CMAKE_TOOLCHAIN_FILE (cd libfst$(PATHSEP)build && cmake -DCMAKE_TOOLCHAIN_FILE="$(CMAKE_TOOLCHAIN_FILE)" -DVCPKG_TARGET_TRIPLET=x64-windows -DVCPKG_INSTALLED_DIR="$(VCPKG_INSTALLED_DIR)" .. && cmake --build . --config Release) else (cd libfst$(PATHSEP)build && cmake .. && cmake --build . --config Release)
-else
-	@echo "Building libfst..."
-	@$(MKDIR) libfst/build
-	cd libfst/build && cmake .. && make
-endif
-
-install:  ## Install dependencies and build pywellen, libfst and pylibfst
+install:  ## Install dependencies and build pywellen and pylibfst
 	poetry config virtualenvs.in-project true
 	poetry install
 	poetry run build-pywellen
-	$(MAKE) build-libfst
-	$(MAKE) build-pylibfst
+	poetry run build-pylibfst
 
 build:  ## Build the project
 	poetry run build-pywellen
-	$(MAKE) build-libfst
-	$(MAKE) build-pylibfst
+	poetry run build-pylibfst
 	poetry build
 
 clean:  ## Clean build artifacts
 ifeq ($(detected_OS),Windows)
 	@if exist dist $(RMDIR) dist 2>$(NULL) || echo.
 	@if exist build $(RMDIR) build 2>$(NULL) || echo.
-	@if exist libfst$(PATHSEP)build $(RMDIR) libfst$(PATHSEP)build 2>$(NULL) || echo.
+	@if exist wellen$(PATHSEP)target $(RMDIR) wellen$(PATHSEP)target 2>$(NULL) || echo.
 	@if exist pylibfst$(PATHSEP)target $(RMDIR) pylibfst$(PATHSEP)target 2>$(NULL) || echo.
 	@for /d /r . %%d in (__pycache__) do @if exist "%%d" $(RMDIR) "%%d" 2>$(NULL) || echo.
 	@for /r . %%f in (*.pyc) do @if exist "%%f" $(RM) "%%f" 2>$(NULL) || echo.
 	@for /r . %%f in (*.egg-info) do @if exist "%%f" $(RMDIR) "%%f" 2>$(NULL) || echo.
 else
 	$(RMDIR) dist build *.egg-info 2>$(NULL) || true
-	$(RMDIR) libfst/build 2>$(NULL) || true
+	$(RMDIR) wellen/target 2>$(NULL) || true
 	$(RMDIR) pylibfst/target 2>$(NULL) || true
 	find . -type d -name __pycache__ -exec $(RMDIR) {} + 2>$(NULL) || true
 	find . -type f -name "*.pyc" -delete 2>$(NULL) || true
+endif
+
+clean-venv:  ## Remove virtual environment
+ifeq ($(detected_OS),Windows)
+	@if exist .venv $(RMDIR) .venv 2>$(NULL) || echo.
+else
+	$(RMDIR) .venv 2>$(NULL) || true
 endif
 
 test:  ## Run tests
@@ -90,8 +83,6 @@ dev: install  ## Run the demo application
 	poetry run python scout.py
 
 compile: install  ## Compile scout.py into executable using Nuitka
-	poetry add --group dev nuitka setuptools wheel
-	poetry run pip install --upgrade setuptools wheel
 ifeq ($(detected_OS),Windows)
 	poetry run python -m nuitka --standalone --onefile \
 		--enable-plugin=pyside6 \

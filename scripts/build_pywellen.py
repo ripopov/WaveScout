@@ -13,15 +13,6 @@ def main():
     
     print("Building pywellen...")
     
-    # Install maturin if not present
-    try:
-        subprocess.run([sys.executable, "-m", "pip", "show", "maturin"], 
-                      check=True, capture_output=True)
-    except subprocess.CalledProcessError:
-        print("Installing maturin...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "maturin"], 
-                      check=True)
-    
     # Build pywellen with maturin
     print(f"Building pywellen in {pywellen_dir}")
     subprocess.run([sys.executable, "-m", "maturin", "develop", "--release"], 
