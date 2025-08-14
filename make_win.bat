@@ -143,6 +143,9 @@ if defined VCPKG_ROOT (
 )
 
 :run_make
+REM Clear CC environment variable to avoid path issues with spaces
+set CC=
+
 REM Verify tools are available
 where cl.exe >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
