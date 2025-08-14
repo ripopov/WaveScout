@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(libfst C)
+project(libfst C CXX)
 
 # Set C standard
 set(CMAKE_C_STANDARD 99)
@@ -80,8 +80,8 @@ if(BUILD_TESTS)
         CXX_STANDARD_REQUIRED ON
     )
     
-    # Link with fst library
-    target_link_libraries(test_fst_reader PRIVATE fst)
+    # Link with fst library and zlib
+    target_link_libraries(test_fst_reader PRIVATE fst ZLIB::ZLIB)
     
     # Copy test file to build directory for easier testing
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/test/vcd_extensions.fst

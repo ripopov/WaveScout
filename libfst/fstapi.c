@@ -177,6 +177,7 @@ void **JenkinsIns(void *base_i, const unsigned char *mem, uint32_t length, uint3
 
 #ifdef _MSC_VER
 #include <io.h>
+#include <fcntl.h>
 #ifndef HAVE_FSEEKO
 #define ftello _ftelli64
 #define fseeko _fseeki64
@@ -274,9 +275,17 @@ return(fh);
 
 static FILE* tmpfile_open(char **nam)
 {
+#ifdef _MSC_VER
+/* MSVC fix: Use tmpfile_s which is more reliable on Windows */
+FILE *f = NULL;
+errno_t err = tmpfile_s(&f);
+if(nam) { *nam = NULL; }
+return (err == 0) ? f : NULL;
+#else
 FILE *f = tmpfile(); /* replace with mkstemp() + fopen(), etc if this is not good enough */
 if(nam) { *nam = NULL; }
 return(f);
+#endif
 }
 
 #endif
@@ -3947,6 +3956,7 @@ static int fstReaderRecreateHierFile(struct fstReaderContext *xc)
 {
 int pass_status = 1;
 
+
 if(!xc->fh)
         {
         fst_off_t offs_cache = ftello(xc->f);
@@ -3980,10 +3990,20 @@ if(!xc->fh)
                 {
                 fstReaderFseeko(xc, xc->f, xc->hier_pos, SEEK_SET);
                 uclen = fstReaderUint64(xc->f);
+                /* Position is now after the 8-byte length field */
 #ifndef __MINGW32__
                 fflush(xc->f);
 #endif
+#ifdef _MSC_VER
+                /* MSVC fix: Ensure file position is preserved when duplicating fd */
+                fst_off_t current_pos = ftello(xc->f);
+#endif
                 zfd = dup(fileno(xc->f));
+#ifdef _MSC_VER
+                _setmode(zfd, _O_BINARY);  /* Ensure binary mode on Windows */
+                /* Position is now after reading uclen, seek zfd to start of compressed data */
+                _lseeki64(zfd, current_pos, SEEK_SET);
+#endif
                 zhandle = gzdopen(zfd, "rb");
                 if(!zhandle)
                         {
@@ -4004,7 +4024,7 @@ if(!xc->fh)
 #endif
                 }
 
-#ifndef __MINGW32__
+#if !defined(__MINGW32__) && !defined(_MSC_VER)
         xc->fh = fopen(fnam, "w+b");
         if(!xc->fh)
 #endif
@@ -4104,6 +4124,14 @@ if(!xc->fh)
         free(fnam);
 
         fstReaderFseeko(xc, xc->f, offs_cache, SEEK_SET);
+        
+        /* MSVC fix: Ensure recreated hier file is ready for reading */
+        if(pass_status && xc->fh)
+                {
+                fflush(xc->fh);
+                fstReaderFseeko(xc, xc->fh, 0, SEEK_SET);
+                clearerr(xc->fh);
+                }
         }
 
 return(pass_status);
