@@ -276,11 +276,31 @@ return(fh);
 static FILE* tmpfile_open(char **nam)
 {
 #ifdef _MSC_VER
-/* MSVC fix: Use tmpfile_s which is more reliable on Windows */
+/* MSVC: Use tmpfile_s but with better error handling */
 FILE *f = NULL;
 errno_t err = tmpfile_s(&f);
 if(nam) { *nam = NULL; }
-return (err == 0) ? f : NULL;
+#ifdef DEBUG_HIERARCHY
+fprintf(stderr, "DEBUG: tmpfile_s returned err=%d, f=%p\n", err, f);
+#endif
+if (err != 0) {
+    /* If tmpfile_s fails, try to create a file in current directory */
+    static int tmp_counter = 0;
+    char tmpname[256];
+    snprintf(tmpname, sizeof(tmpname), "fst_tmp_%d_%d.tmp", getpid(), tmp_counter++);
+#ifdef DEBUG_HIERARCHY
+    fprintf(stderr, "DEBUG: tmpfile_s failed, trying fallback: %s\n", tmpname);
+#endif
+    f = fopen(tmpname, "w+b");
+    if (f) {
+        /* Delete the file immediately but keep it open */
+        unlink(tmpname);
+#ifdef DEBUG_HIERARCHY
+        fprintf(stderr, "DEBUG: Fallback temp file created successfully\n");
+#endif
+    }
+}
+return f;
 #else
 FILE *f = tmpfile(); /* replace with mkstemp() + fopen(), etc if this is not good enough */
 if(nam) { *nam = NULL; }
@@ -3956,6 +3976,14 @@ static int fstReaderRecreateHierFile(struct fstReaderContext *xc)
 {
 int pass_status = 1;
 
+#ifdef DEBUG_HIERARCHY
+fprintf(stderr, "DEBUG: fstReaderRecreateHierFile called\n");
+if(xc) {
+    fprintf(stderr, "DEBUG: xc->fh = %p\n", xc->fh);
+    fprintf(stderr, "DEBUG: xc->contains_hier_section = %d\n", xc->contains_hier_section);
+    fprintf(stderr, "DEBUG: xc->contains_hier_section_lz4 = %d\n", xc->contains_hier_section_lz4);
+}
+#endif
 
 if(!xc->fh)
         {
@@ -3979,6 +4007,13 @@ if(!xc->fh)
                 {
                 htyp = xc->contains_hier_section_lz4duo ? FST_BL_HIER_LZ4DUO : FST_BL_HIER_LZ4;
                 }
+        
+#ifdef DEBUG_HIERARCHY
+        fprintf(stderr, "DEBUG: htyp = %d (FST_BL_HIER=%d, FST_BL_SKIP=%d)\n", htyp, FST_BL_HIER, FST_BL_SKIP);
+        if(htyp == FST_BL_SKIP) {
+            fprintf(stderr, "ERROR: No hierarchy section found in FST file!\n");
+        }
+#endif
 
         snprintf(fnam, fnam_len, "%s.hier_%d_%p", xc->filename, getpid(), (void *)xc);
         fstReaderFseeko(xc, xc->f, xc->hier_pos, SEEK_SET);
@@ -3988,26 +4023,48 @@ if(!xc->fh)
 #endif
         if(htyp == FST_BL_HIER)
                 {
+#ifdef DEBUG_HIERARCHY
+                fprintf(stderr, "DEBUG: Processing FST_BL_HIER section at pos %lld\n", (long long)xc->hier_pos);
+#endif
                 fstReaderFseeko(xc, xc->f, xc->hier_pos, SEEK_SET);
                 uclen = fstReaderUint64(xc->f);
                 /* Position is now after the 8-byte length field */
 #ifndef __MINGW32__
                 fflush(xc->f);
 #endif
-#ifdef _MSC_VER
-                /* MSVC fix: Ensure file position is preserved when duplicating fd */
+                /* Get current position after reading uclen */
                 fst_off_t current_pos = ftello(xc->f);
-#endif
-                zfd = dup(fileno(xc->f));
+                
 #ifdef _MSC_VER
-                _setmode(zfd, _O_BINARY);  /* Ensure binary mode on Windows */
-                /* Position is now after reading uclen, seek zfd to start of compressed data */
-                _lseeki64(zfd, current_pos, SEEK_SET);
+                /* MSVC: Create a new file descriptor by reopening the file */
+                /* This avoids issues with shared file position */
+                int orig_fd = _fileno(xc->f);
+                zfd = _open(xc->filename, _O_RDONLY | _O_BINARY);
+#ifdef DEBUG_HIERARCHY
+                fprintf(stderr, "DEBUG: _open(%s) returned fd=%d\n", xc->filename, zfd);
+#endif
+                if (zfd >= 0) {
+                    __int64 seek_res = _lseeki64(zfd, current_pos, SEEK_SET);
+#ifdef DEBUG_HIERARCHY
+                    fprintf(stderr, "DEBUG: _lseeki64 to %lld returned %lld\n", (long long)current_pos, (long long)seek_res);
+#endif
+                }
+#else
+                /* Non-Windows: duplicate normally */
+                fflush(xc->f);
+                zfd = dup(fileno(xc->f));
 #endif
                 zhandle = gzdopen(zfd, "rb");
+#ifdef DEBUG_HIERARCHY
+                fprintf(stderr, "DEBUG: gzdopen returned %p for fd %d, filename=%s\n", zhandle, zfd, xc->filename);
+#endif
                 if(!zhandle)
                         {
+#ifdef _MSC_VER
+                        if (zfd >= 0) _close(zfd);
+#else
                         close(zfd);
+#endif
                         free(mem);
                         free(fnam);
                         return(0);
@@ -4031,8 +4088,14 @@ if(!xc->fh)
                 {
                 xc->fh = tmpfile_open(&xc->fh_nam);
                 free(fnam); fnam = NULL;
+#ifdef DEBUG_HIERARCHY
+                fprintf(stderr, "DEBUG: tmpfile_open returned %p\n", xc->fh);
+#endif
                 if(!xc->fh)
                         {
+#ifdef DEBUG_HIERARCHY
+                        fprintf(stderr, "ERROR: Failed to create temp file!\n");
+#endif
                         tmpfile_close(&xc->fh, &xc->fh_nam);
                         free(mem);
                         return(0);
@@ -4045,14 +4108,92 @@ if(!xc->fh)
 
         if(htyp == FST_BL_HIER)
                 {
+#ifdef _MSC_VER
+                /* On Windows, gzdopen seems unreliable. Read compressed data and decompress */
+                if(zhandle) {
+                    /* Close the gzhandle and fd, we'll do this differently */
+                    gzclose(zhandle);
+                    zhandle = NULL;
+                }
+                
+                /* Read the compressed data size (we need to figure this out) */
+                /* For now, allocate a large buffer */
+                size_t max_compressed_size = uclen; /* Worst case: no compression */
+                unsigned char *compressed_buf = (unsigned char *)malloc(max_compressed_size);
+                size_t compressed_size = fstFread(compressed_buf, 1, max_compressed_size, xc->f);
+                
+#ifdef DEBUG_HIERARCHY
+                fprintf(stderr, "DEBUG: Read %zu bytes of compressed data\n", compressed_size);
+#endif
+                
+                /* Decompress gzip data (has gzip headers, not raw deflate) */
+                unsigned char *uncompressed_buf = (unsigned char *)malloc(uclen);
+                
+                /* Use gzopen_w on a memory buffer would be ideal, but not available */
+                /* Instead, write to a temp file and use gzopen */
+                char temp_gz_name[256];
+                snprintf(temp_gz_name, sizeof(temp_gz_name), "fst_temp_gz_%d.gz", getpid());
+                FILE *temp_gz = fopen(temp_gz_name, "wb");
+                if(temp_gz) {
+                    fwrite(compressed_buf, 1, compressed_size, temp_gz);
+                    fclose(temp_gz);
+                    
+                    /* Now decompress using gzopen */
+                    gzFile gz = gzopen(temp_gz_name, "rb");
+                    if(gz) {
+                        int bytes_read = gzread(gz, uncompressed_buf, uclen);
+                        gzclose(gz);
+                        unlink(temp_gz_name);
+                        
+                        if(bytes_read == uclen) {
+                            /* Write to temp file */
+                            size_t fwlen = fstFwrite(uncompressed_buf, uclen, 1, xc->fh);
+                            if(fwlen != 1) {
+                                pass_status = 0;
+#ifdef DEBUG_HIERARCHY
+                                fprintf(stderr, "ERROR: Failed to write decompressed data\n");
+#endif
+                            }
+                        } else {
+                            pass_status = 0;
+#ifdef DEBUG_HIERARCHY
+                            fprintf(stderr, "ERROR: gzread returned %d, expected %d\n", bytes_read, (int)uclen);
+#endif
+                        }
+                    } else {
+                        pass_status = 0;
+#ifdef DEBUG_HIERARCHY
+                        fprintf(stderr, "ERROR: Failed to open temp gz file for decompression\n");
+#endif
+                    }
+                } else {
+                    pass_status = 0;
+#ifdef DEBUG_HIERARCHY
+                    fprintf(stderr, "ERROR: Failed to create temp gz file\n");
+#endif
+                }
+                
+                free(compressed_buf);
+                free(uncompressed_buf);
+#else
+                /* Non-Windows: use the original gzread approach */
                 for(hl = 0; hl < uclen; hl += FST_GZIO_LEN)
                         {
                         size_t len = ((uclen - hl) > FST_GZIO_LEN) ? FST_GZIO_LEN : (uclen - hl);
                         size_t gzreadlen = gzread(zhandle, mem, len); /* rc should equal len... */
                         size_t fwlen;
-
+#ifdef DEBUG_HIERARCHY
+                        if(hl == 0) {
+                            fprintf(stderr, "DEBUG: Starting decompression, uclen=%lld\n", (long long)uclen);
+                        }
+#endif
                         if(gzreadlen != len)
                                 {
+#ifdef DEBUG_HIERARCHY
+                                fprintf(stderr, "ERROR: gzread failed! Expected %zu, got %zu\n", len, gzreadlen);
+                                const char *err_str = gzerror(zhandle, NULL);
+                                fprintf(stderr, "ERROR: gzip error: %s\n", err_str ? err_str : "unknown");
+#endif
                                 pass_status = 0;
                                 break;
                                 }
@@ -4060,11 +4201,18 @@ if(!xc->fh)
                         fwlen = fstFwrite(mem, len, 1, xc->fh);
                         if(fwlen != 1)
                                 {
+#ifdef DEBUG_HIERARCHY
+                                fprintf(stderr, "ERROR: fwrite failed! Expected 1, got %zu\n", fwlen);
+#endif
                                 pass_status = 0;
                                 break;
                                 }
                         }
                 gzclose(zhandle);
+#endif /* _MSC_VER */
+#ifdef DEBUG_HIERARCHY
+                fprintf(stderr, "DEBUG: Decompression complete, pass_status=%d\n", pass_status);
+#endif
                 }
         else
         if(htyp == FST_BL_HIER_LZ4DUO)
@@ -4134,6 +4282,9 @@ if(!xc->fh)
                 }
         }
 
+#ifdef DEBUG_HIERARCHY
+fprintf(stderr, "DEBUG: fstReaderRecreateHierFile returning %d, xc->fh=%p\n", pass_status, xc ? xc->fh : NULL);
+#endif
 return(pass_status);
 }
 

@@ -37,6 +37,7 @@ fn main() {
         .include(&libfst_path)
         // Define FST_CONFIG_INCLUDE to avoid config.h dependency
         .define("FST_CONFIG_INCLUDE", "\"fst_config_stub.h\"");
+        // .define("DEBUG_HIERARCHY", "1");  // Disable debug output
         
     // Platform-specific defines
     #[cfg(target_os = "windows")]

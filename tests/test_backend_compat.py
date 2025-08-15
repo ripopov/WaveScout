@@ -354,21 +354,21 @@ def test_query_result_comparison():
                 # Allow for floating point differences
                 if isinstance(pw_result.value, float) and isinstance(lf_result.value, float):
                     if abs(pw_result.value - lf_result.value) > 1e-6:
-                        print(f"      ⚠ Value mismatch: pywellen={pw_result.value}, pylibfst={lf_result.value}")
+                        print(f"      [WARNING] Value mismatch: pywellen={pw_result.value}, pylibfst={lf_result.value}")
                 else:
-                    print(f"      ⚠ Value mismatch: pywellen={pw_result.value}, pylibfst={lf_result.value}")
+                    print(f"      [WARNING] Value mismatch: pywellen={pw_result.value}, pylibfst={lf_result.value}")
             
             # Compare actual_time
             if pw_result.actual_time != lf_result.actual_time:
-                print(f"      ⚠ Actual time mismatch: pywellen={pw_result.actual_time}, pylibfst={lf_result.actual_time}")
+                print(f"      [WARNING] Actual time mismatch: pywellen={pw_result.actual_time}, pylibfst={lf_result.actual_time}")
             
             # Compare next_time
             if pw_result.next_time != lf_result.next_time:
-                print(f"      ⚠ Next time mismatch: pywellen={pw_result.next_time}, pylibfst={lf_result.next_time}")
+                print(f"      [WARNING] Next time mismatch: pywellen={pw_result.next_time}, pylibfst={lf_result.next_time}")
             
             # Compare next_idx
             if pw_result.next_idx != lf_result.next_idx:
-                print(f"      ⚠ Next index mismatch: pywellen={pw_result.next_idx}, pylibfst={lf_result.next_idx}")
+                print(f"      [WARNING] Next index mismatch: pywellen={pw_result.next_idx}, pylibfst={lf_result.next_idx}")
         
         # Test iteration using next_idx and next_time
         print(f"    Testing iteration via QueryResult...")
@@ -387,14 +387,14 @@ def test_query_result_comparison():
                 break
             
             if pw_query.next_time is None or lf_query.next_time is None:
-                print(f"      ⚠ One reached end but not the other at iteration {iteration_count}")
+                print(f"      [WARNING] One reached end but not the other at iteration {iteration_count}")
                 break
             
             # Compare current state
             if pw_query.value != lf_query.value:
                 if not (isinstance(pw_query.value, float) and isinstance(lf_query.value, float) and 
                        abs(pw_query.value - lf_query.value) < 1e-6):
-                    print(f"      ⚠ Value mismatch at iteration {iteration_count}")
+                    print(f"      [WARNING] Value mismatch at iteration {iteration_count}")
             
             # Move to next using next_time
             pw_query = pw_signal.query_signal(pw_query.next_time)
@@ -417,7 +417,7 @@ def test_query_result_comparison():
             if pw_val_idx != lf_val_idx:
                 if not (isinstance(pw_val_idx, float) and isinstance(lf_val_idx, float) and 
                        abs(pw_val_idx - lf_val_idx) < 1e-6):
-                    print(f"      ⚠ value_at_idx({idx}) mismatch: pywellen={pw_val_idx}, pylibfst={lf_val_idx}")
+                    print(f"      [WARNING] value_at_idx({idx}) mismatch: pywellen={pw_val_idx}, pylibfst={lf_val_idx}")
         
         # Note: value_at_time has different semantics between pywellen and pylibfst
         # pywellen appears to return the NEXT value after the given time
@@ -425,12 +425,12 @@ def test_query_result_comparison():
         # Both libraries have consistent query_signal behavior, so we skip value_at_time comparison
         print(f"    Note: Skipping value_at_time comparison due to semantic differences")
         
-        print(f"    ✓ Completed testing for {pw_name}")
+        print(f"    [OK] Completed testing for {pw_name}")
         
         # Only test first variable in detail to keep output manageable
         break
     
-    print("\n  ✓ QueryResult comparison test completed")
+    print("\n  [OK] QueryResult comparison test completed")
 
 
 @pytest.mark.skipif(
@@ -500,21 +500,21 @@ def test_time_range_comparison():
         end_match = pw_end == lf_end
         
         if start_match and end_match:
-            print(f"  ✓ Time range matches: start={lf_start}, end={lf_end}")
+            print(f"  [OK] Time range matches: start={lf_start}, end={lf_end}")
         else:
             if not start_match:
-                print(f"  ⚠ Start time mismatch: pywellen={pw_start}, pylibfst={lf_start}")
+                print(f"  [WARNING] Start time mismatch: pywellen={pw_start}, pylibfst={lf_start}")
             if not end_match:
-                print(f"  ⚠ End time mismatch: pywellen={pw_end}, pylibfst={lf_end}")
+                print(f"  [WARNING] End time mismatch: pywellen={pw_end}, pylibfst={lf_end}")
         
         # Assert that boundaries match
         assert start_match, f"Start time mismatch: {pw_start} vs {lf_start}"
         assert end_match, f"End time mismatch: {pw_end} vs {lf_end}"
     else:
         if pw_start is None or pw_end is None:
-            print("  ⚠ Could not access pywellen time table")
+            print("  [WARNING] Could not access pywellen time table")
         if not lf_time_range:
-            print("  ⚠ Pylibfst has no time range")
+            print("  [WARNING] Pylibfst has no time range")
         if pw_start is None or pw_end is None or not lf_time_range:
             pytest.skip("Could not compare time information")
     
@@ -694,9 +694,9 @@ def test_var_api_compatibility():
         for var_name, category, mismatches in vars_with_mismatches:
             print(f"\n  {var_name} ({category}):")
             for mismatch in mismatches:
-                print(f"    ⚠ {mismatch}")
+                print(f"    [WARNING] {mismatch}")
     else:
-        print(f"\n  ✓ All {tested_count} variables match perfectly!")
+        print(f"\n  [OK] All {tested_count} variables match perfectly!")
     
     # Summary
     print(f"\n  Summary: Tested {tested_count} variables")
@@ -723,15 +723,15 @@ def test_var_api_compatibility():
                 unexpected_mismatches.append(mismatch)
         
         if unexpected_mismatches:
-            print(f"\n  ⚠ Found {len(unexpected_mismatches)} unexpected API mismatches:")
+            print(f"\n  [WARNING] Found {len(unexpected_mismatches)} unexpected API mismatches:")
             for mismatch in unexpected_mismatches:
                 print(f"    {mismatch}")
             assert False, f"Found {len(unexpected_mismatches)} unexpected API mismatches"
         else:
-            print(f"\n  ✓ All API differences are known/expected")
+            print(f"\n  [OK] All API differences are known/expected")
             print(f"  Note: Real variables report length=8 in pylibfst (8 bytes for double precision float)")
     else:
-        print(f"  ✓ All Var API methods match perfectly between pywellen and pylibfst")
+        print(f"  [OK] All Var API methods match perfectly between pywellen and pylibfst")
 
 
 @pytest.mark.skipif(
@@ -777,7 +777,7 @@ def test_hierarchy_methods_compatibility():
     if pw_format != lf_format:
         mismatches.append(f"file_format: pywellen={pw_format}, pylibfst={lf_format}")
     else:
-        print(f"     ✓ Match: {lf_format}")
+        print(f"     [OK] Match: {lf_format}")
     
     # Test date()
     print("\n  2. Testing date():")
@@ -788,7 +788,7 @@ def test_hierarchy_methods_compatibility():
     if pw_date != lf_date:
         mismatches.append(f"date: pywellen={pw_date}, pylibfst={lf_date}")
     else:
-        print(f"     ✓ Match: {lf_date}")
+        print(f"     [OK] Match: {lf_date}")
     
     # Test version()
     print("\n  3. Testing version():")
@@ -799,7 +799,7 @@ def test_hierarchy_methods_compatibility():
     if pw_version != lf_version:
         mismatches.append(f"version: pywellen={pw_version}, pylibfst={lf_version}")
     else:
-        print(f"     ✓ Match: {lf_version}")
+        print(f"     [OK] Match: {lf_version}")
     
     # Test timescale()
     print("\n  4. Testing timescale():")
@@ -817,12 +817,12 @@ def test_hierarchy_methods_compatibility():
         if pw_ts and lf_ts:
             # Both have timescale, check if they're functionally equivalent
             # Timescale usually has a string representation like "1ns" or "1ps"
-            print(f"     ⚠ String representation differs, but both have timescale objects")
+            print(f"     [WARNING] String representation differs, but both have timescale objects")
             mismatches.append(f"timescale: pywellen={pw_ts_str}, pylibfst={lf_ts_str}")
         else:
             mismatches.append(f"timescale: pywellen={pw_ts_str}, pylibfst={lf_ts_str}")
     else:
-        print(f"     ✓ Match: {lf_ts_str}")
+        print(f"     [OK] Match: {lf_ts_str}")
     
     # Test all_vars() - count and basic iteration
     print("\n  5. Testing all_vars():")
@@ -834,7 +834,7 @@ def test_hierarchy_methods_compatibility():
     if len(pw_vars) != len(lf_vars):
         mismatches.append(f"all_vars count: pywellen={len(pw_vars)}, pylibfst={len(lf_vars)}")
     else:
-        print(f"     ✓ Match: {len(lf_vars)} variables")
+        print(f"     [OK] Match: {len(lf_vars)} variables")
     
     # Check that iterators work properly
     print("\n  6. Testing all_vars() iterator protocol:")
@@ -844,7 +844,7 @@ def test_hierarchy_methods_compatibility():
     if len(lf_vars1) != len(lf_vars2):
         mismatches.append(f"all_vars iterator reuse issue: first={len(lf_vars1)}, second={len(lf_vars2)}")
     else:
-        print(f"     ✓ Iterator can be reused: {len(lf_vars1)} variables both times")
+        print(f"     [OK] Iterator can be reused: {len(lf_vars1)} variables both times")
     
     # Test top_scopes()
     print("\n  7. Testing top_scopes():")
@@ -856,7 +856,7 @@ def test_hierarchy_methods_compatibility():
     if len(pw_scopes) != len(lf_scopes):
         mismatches.append(f"top_scopes count: pywellen={len(pw_scopes)}, pylibfst={len(lf_scopes)}")
     else:
-        print(f"     ✓ Match: {len(lf_scopes)} top-level scopes")
+        print(f"     [OK] Match: {len(lf_scopes)} top-level scopes")
         
         # Compare scope names
         pw_scope_names = [s.name(pw_hier) for s in pw_scopes]
@@ -869,7 +869,7 @@ def test_hierarchy_methods_compatibility():
         if sorted(pw_scope_names) != sorted(lf_scope_names):
             mismatches.append(f"top_scopes names differ: pywellen={pw_scope_names}, pylibfst={lf_scope_names}")
         else:
-            print(f"       ✓ Names match")
+            print(f"       [OK] Names match")
     
     # Test that top_scopes iterator can be reused
     print("\n  8. Testing top_scopes() iterator protocol:")
@@ -878,7 +878,7 @@ def test_hierarchy_methods_compatibility():
     if len(lf_scopes1) != len(lf_scopes2):
         mismatches.append(f"top_scopes iterator reuse issue: first={len(lf_scopes1)}, second={len(lf_scopes2)}")
     else:
-        print(f"     ✓ Iterator can be reused: {len(lf_scopes1)} scopes both times")
+        print(f"     [OK] Iterator can be reused: {len(lf_scopes1)} scopes both times")
     
     # Test accessing vars and scopes properties
     print("\n  9. Testing Var and Scope object access:")
@@ -898,10 +898,10 @@ def test_hierarchy_methods_compatibility():
             lf_var.name(lf_hier)
             lf_var.var_type()
             lf_var.direction()
-            print(f"     ✓ Var methods (name, var_type, direction) work")
+            print(f"     [OK] Var methods (name, var_type, direction) work")
         except Exception as e:
             mismatches.append(f"Var method error: {e}")
-            print(f"     ⚠ Var method error: {e}")
+            print(f"     [WARNING] Var method error: {e}")
     
     if lf_scopes and pw_scopes:
         # Test first scope
@@ -921,17 +921,17 @@ def test_hierarchy_methods_compatibility():
             # Test child iteration
             child_vars = list(lf_scope.vars(lf_hier))
             child_scopes = list(lf_scope.scopes(lf_hier))
-            print(f"     ✓ Scope methods work (has {len(child_vars)} vars, {len(child_scopes)} child scopes)")
+            print(f"     [OK] Scope methods work (has {len(child_vars)} vars, {len(child_scopes)} child scopes)")
         except Exception as e:
             mismatches.append(f"Scope method error: {e}")
-            print(f"     ⚠ Scope method error: {e}")
+            print(f"     [WARNING] Scope method error: {e}")
     
     # Summary
     print(f"\n  Summary:")
     if mismatches:
         print(f"  Found {len(mismatches)} differences:")
         for mismatch in mismatches:
-            print(f"    ⚠ {mismatch}")
+            print(f"    [WARNING] {mismatch}")
         
         # Some differences might be acceptable
         acceptable_patterns = [
@@ -954,9 +954,9 @@ def test_hierarchy_methods_compatibility():
                 print(f"    {diff}")
             assert False, f"Found {len(unexpected)} unexpected differences in Hierarchy methods"
         else:
-            print(f"\n  ✓ All differences are acceptable (timescale representation may vary)")
+            print(f"\n  [OK] All differences are acceptable (timescale representation may vary)")
     else:
-        print(f"  ✓ All Hierarchy methods match perfectly between pywellen and pylibfst")
+        print(f"  [OK] All Hierarchy methods match perfectly between pywellen and pylibfst")
 
 
 @pytest.mark.skipif(
@@ -1025,9 +1025,9 @@ def test_hierarchy_deep_comparison():
     missing_in_pw = lf_scope_names - pw_scope_names
     
     if missing_in_lf:
-        print(f"  ⚠ Scopes in pywellen but not pylibfst: {missing_in_lf}")
+        print(f"  [WARNING] Scopes in pywellen but not pylibfst: {missing_in_lf}")
     if missing_in_pw:
-        print(f"  ⚠ Scopes in pylibfst but not pywellen: {missing_in_pw}")
+        print(f"  [WARNING] Scopes in pylibfst but not pywellen: {missing_in_pw}")
     
     # Compare scope types for common scopes
     common_scopes = pw_scope_names & lf_scope_names
@@ -1040,7 +1040,7 @@ def test_hierarchy_deep_comparison():
             scope_type_mismatches += 1
     
     if scope_type_mismatches == 0:
-        print(f"  ✓ All checked scope types match")
+        print(f"  [OK] All checked scope types match")
     
     # Collect all variables from both libraries
     print("\n  Collecting variables...")
@@ -1074,12 +1074,12 @@ def test_hierarchy_deep_comparison():
     missing_vars_in_pw = lf_var_names - pw_var_names
     
     if len(missing_vars_in_lf) > 0:
-        print(f"  ⚠ Variables in pywellen but not pylibfst: {len(missing_vars_in_lf)}")
+        print(f"  [WARNING] Variables in pywellen but not pylibfst: {len(missing_vars_in_lf)}")
         for var_name in list(missing_vars_in_lf)[:5]:
             print(f"    - {var_name}")
     
     if len(missing_vars_in_pw) > 0:
-        print(f"  ⚠ Variables in pylibfst but not pywellen: {len(missing_vars_in_pw)}")
+        print(f"  [WARNING] Variables in pylibfst but not pywellen: {len(missing_vars_in_pw)}")
         for var_name in list(missing_vars_in_pw)[:5]:
             print(f"    - {var_name}")
     
@@ -1103,7 +1103,7 @@ def test_hierarchy_deep_comparison():
             var_type_mismatches += 1
     
     if var_type_mismatches == 0 and var_name_mismatches == 0:
-        print(f"  ✓ All checked variable names and types match")
+        print(f"  [OK] All checked variable names and types match")
     
     # Summary
     print("\n  Summary:")
@@ -1122,7 +1122,7 @@ def test_hierarchy_deep_comparison():
     common_ratio = len(common_vars) / max(len(pw_var_names), len(lf_var_names))
     assert common_ratio > 0.8, f"Only {common_ratio:.1%} of variables are common"
     
-    print(f"\n  ✓ Hierarchy comparison test passed ({common_ratio:.1%} variable overlap)")
+    print(f"\n  [OK] Hierarchy comparison test passed ({common_ratio:.1%} variable overlap)")
 
 
 @pytest.mark.skipif(
@@ -1383,7 +1383,7 @@ def test_performance_comparison():
         if overall_speedup > 1:
             print(f"  🎉 pylibfst is {overall_speedup:.2f}x faster than pywellen on average")
         else:
-            print(f"  ⚠️  pywellen is {1/overall_speedup:.2f}x faster than pylibfst on average")
+            print(f"  [WARNING]️  pywellen is {1/overall_speedup:.2f}x faster than pylibfst on average")
     
     print(f"{'='*80}\n")
 
@@ -1394,39 +1394,39 @@ if __name__ == "__main__":
     
     if pylibfst:
         test_basic_loading()
-        print("✓ Basic loading test passed")
+        print("[OK] Basic loading test passed")
         
         test_hierarchy_navigation()
-        print("✓ Hierarchy navigation test passed")
+        print("[OK] Hierarchy navigation test passed")
         
         test_signal_loading()
-        print("✓ Signal loading test passed")
+        print("[OK] Signal loading test passed")
         
         test_lazy_loading()
-        print("✓ Lazy loading test passed")
+        print("[OK] Lazy loading test passed")
         
         test_iterators()
-        print("✓ Iterator test passed")
+        print("[OK] Iterator test passed")
         
         if pywellen:
             test_api_compatibility()
-            print("✓ API compatibility test passed")
+            print("[OK] API compatibility test passed")
             
             test_var_api_compatibility()
-            print("✓ Var API compatibility test passed")
+            print("[OK] Var API compatibility test passed")
             
             test_hierarchy_methods_compatibility()
-            print("✓ Hierarchy methods compatibility test passed")
+            print("[OK] Hierarchy methods compatibility test passed")
             
             test_hierarchy_deep_comparison()
-            print("✓ Hierarchy deep comparison test passed")
+            print("[OK] Hierarchy deep comparison test passed")
             
             test_query_result_comparison()
-            print("✓ QueryResult comparison test passed")
+            print("[OK] QueryResult comparison test passed")
             
             test_time_range_comparison()
-            print("✓ Time range comparison test passed")
+            print("[OK] Time range comparison test passed")
         else:
-            print("⚠ Skipping API compatibility tests (pywellen not available)")
+            print("[WARNING] Skipping API compatibility tests (pywellen not available)")
     else:
-        print("⚠ pylibfst not built. Run 'maturin develop' first.")
+        print("[WARNING] pylibfst not built. Run 'maturin develop' first.")

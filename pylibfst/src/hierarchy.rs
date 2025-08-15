@@ -403,18 +403,40 @@ impl Hierarchy {
         let mut current_path = Vec::new();
         let mut signal_counter = 0usize;
         
-        // Rewind to start
-        reader.rewind_hier();
+        // Call rewind - just like the C test code does
+        let rewind_result = reader.rewind_hier();
+        
+        // If rewind failed, we can still try to iterate
+        // The first call to iterate_hier might create the temp file
+        if !rewind_result {
+            // Rewind might fail on first call, but that's ok
+        }
+        
+        // Now iterate through the hierarchy
+        let mut iter_count = 0;
+        let mut scope_count = 0;
+        let mut var_count = 0;
+        let max_iterations = 100000;  // Safety limit
+        
         loop {
+            if iter_count >= max_iterations {
+                eprintln!("DEBUG: Hit max iterations limit");
+                break;
+            }
+            
             let hier_ptr = reader.iterate_hier()?;
             if hier_ptr.is_null() {
                 break;
             }
+            iter_count += 1;
+            
             
             let hier = unsafe { &*hier_ptr };
             
+            
             match hier.htyp {
                 FST_HT_SCOPE => {
+                    scope_count += 1;
                     // Enter new scope - access union safely
                     let scope_data = unsafe { hier.u.scope };
                     
@@ -448,6 +470,7 @@ impl Hierarchy {
                 }
                 
                 FST_HT_VAR => {
+                    var_count += 1;
                     // Add variable
                     let var_data = unsafe { hier.u.var };
                     let name = unsafe { ffi::c_str_to_string(var_data.name, var_data.name_length) };

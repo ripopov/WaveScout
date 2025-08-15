@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 num-bigint = "0.4"
 rayon = "1.10"
+memoffset = "0.9"
 
 [build-dependencies]
 cc = "1.0"
@@ -19,3 +20,7 @@ pkg-config = "0.3"
 [profile.release]
 lto = true
 opt-level = 3
+
+[[bin]]
+name = "test_struct_sizes"
+path = "src/test_struct_sizes.rs"

@@ -163,13 +163,28 @@ impl FstReader {
             return Err(format!("File not found: {}", path));
         }
         
-        let c_path = CString::new(path).map_err(|e| format!("Invalid path: {}", e))?;
+        // Convert to absolute path
+        let abs_path = std::path::Path::new(path)
+            .canonicalize()
+            .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
         
+        // On Windows, strip the \\?\ prefix if present
+        let path_str = abs_path.to_str()
+            .ok_or_else(|| "Path contains invalid UTF-8".to_string())?;
+        
+        let path_str = if cfg!(windows) && path_str.starts_with(r"\\?\") {
+            &path_str[4..]
+        } else {
+            path_str
+        };
+        
+        
+        let c_path = CString::new(path_str).map_err(|e| format!("Invalid path: {}", e))?;
         
         let ctx = unsafe { fstReaderOpen(c_path.as_ptr()) };
         
         if ctx.is_null() {
-            Err(format!("Failed to open FST file: {}", path))
+            Err(format!("Failed to open FST file: {}", path_str))
         } else {
             Ok(FstReader { ctx })
         }
@@ -242,16 +257,13 @@ impl FstReader {
     /// Iterate hierarchy
     pub fn iterate_hier(&self) -> Result<*mut FstHier, String> {
         let hier = unsafe { fstReaderIterateHier(self.ctx) };
-        if hier.is_null() {
-            Ok(ptr::null_mut())
-        } else {
-            Ok(hier)
-        }
+        Ok(hier)  // Return even if null, let caller handle it
     }
     
     /// Rewind hierarchy iterator
     pub fn rewind_hier(&self) -> bool {
-        unsafe { fstReaderIterateHierRewind(self.ctx) != 0 }
+        let result = unsafe { fstReaderIterateHierRewind(self.ctx) };
+        result != 0
     }
     
     /// Set facility process mask
