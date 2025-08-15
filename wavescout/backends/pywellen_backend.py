@@ -70,7 +70,7 @@ class PywellenBackend(WaveformBackend):
         if self._waveform is None:
             return None
         # pywellen.Hierarchy directly implements our WHierarchy protocol
-        return cast(WHierarchy, self._waveform.hierarchy)
+        return self._waveform.hierarchy
     
     def get_time_table(self) -> Optional[WTimeTable]:
         """Get the time table from the loaded waveform.
@@ -82,7 +82,7 @@ class PywellenBackend(WaveformBackend):
             return None
         # pywellen.TimeTable directly implements our WTimeTable protocol
         time_table = self._waveform.time_table
-        return cast(WTimeTable, time_table) if time_table else None
+        return time_table if time_table else None
     
     def get_signal(self, var: WVar) -> Optional[WSignal]:
         """Get signal data for a variable.
@@ -97,9 +97,9 @@ class PywellenBackend(WaveformBackend):
             return None
         try:
             # var should be a pywellen.Var object that implements WVar protocol
-            signal = self._waveform.get_signal(var)  # type: ignore
+            signal = self._waveform.get_signal(var)
             # pywellen.Signal directly implements our WSignal protocol
-            return cast(WSignal, signal)
+            return signal
         except Exception:
             return None
     
@@ -115,9 +115,9 @@ class PywellenBackend(WaveformBackend):
         if self._waveform is None:
             return []
         # vars should be pywellen.Var objects that implement WVar protocol
-        signals = self._waveform.load_signals(vars)  # type: ignore
+        signals = self._waveform.load_signals(vars)
         # pywellen.Signal objects directly implement our WSignal protocol
-        return [cast(WSignal, sig) for sig in signals]
+        return list(signals)
     
     def load_signals_multithreaded(self, vars: List[WVar]) -> List[WSignal]:
         """Load multiple signals using multiple threads.
@@ -131,9 +131,9 @@ class PywellenBackend(WaveformBackend):
         if self._waveform is None:
             return []
         # vars should be pywellen.Var objects that implement WVar protocol  
-        signals = self._waveform.load_signals_multithreaded(vars)  # type: ignore
+        signals = self._waveform.load_signals_multithreaded(vars)
         # pywellen.Signal objects directly implement our WSignal protocol
-        return [cast(WSignal, sig) for sig in signals]
+        return list(signals)
     
     def supports_file_format(self, file_path: str) -> bool:
         """Check if pywellen supports the given file format.

@@ -1,6 +1,6 @@
 """Helper functions to load waveforms and create signal nodes."""
 
-from typing import List, Dict
+from typing import List, Dict, Literal, cast
 from .backend_types import WVar, WHierarchy
 from .data_model import SignalNode, SignalHandle, DisplayFormat, DataFormat, WaveformSession, RenderType
 from .waveform_db import WaveformDB
@@ -55,17 +55,18 @@ def create_signal_node_from_var(var: WVar, hierarchy: WHierarchy, handle: Signal
     
     return node
 
-def create_sample_session(vcd_path: str, backend_preference: str = "pywellen") -> WaveformSession:
+def create_sample_session(vcd_path: str, backend_preference: Literal["pywellen", "pylibfst"] = "pywellen") -> WaveformSession:
     """Create a sample WaveformSession with signals from a waveform file.
     
     Args:
         vcd_path: Path to the waveform file (VCD or FST)
         backend_preference: Preferred backend for FST files ("pywellen" or "pylibfst")
     """
+    from .protocols import WaveformDBProtocol
     db = WaveformDB(backend_preference=backend_preference)
     db.open(vcd_path)
     session = WaveformSession()
-    session.waveform_db = db
+    session.waveform_db = cast(WaveformDBProtocol, db)
     timescale = db.get_timescale()
     if timescale:
         session.timescale = timescale

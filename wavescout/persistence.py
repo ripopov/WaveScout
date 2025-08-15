@@ -2,7 +2,7 @@
 
 import yaml
 import pathlib
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Union, Literal, cast
 from dataclasses import asdict
 from enum import Enum
 from .backend_types import WVar, WHierarchy, WScope
@@ -208,7 +208,7 @@ def save_session(session: WaveformSession, path: pathlib.Path) -> None:
         yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
 
-def load_session(path: pathlib.Path, backend_preference: Optional[str] = None) -> WaveformSession:
+def load_session(path: pathlib.Path, backend_preference: Optional[Literal["pywellen", "pylibfst"]] = None) -> WaveformSession:
     """
     Deserialize YAML to dataclasses and reconnect to waveform DB.
     
@@ -252,7 +252,7 @@ def load_session(path: pathlib.Path, backend_preference: Optional[str] = None) -
     
     # Create session
     session = WaveformSession(
-        waveform_db=waveform_db,
+        waveform_db=cast(WaveformDBProtocol, waveform_db) if waveform_db else None,
         root_nodes=root_nodes,
         viewport=viewport,
         markers=markers,
@@ -279,7 +279,7 @@ def load_session(path: pathlib.Path, backend_preference: Optional[str] = None) -
     
     # Resolve signal handles if waveform_db is available
     if waveform_db:
-        _resolve_signal_handles(session.root_nodes, waveform_db)
+        _resolve_signal_handles(session.root_nodes, cast(WaveformDBProtocol, waveform_db))
         
         # Update viewport total_duration from the waveform's time table
         time_table = waveform_db.get_time_table()

@@ -1,11 +1,11 @@
 """Utility functions for creating copyable message boxes."""
 
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox, QWidget
 from PySide6.QtCore import Qt
 from typing import Optional
 
 
-def show_critical(parent, title: str, text: str, detailed_text: Optional[str] = None) -> int:
+def show_critical(parent: Optional[QWidget], title: str, text: str, detailed_text: Optional[str] = None) -> int:
     """Show a critical error message with copyable text.
     
     Args:
@@ -18,22 +18,22 @@ def show_critical(parent, title: str, text: str, detailed_text: Optional[str] = 
         Button that was clicked
     """
     msg = QMessageBox(parent)
-    msg.setIcon(QMessageBox.Critical)
+    msg.setIcon(QMessageBox.Icon.Critical)
     msg.setWindowTitle(title)
     msg.setText(text)
     if detailed_text:
         msg.setDetailedText(detailed_text)
     
     # Make text selectable and copyable
-    msg.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+    msg.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
     
     # Add OK button
-    msg.setStandardButtons(QMessageBox.Ok)
+    msg.setStandardButtons(QMessageBox.StandardButton.Ok)
     
     return msg.exec()
 
 
-def show_warning(parent, title: str, text: str, detailed_text: Optional[str] = None) -> int:
+def show_warning(parent: Optional[QWidget], title: str, text: str, detailed_text: Optional[str] = None) -> int:
     """Show a warning message with copyable text.
     
     Args:
@@ -46,22 +46,22 @@ def show_warning(parent, title: str, text: str, detailed_text: Optional[str] = N
         Button that was clicked
     """
     msg = QMessageBox(parent)
-    msg.setIcon(QMessageBox.Warning)
+    msg.setIcon(QMessageBox.Icon.Warning)
     msg.setWindowTitle(title)
     msg.setText(text)
     if detailed_text:
         msg.setDetailedText(detailed_text)
     
     # Make text selectable and copyable
-    msg.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+    msg.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
     
     # Add OK button
-    msg.setStandardButtons(QMessageBox.Ok)
+    msg.setStandardButtons(QMessageBox.StandardButton.Ok)
     
     return msg.exec()
 
 
-def show_information(parent, title: str, text: str, detailed_text: Optional[str] = None) -> int:
+def show_information(parent: Optional[QWidget], title: str, text: str, detailed_text: Optional[str] = None) -> int:
     """Show an information message with copyable text.
     
     Args:
@@ -74,24 +74,24 @@ def show_information(parent, title: str, text: str, detailed_text: Optional[str]
         Button that was clicked
     """
     msg = QMessageBox(parent)
-    msg.setIcon(QMessageBox.Information)
+    msg.setIcon(QMessageBox.Icon.Information)
     msg.setWindowTitle(title)
     msg.setText(text)
     if detailed_text:
         msg.setDetailedText(detailed_text)
     
     # Make text selectable and copyable
-    msg.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+    msg.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
     
     # Add OK button
-    msg.setStandardButtons(QMessageBox.Ok)
+    msg.setStandardButtons(QMessageBox.StandardButton.Ok)
     
     return msg.exec()
 
 
-def show_question(parent, title: str, text: str, 
-                  buttons=QMessageBox.Yes | QMessageBox.No,
-                  default_button=QMessageBox.No) -> int:
+def show_question(parent: Optional[QWidget], title: str, text: str, 
+                  buttons: QMessageBox.StandardButton = QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                  default_button: QMessageBox.StandardButton = QMessageBox.StandardButton.No) -> int:
     """Show a question dialog with copyable text.
     
     Args:
@@ -105,12 +105,12 @@ def show_question(parent, title: str, text: str,
         Button that was clicked
     """
     msg = QMessageBox(parent)
-    msg.setIcon(QMessageBox.Question)
+    msg.setIcon(QMessageBox.Icon.Question)
     msg.setWindowTitle(title)
     msg.setText(text)
     
     # Make text selectable and copyable
-    msg.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+    msg.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard)
     
     # Set buttons
     msg.setStandardButtons(buttons)

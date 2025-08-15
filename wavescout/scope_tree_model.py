@@ -7,7 +7,7 @@ This model filters out variables and shows only scopes (modules) in the hierarch
 from typing import Optional, Union, overload, List, Dict
 from PySide6.QtCore import QAbstractItemModel, QModelIndex, QPersistentModelIndex, Qt, Signal, QObject
 from PySide6.QtGui import QIcon
-from .backend_types import WHierarchy, WVar, WScope
+from .backend_types import WHierarchy, WVar, WScope, WScopeIter
 from .protocols import WaveformDBProtocol
 from .vars_view import VariableData
 
@@ -82,7 +82,7 @@ class ScopeTreeModel(QAbstractItemModel):
         # Build hierarchy from top scopes
         self._build_scope_recursive(hierarchy.top_scopes(), self.root_node, hierarchy)
     
-    def _build_scope_recursive(self, scopes: List[WScope], parent_node: DesignTreeNode, hierarchy: WHierarchy) -> None:
+    def _build_scope_recursive(self, scopes: WScopeIter, parent_node: DesignTreeNode, hierarchy: WHierarchy) -> None:
         """Recursively build scope nodes."""
         for scope in scopes:
             # Create node for this scope

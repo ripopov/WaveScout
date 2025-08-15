@@ -61,7 +61,7 @@ from PySide6.QtWidgets import QApplication
 from typing import Optional, List, overload, Dict, Union
 from .data_model import SignalHandle
 from .protocols import WaveformDBProtocol
-from .backend_types import WHierarchy, WVar, WScope
+from .backend_types import WHierarchy, WVar, WScope, WScopeIter
 
 
 class DesignTreeNode:
@@ -220,7 +220,7 @@ class DesignTreeModel(QAbstractItemModel):
         # Clean up the temporary mapping
         self._var_to_handle = None
 
-    def _build_scope_recursive(self, scopes: List[WScope], parent_node: DesignTreeNode, hierarchy: WHierarchy) -> None:
+    def _build_scope_recursive(self, scopes: WScopeIter, parent_node: DesignTreeNode, hierarchy: WHierarchy) -> None:
         """Recursively build the tree structure for scopes and their contents.
         
         This method traverses the design hierarchy depth-first, creating nodes for:
@@ -248,7 +248,7 @@ class DesignTreeModel(QAbstractItemModel):
                 bit_range = ""
                 try:
                     bitwidth = var.bitwidth()
-                    if bitwidth > 1:
+                    if bitwidth is not None and bitwidth > 1:
                         # Multi-bit signal - show as [MSB:0]
                         bit_range = f"[{bitwidth - 1}:0]"
                     elif bitwidth == 1:

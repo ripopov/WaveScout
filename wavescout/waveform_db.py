@@ -93,21 +93,23 @@ class WaveformDB:
         all_variables = []
         seen_vars = set()
         
-        # Recursively collect all variables from the hierarchy
-        def collect_vars_recursive(scope: WScope) -> None:
-            # Add direct variables from this scope
-            for var in scope.vars(self.hierarchy):
-                var_id = id(var)
-                if var_id not in seen_vars:
-                    all_variables.append(var)
-                    seen_vars.add(var_id)
-            # Recurse into child scopes
-            for child_scope in scope.scopes(self.hierarchy):
-                collect_vars_recursive(child_scope)
-        
-        # Start from all top scopes
-        for top_scope in self.hierarchy.top_scopes():
-            collect_vars_recursive(top_scope)
+        # Only collect if hierarchy exists
+        if self.hierarchy is not None:
+            # Recursively collect all variables from the hierarchy
+            def collect_vars_recursive(scope: WScope) -> None:
+                # Add direct variables from this scope
+                for var in scope.vars(self.hierarchy):  # type: ignore[arg-type]
+                    var_id = id(var)
+                    if var_id not in seen_vars:
+                        all_variables.append(var)
+                        seen_vars.add(var_id)
+                # Recurse into child scopes
+                for child_scope in scope.scopes(self.hierarchy):  # type: ignore[arg-type]
+                    collect_vars_recursive(child_scope)
+            
+            # Start from all top scopes
+            for top_scope in self.hierarchy.top_scopes():
+                collect_vars_recursive(top_scope)
         
         # Process variables with alias detection using signal_ref() for O(1) lookups
         for var in all_variables:
@@ -120,8 +122,9 @@ class WaveformDB:
                 self._var_map[existing_handle].append(var)
                 
                 # Map var name to handle for lookup
-                var_full_name = var.full_name(self.hierarchy)
-                self._var_name_to_handle[var_full_name] = existing_handle
+                if self.hierarchy is not None:
+                    var_full_name = var.full_name(self.hierarchy)
+                    self._var_name_to_handle[var_full_name] = existing_handle
             else:
                 # New signal - create new handle
                 self._var_map[handle] = [var]
@@ -129,8 +132,9 @@ class WaveformDB:
                 self._handle_to_signal_ref[handle] = signal_ref
                 
                 # Map var name to handle for lookup
-                var_full_name = var.full_name(self.hierarchy)
-                self._var_name_to_handle[var_full_name] = handle
+                if self.hierarchy is not None:
+                    var_full_name = var.full_name(self.hierarchy)
+                    self._var_name_to_handle[var_full_name] = handle
                 handle += 1
         
         mapping_end = time.time()
@@ -147,19 +151,22 @@ class WaveformDB:
             return []
             
         handles = []
+        hierarchy = self.hierarchy  # Local variable for type checker
+        assert hierarchy is not None  # We already checked this above
+        
         # Get variables from all top scopes recursively
         def collect_vars_recursive(scope: WScope) -> None:
             # Add direct variables
-            for var in scope.vars(self.hierarchy):
+            for var in scope.vars(hierarchy):
                 for handle, mapped_vars in self._var_map.items():
                     if var in mapped_vars:
                         handles.append(handle)
                         break
             # Recurse into child scopes
-            for child_scope in scope.scopes(self.hierarchy):
+            for child_scope in scope.scopes(hierarchy):
                 collect_vars_recursive(child_scope)
         
-        for scope in self.hierarchy.top_scopes():
+        for scope in hierarchy.top_scopes():
             collect_vars_recursive(scope)
             
         return handles[:10]  # Return first 10 for testing
@@ -233,15 +240,22 @@ class WaveformDB:
             # Import our TimeUnit and Timescale classes
             from .data_model import TimeUnit, Timescale
             
-            # Convert pywellen unit string to our TimeUnit
-            unit_str = str(pywellen_timescale.unit)
-            time_unit = TimeUnit.from_string(unit_str)
-            
-            if time_unit:
-                self._timescale = Timescale(
-                    factor=pywellen_timescale.factor,
-                    unit=time_unit
-                )
+            # pywellen's Timescale has unit and factor attributes
+            # but we need to access them carefully to satisfy the type checker
+            try:
+                # Try to get unit and factor attributes
+                unit_str = str(getattr(pywellen_timescale, 'unit', ''))
+                factor = getattr(pywellen_timescale, 'factor', 1)
+                
+                time_unit = TimeUnit.from_string(unit_str)
+                if time_unit:
+                    self._timescale = Timescale(
+                        factor=int(factor),
+                        unit=time_unit
+                    )
+            except (AttributeError, TypeError):
+                # If attributes don't exist or conversion fails, skip
+                pass
     
     def get_timescale(self) -> Optional[Timescale]:
         """Get the timescale of the waveform file."""
@@ -298,7 +312,9 @@ class WaveformDB:
         if handle not in self._signal_cache:
             if self._backend is not None:
                 var = vars_list[0]
-                self._signal_cache[handle] = self._backend.get_signal(var)
+                signal = self._backend.get_signal(var)
+                if signal is not None:
+                    self._signal_cache[handle] = signal
             
         return self._signal_cache.get(handle)
     
@@ -378,6 +394,8 @@ class WaveformDB:
             Handle ID if found, None otherwise
         """
         # Get the full name of the var and look it up
+        if self.hierarchy is None:
+            return None
         var_full_name = var.full_name(self.hierarchy)
         return self._var_name_to_handle.get(var_full_name)
     
@@ -478,7 +496,12 @@ class WaveformDB:
         Returns:
             Current backend type or None if no backend is loaded
         """
-        return self._current_backend_type
+        if self._current_backend_type == "pywellen":
+            return BackendType.PYWELLEN
+        elif self._current_backend_type == "pylibfst":
+            return BackendType.PYLIBFST
+        else:
+            return None
     
     def set_backend_preference(self, backend: Literal["pywellen", "pylibfst"]) -> None:
         """Set the preferred backend for next file load.

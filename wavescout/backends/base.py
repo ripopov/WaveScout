@@ -35,6 +35,7 @@ class WaveformBackend(ABC):
         """
         self.file_path = file_path
         self._waveform: Optional[WWaveform] = None
+        self._backend_type: BackendType  # Must be set by subclasses
         
     @abstractmethod
     def load_waveform(

@@ -209,7 +209,9 @@ class DesignTreeView(QWidget):
             handle = node.var_handle
         elif getattr(node, 'var', None) and self.waveform_db:
             # Try to get handle from var object (method is required by protocol)
-            handle = self.waveform_db.get_handle_for_var(node.var)
+            var = getattr(node, 'var', None)
+            if var is not None:
+                handle = self.waveform_db.get_handle_for_var(var)
         
         # If not, try to find signal handle by path
         if handle is None:

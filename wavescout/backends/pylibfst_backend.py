@@ -1,12 +1,15 @@
 """Pylibfst backend implementation with adapters for protocol types."""
 
-from typing import Optional, List, Tuple, cast
+from typing import Optional, List, Tuple, cast, TYPE_CHECKING, Any
 from pathlib import Path
 
-try:
+if TYPE_CHECKING:
     import pylibfst
-except ImportError:
-    raise ImportError("pylibfst is required for the pylibfst backend. Install it with: poetry run build-pylibfst")
+else:
+    try:
+        import pylibfst
+    except ImportError:
+        raise ImportError("pylibfst is required for the pylibfst backend. Install it with: poetry run build-pylibfst")
 
 from .base import WaveformBackend, BackendType, BackendFactory
 from ..backend_types import (
@@ -65,7 +68,7 @@ class WaveformAdapter:
     and the expected time_table attribute.
     """
     
-    def __init__(self, waveform: 'pylibfst.Waveform'):
+    def __init__(self, waveform: Any):  # pylibfst.Waveform
         """Initialize with a pylibfst Waveform.
         
         Args:
@@ -83,11 +86,11 @@ class WaveformAdapter:
     
     def body_loaded(self) -> bool:
         """Check if waveform body is loaded."""
-        return self._waveform.body_loaded()
+        return bool(self._waveform.body_loaded())
     
     def get_signal(self, var: WVar) -> WSignal:
         """Get signal data for a variable."""
-        signal = self._waveform.get_signal(var)  # type: ignore
+        signal = self._waveform.get_signal(var)
         return cast(WSignal, signal)
     
     def get_signal_from_path(self, abs_hierarchy_path: str) -> WSignal:
@@ -97,17 +100,17 @@ class WaveformAdapter:
     
     def load_signals(self, vars: List[WVar]) -> List[WSignal]:
         """Load multiple signals."""
-        signals = self._waveform.load_signals(vars)  # type: ignore
+        signals = self._waveform.load_signals(vars)
         return [cast(WSignal, sig) for sig in signals]
     
     def load_signals_multithreaded(self, vars: List[WVar]) -> List[WSignal]:
         """Load multiple signals using multiple threads."""
-        signals = self._waveform.load_signals_multithreaded(vars)  # type: ignore
+        signals = self._waveform.load_signals_multithreaded(vars)
         return [cast(WSignal, sig) for sig in signals]
     
     def unload_signals(self, signals: List[WSignal]) -> None:
         """Unload signals to free memory."""
-        self._waveform.unload_signals(signals)  # type: ignore
+        self._waveform.unload_signals(signals)
 
 
 class PylibfstBackend(WaveformBackend):
@@ -144,7 +147,7 @@ class PylibfstBackend(WaveformBackend):
             Loaded waveform object wrapped in adapter
         """
         # Load using pylibfst
-        pylibfst_waveform = pylibfst.Waveform(
+        pylibfst_waveform = pylibfst.Waveform(  # type: ignore[attr-defined]
             self.file_path,
             multi_threaded=multi_threaded,
             remove_scopes_with_empty_name=remove_scopes_with_empty_name,

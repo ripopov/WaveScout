@@ -27,13 +27,13 @@ def test_vcd_always_uses_pywellen():
     # Test with pywellen preference (default)
     db_pywellen = WaveformDB(backend_preference="pywellen")
     db_pywellen.open(str(vcd_file))
-    assert db_pywellen.get_backend_type() == "pywellen"
+    assert db_pywellen.get_backend_type() == BackendType.PYWELLEN
     db_pywellen.close()
     
     # Test with pylibfst preference - should still use pywellen for VCD
     db_pylibfst = WaveformDB(backend_preference="pylibfst")
     db_pylibfst.open(str(vcd_file))
-    assert db_pylibfst.get_backend_type() == "pywellen"
+    assert db_pylibfst.get_backend_type() == BackendType.PYWELLEN
     db_pylibfst.close()
 
 
@@ -48,13 +48,13 @@ def test_fst_backend_preference():
     # Test with pywellen preference
     db_pywellen = WaveformDB(backend_preference="pywellen")
     db_pywellen.open(str(fst_file))
-    assert db_pywellen.get_backend_type() == "pywellen"
+    assert db_pywellen.get_backend_type() == BackendType.PYWELLEN
     db_pywellen.close()
     
     # Test with pylibfst preference  
     db_pylibfst = WaveformDB(backend_preference="pylibfst")
     db_pylibfst.open(str(fst_file))
-    assert db_pylibfst.get_backend_type() == "pylibfst"
+    assert db_pylibfst.get_backend_type() == BackendType.PYLIBFST
     db_pylibfst.close()
 
 
@@ -144,7 +144,7 @@ def test_waveform_db_backend_switching():
     
     # Load with pywellen
     db.open(str(vcd_file))
-    assert db.get_backend_type() == "pywellen"
+    assert db.get_backend_type() == BackendType.PYWELLEN
     db.close()
     
     # Switch preference to pylibfst
@@ -153,7 +153,7 @@ def test_waveform_db_backend_switching():
     
     # Load VCD again - should still use pywellen (VCD always uses pywellen)
     db.open(str(vcd_file))
-    assert db.get_backend_type() == "pywellen"
+    assert db.get_backend_type() == BackendType.PYWELLEN
     db.close()
 
 
