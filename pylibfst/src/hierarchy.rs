@@ -416,11 +416,11 @@ impl Hierarchy {
         let mut iter_count = 0;
         let mut scope_count = 0;
         let mut var_count = 0;
-        let max_iterations = 100000;  // Safety limit
+        let max_iterations = 5000000;  // Safety limit
         
         loop {
             if iter_count >= max_iterations {
-                eprintln!("DEBUG: Hit max iterations limit");
+                eprintln!("DEBUG: Hit max iterations limit in Hierarchy::from_fst");
                 break;
             }
             
