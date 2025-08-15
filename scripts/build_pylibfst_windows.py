@@ -57,9 +57,15 @@ def setup_visual_studio_env():
     for line in result.stdout.splitlines():
         if '=' in line:
             key, value = line.split('=', 1)
-            # Don't set CC environment variable from vcvars - let cc-rs find it
-            if key.upper() != 'CC':
+            # Don't set CC or CXX environment variables from vcvars - let cc-rs find it
+            if key.upper() not in ('CC', 'CXX'):
                 os.environ[key] = value
+    
+    # Explicitly unset CC and CXX to ensure cc-rs auto-detects
+    if 'CC' in os.environ:
+        del os.environ['CC']
+    if 'CXX' in os.environ:
+        del os.environ['CXX']
     
     print("Visual Studio environment variables set")
     return True
