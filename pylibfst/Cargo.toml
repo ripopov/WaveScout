@@ -21,6 +21,3 @@ pkg-config = "0.3"
 lto = true
 opt-level = 3
 
-[[bin]]
-name = "test_struct_sizes"
-path = "src/test_struct_sizes.rs"
