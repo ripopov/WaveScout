@@ -347,6 +347,137 @@ pub fn load_signal_from_fst(
     Ok(signal)
 }
 
+// Batch loading context for multiple signals
+struct BatchLoadContext {
+    signals: std::collections::HashMap<FstHandle, *mut Signal>,
+    signal_types: std::collections::HashMap<FstHandle, (bool, bool)>, // (is_real, is_string)
+}
+
+// Batch callback function for multiple signals
+unsafe extern "C" fn batch_signal_callback(
+    user_data: *mut std::os::raw::c_void,
+    time: u64,
+    handle: FstHandle,
+    value: *const u8,
+) {
+    let ctx = &*(user_data as *const BatchLoadContext);
+    
+    // Find the signal for this handle
+    if let Some(&signal_ptr) = ctx.signals.get(&handle) {
+        let signal = &mut *signal_ptr;
+        
+        // Get signal type info
+        let (is_real, is_string) = ctx.signal_types.get(&handle)
+            .copied()
+            .unwrap_or((false, false));
+        
+        if value.is_null() {
+            signal.add_change(time, SignalValue::String(String::new()));
+            return;
+        }
+        
+        // Find the null terminator
+        let mut len = 0;
+        while *value.add(len) != 0 {
+            len += 1;
+        }
+        
+        let bytes = std::slice::from_raw_parts(value, len);
+        
+        // Fast path for real signals
+        if is_real {
+            if let Ok(s) = std::str::from_utf8(bytes) {
+                if let Ok(val) = s.parse::<f64>() {
+                    signal.add_change(time, SignalValue::Real(val));
+                    return;
+                }
+            }
+        }
+        
+        // Fast path for binary signals
+        if !is_real && !is_string {
+            if len > 0 && (bytes[0] == b'0' || bytes[0] == b'1') {
+                let mut is_binary = true;
+                let mut binary = Vec::with_capacity(len);
+                
+                for &b in bytes {
+                    if b == b'0' {
+                        binary.push(0);
+                    } else if b == b'1' {
+                        binary.push(1);
+                    } else {
+                        is_binary = false;
+                        break;
+                    }
+                }
+                
+                if is_binary {
+                    signal.add_change(time, SignalValue::Binary(binary));
+                    return;
+                }
+            }
+        }
+        
+        // Default: parse as string
+        let value_str = String::from_utf8_lossy(bytes);
+        let signal_value = SignalValue::from_fst_string(&value_str, is_real, is_string);
+        signal.add_change(time, signal_value);
+    }
+}
+
+/// Load multiple signals from FST file in a single scan
+pub fn load_signals_batch_from_fst(
+    reader: &FstReader,
+    requests: &[(SignalRef, FstHandle, bool, bool)],
+) -> Vec<(SignalRef, Signal)> {
+    use std::collections::HashMap;
+    
+    // Create signals and context
+    let mut signals: HashMap<FstHandle, Box<Signal>> = HashMap::new();
+    let mut signal_refs: HashMap<FstHandle, SignalRef> = HashMap::new();
+    let mut signal_types: HashMap<FstHandle, (bool, bool)> = HashMap::new();
+    
+    // Clear all masks first
+    reader.clear_fac_process_mask_all();
+    
+    // Set up signals and masks for all requested handles
+    for &(ref_id, handle, is_real, is_string) in requests {
+        // Pre-allocate capacity based on signal type
+        let capacity = if is_real { 10240 } else { 1024 };
+        signals.insert(handle, Box::new(Signal::with_capacity(capacity)));
+        signal_refs.insert(handle, ref_id);
+        signal_types.insert(handle, (is_real, is_string));
+        
+        // Set mask for this handle
+        reader.set_fac_process_mask(handle);
+    }
+    
+    // Create batch context with raw pointers to signals
+    let signal_ptrs: HashMap<FstHandle, *mut Signal> = signals
+        .iter_mut()
+        .map(|(&handle, signal)| (handle, signal.as_mut() as *mut Signal))
+        .collect();
+    
+    let ctx = BatchLoadContext {
+        signals: signal_ptrs,
+        signal_types,
+    };
+    
+    // Load all signals in a single iteration
+    let ctx_ptr = &ctx as *const _ as *mut std::os::raw::c_void;
+    reader.iterate_blocks(Some(batch_signal_callback), ctx_ptr);
+    
+    // Convert to result vector
+    let mut results = Vec::new();
+    for (handle, signal) in signals {
+        if let Some(&ref_id) = signal_refs.get(&handle) {
+            results.push((ref_id, *signal));
+        }
+    }
+    
+    results
+}
+
 /// Signal source for loading and caching signals
 pub struct SignalSource {
     reader: Arc<FstReader>,
@@ -396,33 +527,58 @@ impl SignalSource {
         Ok(signal_arc)
     }
     
-    /// Load multiple signals
+    /// Load multiple signals efficiently in a single file scan
     pub fn load_signals(
         &self,
         requests: Vec<(SignalRef, FstHandle, bool, bool)>,
         multi_threaded: bool,
     ) -> Vec<(SignalRef, Arc<Signal>)> {
-        if multi_threaded {
-            use rayon::prelude::*;
-            
-            requests
-                .par_iter()
-                .filter_map(|&(ref_id, handle, is_real, is_string)| {
-                    self.load_signal(ref_id, handle, is_real, is_string)
-                        .ok()
-                        .map(|signal| (ref_id, signal))
-                })
-                .collect()
-        } else {
-            requests
-                .iter()
-                .filter_map(|&(ref_id, handle, is_real, is_string)| {
-                    self.load_signal(ref_id, handle, is_real, is_string)
-                        .ok()
-                        .map(|signal| (ref_id, signal))
-                })
-                .collect()
+        // Single-threaded batch loading with one file scan, MT not supported
+        self.load_signals_batch(requests)
+    }
+    
+    /// Load multiple signals in a single file scan (optimized version)
+    fn load_signals_batch(
+        &self,
+        requests: Vec<(SignalRef, FstHandle, bool, bool)>,
+    ) -> Vec<(SignalRef, Arc<Signal>)> {
+        // Check cache first and filter out already loaded signals
+        let mut to_load = Vec::new();
+        let mut results = Vec::new();
+        
+        {
+            let cache = self.signal_cache.lock().unwrap();
+            for &(ref_id, handle, is_real, is_string) in &requests {
+                if let Some(signal) = cache.get(&ref_id) {
+                    results.push((ref_id, signal.clone()));
+                } else {
+                    to_load.push((ref_id, handle, is_real, is_string));
+                }
+            }
         }
+        
+        // If all signals are cached, return early
+        if to_load.is_empty() {
+            return results;
+        }
+        
+        // Load all uncached signals in a single scan
+        let loaded_signals = {
+            let _lock = self.reader_lock.lock().unwrap();
+            load_signals_batch_from_fst(&self.reader, &to_load)
+        };
+        
+        // Store in cache and add to results
+        {
+            let mut cache = self.signal_cache.lock().unwrap();
+            for (ref_id, signal) in loaded_signals {
+                let signal_arc = Arc::new(signal);
+                cache.insert(ref_id, signal_arc.clone());
+                results.push((ref_id, signal_arc));
+            }
+        }
+        
+        results
     }
     
     /// Clear signal cache
