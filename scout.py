@@ -640,8 +640,8 @@ class WaveScoutMainWindow(QMainWindow):
         # Store file path for later use
         self._loading_session_path = file_path
         
-        # Create and run loader, but defer start slightly to ensure dialog paints first
-        loader = LoaderRunnable(load_session, Path(file_path))
+        # Create and run loader with backend preference, but defer start slightly to ensure dialog paints first
+        loader = LoaderRunnable(load_session, Path(file_path), backend_preference=self.fst_backend_preference)
         loader.signals.finished.connect(self._on_session_load_finished)
         loader.signals.error.connect(self._on_session_load_error)
         # Process events so the dialog is shown before starting heavy work

@@ -208,9 +208,13 @@ def save_session(session: WaveformSession, path: pathlib.Path) -> None:
         yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
 
-def load_session(path: pathlib.Path) -> WaveformSession:
+def load_session(path: pathlib.Path, backend_preference: Optional[str] = None) -> WaveformSession:
     """
     Deserialize YAML to dataclasses and reconnect to waveform DB.
+    
+    Args:
+        path: Path to the session file
+        backend_preference: Optional backend preference ("pywellen" or "pylibfst") for FST files
     """
     # Read YAML
     with open(path, 'r') as f:
@@ -220,7 +224,7 @@ def load_session(path: pathlib.Path) -> WaveformSession:
     waveform_db = None
     db_uri = data.get('db_uri')
     if db_uri and pathlib.Path(db_uri).exists():
-        waveform_db = WaveformDB()
+        waveform_db = WaveformDB(backend_preference=backend_preference)
         waveform_db.open(db_uri)
     
     # Deserialize viewport
