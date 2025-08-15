@@ -30,6 +30,23 @@ For a detailed tree, see the Project Structure section in README.md.
 ## Important Commands
 
 ### Initial Setup
+
+#### Windows Setup
+```powershell
+# Open PowerShell and navigate to project directory
+cd <path-to-WaveScout>
+
+# Setup Visual Studio development environment (required for Windows)
+. .\setup_env.ps1
+
+# Install dependencies and build extensions
+make install
+
+# Run the application
+make dev
+```
+
+#### Linux/macOS Setup
 ```bash
 # Install dependencies and build pywellen
 # This creates a local .venv in the project directory
@@ -45,16 +62,36 @@ poetry run build-pywellen
 - Demo application: make dev
   - Equivalent: poetry run python scout.py
 
+### Windows Development Environment
+Windows users must set up the Visual Studio environment before building:
+
+1. **Open PowerShell** (not Command Prompt)
+2. **Source the environment script**: `. .\setup_env.ps1`
+   - This sets up Visual Studio 2022 C++ compiler
+   - Configures vcpkg package manager
+   - Verifies all required tools
+3. **Use standard make commands**: `make install`, `make dev`, `make test`
+
+The setup script will:
+- Find and configure Visual Studio 2022
+- Set up MSVC compiler environment
+- Configure vcpkg for C++ dependencies
+- Add Python Scripts directory to PATH
+- Verify all required tools (cl.exe, make.exe, python.exe)
+
 ### Virtual Environment
 The project uses Poetry with a local virtual environment (.venv) in the project directory.
 This ensures all dependencies are isolated and makes the project portable.
 
 To activate the virtual environment:
 ```bash
-# Direct activation (recommended)
+# Linux/macOS - Direct activation (recommended)
 source .venv/bin/activate
 
-# Or use Poetry's env activate command
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+
+# Or use Poetry's env activate command (all platforms)
 poetry env activate
 
 # All poetry commands automatically use the virtual environment
@@ -66,6 +103,9 @@ poetry run pytest
 ```bash
 # Build pywellen only
 poetry run build-pywellen
+
+# Build pylibfst (FST support)
+poetry run build-pylibfst
 
 # Build entire project
 make build
