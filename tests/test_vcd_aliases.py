@@ -17,7 +17,7 @@ This test verifies that:
 import pytest
 from pathlib import Path
 from wavescout import create_sample_session, WaveScoutWidget, save_session, load_session
-from wavescout.waveform_loader import create_signal_node_from_wellen
+from wavescout.waveform_loader import create_signal_node_from_var
 from wavescout.data_model import SignalNode
 import tempfile
 
@@ -87,7 +87,7 @@ def test_add_both_aliases_to_waveform(vcd_with_aliases, qtbot):
         for var in vars_list:
             full_name = var.full_name(hierarchy)
             if full_name in target_names:
-                node = create_signal_node_from_wellen(var, hierarchy, handle)
+                node = create_signal_node_from_var(var, hierarchy, handle)
                 node.name = full_name
                 session.root_nodes.append(node)
                 signals_added.append((full_name, handle))
@@ -133,7 +133,7 @@ def test_save_load_session_with_aliases(vcd_with_aliases, tmp_path):
             full_name = var.full_name(hierarchy)
             if full_name in target_names:
                 handle_used = handle
-                node = create_signal_node_from_wellen(var, hierarchy, handle)
+                node = create_signal_node_from_var(var, hierarchy, handle)
                 node.name = full_name
                 session.root_nodes.append(node)
                 

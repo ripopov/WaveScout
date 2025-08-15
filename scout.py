@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow,
                               QSplitter, QTreeView, QFileDialog,
                               QMessageBox, QProgressDialog, QAbstractItemView,
                               QToolBar, QStyle, QStyleFactory)
+from wavescout.message_box_utils import show_critical, show_warning, show_information, show_question
 from PySide6.QtCore import Qt, QThreadPool, QRunnable, Signal, QObject, QSettings, QEvent
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 # QtAsyncio and asyncio removed - using single-threaded execution
@@ -105,6 +106,11 @@ class WaveScoutMainWindow(QMainWindow):
         
         # Store current waveform file for reload
         self.current_wave_file: str | None = None
+        
+        # Initialize FST backend preference (default to pywellen)
+        self.fst_backend_preference = self.settings.value("fst_backend", "pywellen", type=str)
+        if self.fst_backend_preference not in ["pywellen", "pylibfst"]:
+            self.fst_backend_preference = "pywellen"
         
         # Create main splitter
         self.main_splitter = QSplitter(Qt.Horizontal)
@@ -249,6 +255,28 @@ class WaveScoutMainWindow(QMainWindow):
         
         # Edit menu
         edit_menu = menubar.addMenu("&Edit")
+        
+        # FST Loader submenu for backend selection
+        fst_loader_menu = edit_menu.addMenu("&FST Loader")
+        fst_loader_group = QActionGroup(self)
+        fst_loader_group.setExclusive(True)
+        
+        # Pywellen backend option
+        self.pywellen_action = QAction("&Wellen", self)
+        self.pywellen_action.setCheckable(True)
+        self.pywellen_action.setChecked(self.fst_backend_preference == "pywellen")
+        self.pywellen_action.triggered.connect(lambda: self._set_fst_backend("pywellen"))
+        fst_loader_group.addAction(self.pywellen_action)
+        fst_loader_menu.addAction(self.pywellen_action)
+        
+        # Pylibfst backend option
+        self.pylibfst_action = QAction("&libfst", self)
+        self.pylibfst_action.setCheckable(True)
+        self.pylibfst_action.setChecked(self.fst_backend_preference == "pylibfst")
+        self.pylibfst_action.triggered.connect(lambda: self._set_fst_backend("pylibfst"))
+        fst_loader_group.addAction(self.pylibfst_action)
+        fst_loader_menu.addAction(self.pylibfst_action)
+        
         edit_menu.addSeparator()
         self.drop_marker_action = QAction("&Drop Marker", self)
         self.drop_marker_action.setShortcut(QKeySequence("Ctrl+M"))
@@ -357,13 +385,13 @@ class WaveScoutMainWindow(QMainWindow):
     def reload_waveform(self):
         """Reload the current waveform file."""
         if not self.current_wave_file:
-            QMessageBox.information(self, "No File Loaded", "No waveform file is currently loaded.")
+            show_information(self, "No File Loaded", "No waveform file is currently loaded.")
             return
             
         # Check if file still exists
         if not os.path.exists(self.current_wave_file):
-            QMessageBox.critical(self, "File Not Found", 
-                               f"The file no longer exists:\n{self.current_wave_file}")
+            show_critical(self, "File Not Found", 
+                        f"The file no longer exists:\n{self.current_wave_file}")
             self.current_wave_file = None
             self._set_waveform_actions_enabled(False)
             return
@@ -422,8 +450,8 @@ class WaveScoutMainWindow(QMainWindow):
         # Update status bar
         self.statusBar().showMessage(f"Loading {file_name}...")
         
-        # Create and run loader, but defer start slightly to ensure dialog paints first
-        loader = LoaderRunnable(create_sample_session, file_path)
+        # Create and run loader with backend preference, but defer start slightly to ensure dialog paints first
+        loader = LoaderRunnable(create_sample_session, file_path, self.fst_backend_preference)
         loader.signals.finished.connect(self._on_waveform_load_finished)
         loader.signals.error.connect(self._on_waveform_load_error)
         # Process events so the dialog is shown before starting heavy work
@@ -529,7 +557,7 @@ class WaveScoutMainWindow(QMainWindow):
         
     def on_load_error(self, error_msg):
         """Handle file load error."""
-        QMessageBox.critical(self, "Load Error", f"Failed to load file:\n{error_msg}")
+        show_critical(self, "Load Error", f"Failed to load file:\n{error_msg}")
         self.statusBar().showMessage("Load failed")
         # If running in test/integration mode, exit with error
         if getattr(self, 'exit_after_load', False):
@@ -543,7 +571,7 @@ class WaveScoutMainWindow(QMainWindow):
     def save_session(self):
         """Save the current session to a YAML file."""
         if not self.wave_widget.session:
-            QMessageBox.warning(self, "No Session", "No session to save.")
+            show_warning(self, "No Session", "No session to save.")
             return
             
         # Get file path from user
@@ -559,7 +587,7 @@ class WaveScoutMainWindow(QMainWindow):
                 save_session(self.wave_widget.session, Path(file_path))
                 self.statusBar().showMessage(f"Session saved to: {Path(file_path).name}")
             except Exception as e:
-                QMessageBox.critical(self, "Save Error", f"Failed to save session:\n{str(e)}")
+                show_critical(self, "Save Error", f"Failed to save session:\n{str(e)}")
                 
     def load_session(self):
         """Load a session from a YAML file using file dialog."""
@@ -656,7 +684,7 @@ class WaveScoutMainWindow(QMainWindow):
         session_file = getattr(self, '_loading_session_path', 'unknown')
         error_msg = f"Failed to load session from {session_file}:\n{error_msg}"
         print(f"Error: {error_msg}")
-        QMessageBox.critical(self, "Load Error", error_msg)
+        show_critical(self, "Load Error", error_msg)
         self.statusBar().showMessage("Session load failed")
         
         # Clean up stored path
@@ -915,7 +943,7 @@ class WaveScoutMainWindow(QMainWindow):
             delattr(self, '_pending_signal_nodes')
         
         # Show error message
-        QMessageBox.critical(self, "Signal Loading Error", error_msg)
+        show_critical(self, "Signal Loading Error", error_msg)
         self.statusBar().showMessage("Failed to load signals", 3000)
         
     def _add_node_to_session(self, new_node):
@@ -948,6 +976,30 @@ class WaveScoutMainWindow(QMainWindow):
             
         self.statusBar().showMessage(f"Added signal: {new_node.name}")
     
+    def _set_fst_backend(self, backend: str):
+        """Set the preferred FST backend for future file loads.
+        
+        Args:
+            backend: Either "pywellen" or "pylibfst"
+        """
+        if backend not in ["pywellen", "pylibfst"]:
+            return
+            
+        self.fst_backend_preference = backend
+        self.settings.setValue("fst_backend", backend)
+        
+        # Update menu checkmarks
+        if backend == "pywellen":
+            self.pywellen_action.setChecked(True)
+        else:
+            self.pylibfst_action.setChecked(True)
+        
+        # Notify user that change will take effect on next file load
+        self.statusBar().showMessage(
+            f"FST backend set to {'Wellen' if backend == 'pywellen' else 'libfst'}. "
+            "Change will take effect when next FST file is loaded.", 5000
+        )
+    
     def _drop_marker(self):
         """Add a marker at the current cursor position."""
         if self.wave_widget.controller and self.wave_widget.session:
@@ -978,7 +1030,7 @@ class WaveScoutMainWindow(QMainWindow):
         self.statusBar().showMessage(f"UI Scale: {int(scale * 100)}%", 2000)
         
         # Inform user that restart is required
-        result = QMessageBox.question(
+        result = show_question(
             self,
             "UI Scaling Changed",
             f"UI scaling set to {int(scale * 100)}%.\n\n"
@@ -1064,7 +1116,7 @@ class WaveScoutMainWindow(QMainWindow):
         if not style_name:
             return
         if style_name not in QStyleFactory.keys():
-            QMessageBox.warning(self, "Style Not Available", f"The style '{style_name}' is not available on this platform.")
+            show_warning(self, "Style Not Available", f"The style '{style_name}' is not available on this platform.")
             return
         app = QApplication.instance()
         if not app:
@@ -1076,7 +1128,7 @@ class WaveScoutMainWindow(QMainWindow):
         # Apply the style
         style = QStyleFactory.create(style_name)
         if style is None:
-            QMessageBox.warning(self, "Style Error", f"Failed to create style '{style_name}'.")
+            show_warning(self, "Style Error", f"Failed to create style '{style_name}'.")
             return
         app.setStyle(style)
         
@@ -1115,7 +1167,7 @@ class WaveScoutMainWindow(QMainWindow):
             self.statusBar().showMessage(f"Style: {msg}", 2000)
             
         except Exception as e:
-            QMessageBox.warning(self, "Style Error", f"Failed to apply QDarkStyle: {str(e)}")
+            show_warning(self, "Style Error", f"Failed to apply QDarkStyle: {str(e)}")
             # Fall back to default style
             app.setStyleSheet("")
             self.settings.setValue("style_type", "default")

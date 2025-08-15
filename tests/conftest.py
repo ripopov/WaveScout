@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 from wavescout import create_sample_session, WaveScoutWidget
-from wavescout.waveform_loader import create_signal_node_from_wellen
+from wavescout.waveform_loader import create_signal_node_from_var
 from wavescout.data_model import SignalNode
 
 
@@ -33,7 +33,7 @@ def add_signals_from_vcd(session, count=10, include_groups=True):
     for i in range(min(num_vars, count)):
         var = db.get_var(i)
         if var:
-            node = create_signal_node_from_wellen(var, hierarchy, i)
+            node = create_signal_node_from_var(var, hierarchy, i)
             session.root_nodes.append(node)
             signals_added += 1
     
@@ -45,7 +45,7 @@ def add_signals_from_vcd(session, count=10, include_groups=True):
         for i in range(count, min(count + 3, num_vars)):
             var = db.get_var(i)
             if var:
-                child = create_signal_node_from_wellen(var, hierarchy, i)
+                child = create_signal_node_from_var(var, hierarchy, i)
                 child.parent = group
                 group.children.append(child)
         

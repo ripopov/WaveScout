@@ -47,7 +47,7 @@ Tree Node Structure:
     ├── var_handle: SignalHandle    (Database handle for signal lookup)
     │                      (Integer index used by WaveformDB to efficiently
     │                       retrieve signal data - like a primary key)
-    └── var: object        (Waveform variable reference)
+    └── var: WVar          (Backend-agnostic variable reference)
                            (The actual Wellen variable object from the
                             hierarchy - contains signal metadata)
 
@@ -61,7 +61,7 @@ from PySide6.QtWidgets import QApplication
 from typing import Optional, List, overload, Dict, Union
 from .data_model import SignalHandle
 from .protocols import WaveformDBProtocol
-from pywellen import Hierarchy, Var
+from .backend_types import WHierarchy, WVar, WScope
 
 
 class DesignTreeNode:
@@ -85,7 +85,7 @@ class DesignTreeNode:
         self.parent = parent
         self.children: List['DesignTreeNode'] = []
         self.var_handle: Optional[SignalHandle] = None  # Wellen Var handle for database lookups
-        self.var: Optional[Var] = None  # Wellen Var object reference
+        self.var: Optional[WVar] = None  # Backend-agnostic Var object reference
 
     def add_child(self, child: 'DesignTreeNode') -> None:
         """Add a child node to this node and set this node as its parent."""
@@ -220,7 +220,7 @@ class DesignTreeModel(QAbstractItemModel):
         # Clean up the temporary mapping
         self._var_to_handle = None
 
-    def _build_scope_recursive(self, scopes: List[Hierarchy], parent_node: DesignTreeNode, hierarchy: Hierarchy) -> None:
+    def _build_scope_recursive(self, scopes: List[WScope], parent_node: DesignTreeNode, hierarchy: WHierarchy) -> None:
         """Recursively build the tree structure for scopes and their contents.
         
         This method traverses the design hierarchy depth-first, creating nodes for:

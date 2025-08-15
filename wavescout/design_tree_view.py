@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QSettings, QModelIndex, QSortFilterProxyModel, QEvent, QObject
 from PySide6.QtGui import QKeyEvent
-from pywellen import Var
+from .backend_types import WVar
 
 from .design_tree_model import DesignTreeModel, DesignTreeNode
 from .data_model import SignalNode, RenderType, DisplayFormat, SignalHandle
@@ -375,7 +375,7 @@ class DesignTreeView(QWidget):
             self.signals_selected.emit(signal_nodes)
             self.status_message.emit(f"Added {len(signal_nodes)} signal(s)")
     
-    def _is_single_bit(self, var_obj: Optional[Var], handle: Optional[SignalHandle]) -> bool:
+    def _is_single_bit(self, var_obj: Optional[WVar], handle: Optional[SignalHandle]) -> bool:
         """Determine if a variable/signal is single-bit using pywellen API.
         
         Tries the provided var object first; if not available, attempts to fetch

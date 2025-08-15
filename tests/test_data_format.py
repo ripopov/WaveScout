@@ -8,7 +8,7 @@ from pathlib import Path
 from wavescout.signal_sampling import parse_signal_value
 from wavescout.data_model import DataFormat
 from wavescout.waveform_db import WaveformDB
-from wavescout.waveform_loader import create_signal_node_from_wellen
+from wavescout.waveform_loader import create_signal_node_from_var
 
 
 def test_parse_signal_value_unsigned():
@@ -219,7 +219,7 @@ def test_with_vcd_file():
         var = var_list[0]
         
         # Create signal node
-        signal_node = create_signal_node_from_wellen(var, hierarchy, handle)
+        signal_node = create_signal_node_from_var(var, hierarchy, handle)
         
         # Get signal object
         signal_obj = db.get_signal(handle)

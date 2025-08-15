@@ -20,7 +20,7 @@ from PySide6.QtCore import QItemSelectionModel
 from PySide6.QtTest import QTest
 
 from wavescout import create_sample_session, WaveScoutWidget, save_session, load_session
-from wavescout.waveform_loader import create_signal_node_from_wellen
+from wavescout.waveform_loader import create_signal_node_from_var
 from wavescout.design_tree_view import DesignTreeViewMode
 
 
@@ -184,7 +184,7 @@ class WaveScoutTestHelper:
                 
                 for key, (suffix, _) in signal_patterns.items():
                     if full_name.endswith(suffix):
-                        node = create_signal_node_from_wellen(var, hierarchy, handle)
+                        node = create_signal_node_from_var(var, hierarchy, handle)
                         node.name = full_name
                         found_nodes[key] = node
                         session.root_nodes.append(node)

@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (
     QPushButton, QColorDialog, QHeaderView, QMessageBox, QWidget,
     QStyledItemDelegate, QStyleOptionViewItem, QStyle
 )
+from .message_box_utils import show_warning
 from PySide6.QtCore import Qt, Signal, QModelIndex, QPersistentModelIndex
 from PySide6.QtGui import QColor, QKeyEvent, QCloseEvent, QCursor, QPainter, QBrush
 from typing import Optional
@@ -175,7 +176,7 @@ class MarkersWindow(QDialog):
                         item.setText(str(marker.time))
                     else:
                         item.setText("")
-                    QMessageBox.warning(self, "Invalid Value", "Please enter a valid integer timestamp.")
+                    show_warning(self, "Invalid Value", "Please enter a valid integer timestamp.")
             else:
                 # Empty timestamp, remove marker
                 self.controller.remove_marker(row)

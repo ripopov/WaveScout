@@ -1,30 +1,31 @@
-"""WaveformDB implementation using Wellen library."""
+"""WaveformDB implementation with backend-agnostic design."""
 
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Literal
+from pathlib import Path
+
 from .data_model import Time, SignalHandle, Timescale, TimeUnit
-
-try:
-    from pywellen import Waveform, Var, Hierarchy, Signal, TimeTable
-except ImportError:
-    raise ImportError(
-        "Failed to import pywellen. Please build it first:\n"
-        "poetry run build-pywellen"
-    )
+from .backend_types import (
+    WWaveform, WVar, WHierarchy, WSignal, WTimeTable, WScope
+)
+from .backends import BackendFactory, BackendType, WaveformBackend
 
 
 class WaveformDB:
-    """Waveform database using Wellen library for reading VCD/FST files."""
+    """Waveform database with backend-agnostic design for reading VCD/FST files."""
     
-    def __init__(self) -> None:
-        self.waveform: Optional[Waveform] = None
-        self.hierarchy: Optional[Hierarchy] = None
+    def __init__(self, backend_preference: Optional[Literal["pywellen", "pylibfst"]] = None) -> None:
+        self.waveform: Optional[WWaveform] = None
+        self.hierarchy: Optional[WHierarchy] = None
         self.uri: Optional[str] = None
-        self._var_map: Dict[SignalHandle, List[Var]] = {}  # Map handles to list of variables (for aliases)
-        self._signal_cache: Dict[SignalHandle, Signal] = {}  # Cache loaded signals
+        self._var_map: Dict[SignalHandle, List[WVar]] = {}  # Map handles to list of variables (for aliases)
+        self._signal_cache: Dict[SignalHandle, WSignal] = {}  # Cache loaded signals
         self._timescale: Optional[Timescale] = None  # Store parsed timescale
         self._var_name_to_handle: Dict[str, SignalHandle] = {}  # Map var full name to handle
         self._signal_ref_to_handle: Dict[int, SignalHandle] = {}  # Map SignalRef to our handle (for O(1) alias detection)
         self._handle_to_signal_ref: Dict[SignalHandle, int] = {}  # Map our handle to SignalRef
+        self._backend: Optional[WaveformBackend] = None  # Current backend instance
+        self._backend_preference = backend_preference or "pywellen"  # Default to pywellen
+        self._current_backend_type: Optional[Literal["pywellen", "pylibfst"]] = None
         
     @property
     def file_path(self) -> Optional[str]:
@@ -32,7 +33,7 @@ class WaveformDB:
         return self.uri
         
     def open(self, uri: str) -> None:
-        """Open a waveform file using Wellen."""
+        """Open a waveform file using the configured backend."""
         import time
         import os
         
@@ -46,10 +47,37 @@ class WaveformDB:
         
         print(f"Loading {file_name} ({file_size_mb:.1f} MB)...")
         
-        # Load waveform
+        # Determine backend based on file type and preference
+        path = Path(uri)
+        ext = path.suffix.lower()
+        
+        if ext == '.vcd':
+            # VCD files always use pywellen
+            backend_type = BackendType.PYWELLEN
+            self._current_backend_type = "pywellen"
+            print("  - Using pywellen backend (VCD file)")
+        elif ext == '.fst':
+            # FST files use the preferred backend
+            if self._backend_preference == "pylibfst":
+                backend_type = BackendType.PYLIBFST
+                self._current_backend_type = "pylibfst"
+                print("  - Using pylibfst backend (FST file, user preference)")
+            else:
+                backend_type = BackendType.PYWELLEN
+                self._current_backend_type = "pywellen"
+                print("  - Using pywellen backend (FST file)")
+        else:
+            raise ValueError(f"Unsupported file format: {ext}")
+        
+        # Create backend using factory
         load_start = time.time()
-        self.waveform = Waveform(path=uri)
-        self.hierarchy = self.waveform.hierarchy
+        self._backend = BackendFactory.create_backend(
+            file_path=uri,
+            backend_type=backend_type
+        )
+        # Load waveform
+        self.waveform = self._backend.load_waveform()
+        self.hierarchy = self._backend.get_hierarchy()
         load_end = time.time()
         
         print(f"  - Waveform loaded in {load_end - load_start:.2f} seconds")
@@ -66,7 +94,7 @@ class WaveformDB:
         seen_vars = set()
         
         # Recursively collect all variables from the hierarchy
-        def collect_vars_recursive(scope: Hierarchy) -> None:
+        def collect_vars_recursive(scope: WScope) -> None:
             # Add direct variables from this scope
             for var in scope.vars(self.hierarchy):
                 var_id = id(var)
@@ -120,7 +148,7 @@ class WaveformDB:
             
         handles = []
         # Get variables from all top scopes recursively
-        def collect_vars_recursive(scope: Hierarchy) -> None:
+        def collect_vars_recursive(scope: WScope) -> None:
             # Add direct variables
             for var in scope.vars(self.hierarchy):
                 for handle, mapped_vars in self._var_map.items():
@@ -192,6 +220,8 @@ class WaveformDB:
         self._var_name_to_handle.clear()
         self._signal_ref_to_handle.clear()
         self._handle_to_signal_ref.clear()
+        self._backend = None
+        self._current_backend_type = None
         
     def _extract_timescale(self) -> None:
         """Extract timescale from the hierarchy."""
@@ -236,23 +266,23 @@ class WaveformDB:
             total += len(vars_list)
         return total
         
-    def get_var(self, handle: SignalHandle) -> Optional[Var]:
-        """Get variable by handle. Returns pywellen Var object."""
+    def get_var(self, handle: SignalHandle) -> Optional[WVar]:
+        """Get variable by handle. Returns backend-agnostic Var object."""
         vars_list = self._var_map.get(handle, [])
         return vars_list[0] if vars_list else None
     
-    def get_all_vars_for_handle(self, handle: SignalHandle) -> List[Var]:
+    def get_all_vars_for_handle(self, handle: SignalHandle) -> List[WVar]:
         """Get all variables (including aliases) for a handle."""
         return self._var_map.get(handle, [])
     
-    def get_time_table(self) -> Optional[TimeTable]:
-        """Get the time table from the waveform. Returns pywellen TimeTable object."""
+    def get_time_table(self) -> Optional[WTimeTable]:
+        """Get the time table from the waveform. Returns backend-agnostic TimeTable object."""
         if self.waveform:
             return self.waveform.time_table
         return None
     
-    def get_signal(self, handle: SignalHandle) -> Optional[Signal]:
-        """Get the signal object for the given handle. Returns pywellen Signal object.
+    def get_signal(self, handle: SignalHandle) -> Optional[WSignal]:
+        """Get the signal object for the given handle. Returns backend-agnostic Signal object.
         
         This method implements lazy loading - signals are only loaded when first requested.
         """
@@ -266,9 +296,9 @@ class WaveformDB:
         
         # Load signal lazily if not cached
         if handle not in self._signal_cache:
-            if self.waveform is not None:
+            if self._backend is not None:
                 var = vars_list[0]
-                self._signal_cache[handle] = self.waveform.get_signal(var)
+                self._signal_cache[handle] = self._backend.get_signal(var)
             
         return self._signal_cache.get(handle)
     
@@ -286,13 +316,13 @@ class WaveformDB:
     def preload_signals(self, handles: List[SignalHandle]) -> None:
         """Preload multiple signals using efficient batch loading.
         
-        This method uses pywellen's load_signals_multithreaded for optimal performance.
+        This method uses the backend's load_signals_multithreaded for optimal performance.
         With the GIL release fix in pywellen, this can be safely called from a background thread.
         
         Args:
             handles: List of signal handles to preload
         """
-        if not self.waveform:
+        if not self._backend:
             return
             
         # Filter out already cached signals and invalid handles
@@ -320,7 +350,7 @@ class WaveformDB:
         # Batch load signals using multithreaded API
         # GIL is now properly released in pywellen during the heavy I/O
         try:
-            loaded_signals = self.waveform.load_signals_multithreaded(vars_to_load)
+            loaded_signals = self._backend.load_signals_multithreaded(vars_to_load)
             
             # Cache the loaded signals
             for var, signal in zip(vars_to_load, loaded_signals):
@@ -338,11 +368,11 @@ class WaveformDB:
         """Get all handle IDs in the database."""
         return list(self._var_map.keys())
     
-    def get_handle_for_var(self, var: Var) -> Optional[SignalHandle]:
+    def get_handle_for_var(self, var: WVar) -> Optional[SignalHandle]:
         """Get handle for a specific variable object.
         
         Args:
-            var: Pywellen variable object
+            var: Backend-agnostic variable object
             
         Returns:
             Handle ID if found, None otherwise
@@ -362,11 +392,11 @@ class WaveformDB:
         """
         return self._var_name_to_handle.get(name)
     
-    def get_var_to_handle_mapping(self) -> Dict[Var, int]:
+    def get_var_to_handle_mapping(self) -> Dict[WVar, int]:
         """Get complete variable-to-handle mapping.
         
         Returns:
-            Dictionary mapping pywellen variable objects to handle IDs
+            Dictionary mapping backend-agnostic variable objects to handle IDs
         """
         var_to_handle = {}
         for handle, vars_list in self._var_map.items():
@@ -395,7 +425,7 @@ class WaveformDB:
         """
         return handle in self._signal_cache
     
-    def iter_handles_and_vars(self) -> List[Tuple[int, List[Var]]]:
+    def iter_handles_and_vars(self) -> List[Tuple[int, List[WVar]]]:
         """Iterate over all handles and their associated variables.
         
         Returns:
@@ -441,3 +471,24 @@ class WaveformDB:
             if width is not None:
                 return int(width)
         return 32  # Default bit width
+    
+    def get_backend_type(self) -> Optional[BackendType]:
+        """Get the current backend type.
+        
+        Returns:
+            Current backend type or None if no backend is loaded
+        """
+        return self._current_backend_type
+    
+    def set_backend_preference(self, backend: Literal["pywellen", "pylibfst"]) -> None:
+        """Set the preferred backend for next file load.
+        
+        Args:
+            backend: The backend to use for next file load
+        
+        Note:
+            This preference takes effect only when the next waveform file is loaded.
+            VCD files always use pywellen regardless of this setting.
+        """
+        if backend in ["pywellen", "pylibfst"]:
+            self._backend_preference = backend

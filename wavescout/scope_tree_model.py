@@ -7,7 +7,7 @@ This model filters out variables and shows only scopes (modules) in the hierarch
 from typing import Optional, Union, overload, List, Dict
 from PySide6.QtCore import QAbstractItemModel, QModelIndex, QPersistentModelIndex, Qt, Signal, QObject
 from PySide6.QtGui import QIcon
-from pywellen import Hierarchy, Var
+from .backend_types import WHierarchy, WVar, WScope
 from .protocols import WaveformDBProtocol
 from .vars_view import VariableData
 
@@ -82,7 +82,7 @@ class ScopeTreeModel(QAbstractItemModel):
         # Build hierarchy from top scopes
         self._build_scope_recursive(hierarchy.top_scopes(), self.root_node, hierarchy)
     
-    def _build_scope_recursive(self, scopes: List[Hierarchy], parent_node: DesignTreeNode, hierarchy: Hierarchy) -> None:
+    def _build_scope_recursive(self, scopes: List[WScope], parent_node: DesignTreeNode, hierarchy: WHierarchy) -> None:
         """Recursively build scope nodes."""
         for scope in scopes:
             # Create node for this scope
@@ -161,7 +161,7 @@ class ScopeTreeModel(QAbstractItemModel):
         
         return variables
     
-    def _find_scope_by_path(self, path_parts: List[str], hierarchy: Hierarchy) -> Optional[Hierarchy]:
+    def _find_scope_by_path(self, path_parts: List[str], hierarchy: WHierarchy) -> Optional[WScope]:
         """Find a scope by its path parts."""
         if not path_parts:
             return None
@@ -185,7 +185,7 @@ class ScopeTreeModel(QAbstractItemModel):
         
         return current_scope
     
-    def _format_bit_range(self, var: Var) -> str:
+    def _format_bit_range(self, var: WVar) -> str:
         """Format the bit range for display."""
         # Try to get bitwidth using the same method as DesignTreeModel
         try:

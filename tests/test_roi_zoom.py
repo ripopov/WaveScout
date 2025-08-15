@@ -57,7 +57,7 @@ class ROITestHelper:
         assert db is not None and db.hierarchy is not None
         
         # Find and add first few signals
-        from wavescout.waveform_loader import create_signal_node_from_wellen
+        from wavescout.waveform_loader import create_signal_node_from_var
         
         signal_count = 0
         for handle, vars_list in db.iter_handles_and_vars():
@@ -65,7 +65,7 @@ class ROITestHelper:
                 if signal_count >= 3:  # Add 3 signals for testing
                     break
                 full_name = var.full_name(db.hierarchy)
-                node = create_signal_node_from_wellen(var, db.hierarchy, handle)
+                node = create_signal_node_from_var(var, db.hierarchy, handle)
                 node.name = full_name
                 session.root_nodes.append(node)
                 signal_count += 1

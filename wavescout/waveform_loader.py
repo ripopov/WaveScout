@@ -1,13 +1,13 @@
 """Helper functions to load waveforms and create signal nodes."""
 
 from typing import List, Dict
-from pywellen import Var, Hierarchy
+from .backend_types import WVar, WHierarchy
 from .data_model import SignalNode, SignalHandle, DisplayFormat, DataFormat, WaveformSession, RenderType
 from .waveform_db import WaveformDB
 
 
-def create_signal_node_from_wellen(var: Var, hierarchy: Hierarchy, handle: SignalHandle) -> SignalNode:
-    """Create a SignalNode from a Wellen variable."""
+def create_signal_node_from_var(var: WVar, hierarchy: WHierarchy, handle: SignalHandle) -> SignalNode:
+    """Create a SignalNode from a backend variable."""
     # Get variable info
     full_name = var.full_name(hierarchy)
     local_name = var.name(hierarchy)
@@ -55,9 +55,14 @@ def create_signal_node_from_wellen(var: Var, hierarchy: Hierarchy, handle: Signa
     
     return node
 
-def create_sample_session(vcd_path: str) -> WaveformSession:
-    """Create a sample WaveformSession with signals from a VCD file."""
-    db = WaveformDB()
+def create_sample_session(vcd_path: str, backend_preference: str = "pywellen") -> WaveformSession:
+    """Create a sample WaveformSession with signals from a waveform file.
+    
+    Args:
+        vcd_path: Path to the waveform file (VCD or FST)
+        backend_preference: Preferred backend for FST files ("pywellen" or "pylibfst")
+    """
+    db = WaveformDB(backend_preference=backend_preference)
     db.open(vcd_path)
     session = WaveformSession()
     session.waveform_db = db
