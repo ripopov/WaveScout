@@ -351,6 +351,7 @@ pub fn load_signal_from_fst(
 pub struct SignalSource {
     reader: Arc<FstReader>,
     signal_cache: Arc<Mutex<BTreeMap<SignalRef, Arc<Signal>>>>,
+    reader_lock: Arc<Mutex<()>>,  // Mutex to serialize FST reader access
 }
 
 impl SignalSource {
@@ -358,6 +359,7 @@ impl SignalSource {
         SignalSource {
             reader,
             signal_cache: Arc::new(Mutex::new(BTreeMap::new())),
+            reader_lock: Arc::new(Mutex::new(())),
         }
     }
     
@@ -377,8 +379,12 @@ impl SignalSource {
             }
         }
         
-        // Load signal from FST
-        let signal = load_signal_from_fst(&self.reader, handle, is_real, is_string)?;
+        // Load signal from FST with mutex protection
+        // The FST C library is not thread-safe for concurrent block iteration
+        let signal = {
+            let _lock = self.reader_lock.lock().unwrap();
+            load_signal_from_fst(&self.reader, handle, is_real, is_string)?
+        };
         let signal_arc = Arc::new(signal);
         
         // Store in cache
