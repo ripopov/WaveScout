@@ -158,13 +158,9 @@ class WaveScoutMainWindow(QMainWindow):
             # Load the provided waveform file (vcd/fst)
             QTimer.singleShot(100, lambda: self.load_file(wave_file))
         else:
-            # Load default VCD file
-            vcd_path = Path(__file__).parent / "test_inputs" / "swerv1.vcd"
-            if vcd_path.exists():
-                QTimer.singleShot(100, lambda: self.load_vcd(str(vcd_path)))
-            else:
-                # No default file, ensure actions are disabled
-                self._set_waveform_actions_enabled(False)
+            # No file specified, start with empty application
+            # Ensure waveform-related actions are disabled until a file is loaded
+            self._set_waveform_actions_enabled(False)
         
     def _create_actions(self):
         """Create shared QAction objects for toolbar and menu."""
@@ -1239,14 +1235,15 @@ def main():
     window = WaveScoutMainWindow(session_file=args.load_session, wave_file=args.load_wave, exit_after_load=args.exit_after_load)
     window.show()
     
-    print("WaveScout Demo")
-    print("=============")
+    print("WaveScout - Digital Waveform Viewer")
+    print("====================================")
     if args.load_session:
         print(f"- Loading session from: {args.load_session}")
     elif args.load_wave:
         print(f"- Loading waveform from: {args.load_wave}")
     else:
-        print("- Loading swerv1.vcd")
+        print("- No waveform file specified")
+        print("- Use File -> Open to load a VCD or FST file")
     print("- Click on waveform to move cursor")
     print("- Use View menu to zoom in/out")
     print("- Expand/collapse signal groups in the tree")
