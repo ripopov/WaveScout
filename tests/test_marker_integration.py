@@ -38,6 +38,16 @@ from scout import WaveScoutMainWindow
 from wavescout import create_sample_session, save_session
 from wavescout.data_model import SignalNode
 
+# Import test utilities if running as part of test suite
+try:
+    from test_utils import get_test_input_path, TestFiles
+except ImportError:
+    # Fallback for standalone execution
+    def get_test_input_path(filename):
+        return Path(__file__).parent.parent / "test_inputs" / filename
+    class TestFiles:
+        APB_SIM_VCD = "apb_sim.vcd"
+
 
 class MarkerTestHelper:
     """
@@ -180,7 +190,7 @@ def test_marker_integration():
         
         # Step 1: Start main application with test VCD file
         print("\n1. Starting application with apb_sim.vcd...")
-        test_vcd = Path(__file__).parent.parent / "test_inputs" / "apb_sim.vcd"
+        test_vcd = get_test_input_path(TestFiles.APB_SIM_VCD)
         assert test_vcd.exists(), f"Test VCD not found: {test_vcd}"
         
         window = WaveScoutMainWindow()

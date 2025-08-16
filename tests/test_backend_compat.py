@@ -24,21 +24,16 @@ import pytest
 import time
 import statistics
 
+# Import test utilities
+from .test_utils import get_test_input_path, TestFiles
+
 
 def get_test_fst_file():
     """Find a test FST file"""
-    # Look for test FST files (now from root tests directory)
-    test_files = [
-        "../test_inputs/des.fst",
-        "test_inputs/des.fst",
-    ]
-    
-    for path in test_files:
-        full_path = Path(__file__).parent / path
-        if full_path.exists():
-            return str(full_path.resolve())
-    
-    return None
+    try:
+        return str(get_test_input_path(TestFiles.DES_FST))
+    except FileNotFoundError:
+        return None
 
 
 @pytest.mark.skipif(pylibfst is None, reason="pylibfst not built")
@@ -440,19 +435,9 @@ def test_query_result_comparison():
 def test_time_range_comparison():
     """Compare time range between pywellen and pylibfst"""
     # Use vcd_extensions.fst for testing
-    test_files = [
-        "../test_inputs/vcd_extensions.fst",
-        "test_inputs/vcd_extensions.fst",
-    ]
-    
-    fst_file = None
-    for path in test_files:
-        full_path = Path(__file__).parent / path
-        if full_path.exists():
-            fst_file = str(full_path.resolve())
-            break
-    
-    if not fst_file:
+    try:
+        fst_file = str(get_test_input_path(TestFiles.VCD_EXTENSIONS_FST))
+    except FileNotFoundError:
         pytest.skip("vcd_extensions.fst not found")
     
     print(f"\nComparing time range for: {fst_file}")
@@ -529,19 +514,9 @@ def test_time_range_comparison():
 def test_var_api_compatibility():
     """Test Var API compatibility between pywellen and pylibfst using vcd_extensions.fst"""
     # Look for vcd_extensions.fst file
-    test_files = [
-        "../test_inputs/vcd_extensions.fst",
-        "test_inputs/vcd_extensions.fst",
-    ]
-    
-    fst_file = None
-    for path in test_files:
-        full_path = Path(__file__).parent / path
-        if full_path.exists():
-            fst_file = str(full_path.resolve())
-            break
-    
-    if not fst_file:
+    try:
+        fst_file = str(get_test_input_path(TestFiles.VCD_EXTENSIONS_FST))
+    except FileNotFoundError:
         pytest.skip("vcd_extensions.fst not found")
     
     print(f"\nTesting Var API compatibility with: {fst_file}")
@@ -741,19 +716,9 @@ def test_var_api_compatibility():
 def test_hierarchy_methods_compatibility():
     """Test all Hierarchy methods work the same between pywellen and pylibfst"""
     # Use vcd_extensions.fst for testing
-    test_files = [
-        "../test_inputs/vcd_extensions.fst",
-        "test_inputs/vcd_extensions.fst",
-    ]
-    
-    fst_file = None
-    for path in test_files:
-        full_path = Path(__file__).parent / path
-        if full_path.exists():
-            fst_file = str(full_path.resolve())
-            break
-    
-    if not fst_file:
+    try:
+        fst_file = str(get_test_input_path(TestFiles.VCD_EXTENSIONS_FST))
+    except FileNotFoundError:
         pytest.skip("vcd_extensions.fst not found")
     
     print(f"\nTesting Hierarchy methods compatibility with: {fst_file}")
@@ -966,19 +931,9 @@ def test_hierarchy_methods_compatibility():
 def test_hierarchy_deep_comparison():
     """Deep comparison of hierarchy traversal between pywellen and pylibfst"""
     # Look for vcd_extensions.fst
-    test_files = [
-        "../test_inputs/vcd_extensions.fst",
-        "test_inputs/vcd_extensions.fst",
-    ]
-    
-    fst_file = None
-    for path in test_files:
-        full_path = Path(__file__).parent / path
-        if full_path.exists():
-            fst_file = str(full_path.resolve())
-            break
-    
-    if not fst_file:
+    try:
+        fst_file = str(get_test_input_path(TestFiles.VCD_EXTENSIONS_FST))
+    except FileNotFoundError:
         pytest.skip("vcd_extensions.fst not found")
     
     print(f"\nComparing hierarchy for: {fst_file}")

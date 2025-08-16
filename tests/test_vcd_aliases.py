@@ -20,12 +20,13 @@ from wavescout import create_sample_session, WaveScoutWidget, save_session, load
 from wavescout.waveform_loader import create_signal_node_from_var
 from wavescout.data_model import SignalNode
 import tempfile
+from .test_utils import get_test_input_path, TestFiles
 
 
 @pytest.fixture
 def vcd_with_aliases():
     """Create a session from swerv1.vcd which contains signal aliases."""
-    vcd_path = Path(__file__).parent.parent / "test_inputs" / "swerv1.vcd"
+    vcd_path = get_test_input_path(TestFiles.SWERV1_VCD)
     return create_sample_session(str(vcd_path))
 
 

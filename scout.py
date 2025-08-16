@@ -379,7 +379,7 @@ class WaveScoutMainWindow(QMainWindow):
         view_menu.addSeparator()
         
     def reload_waveform(self):
-        """Reload the current waveform file."""
+        """Reload the current waveform file while preserving session state."""
         if not self.current_wave_file:
             show_information(self, "No File Loaded", "No waveform file is currently loaded.")
             return
@@ -391,10 +391,42 @@ class WaveScoutMainWindow(QMainWindow):
             self.current_wave_file = None
             self._set_waveform_actions_enabled(False)
             return
-            
-        # Reload the file
-        self.statusBar().showMessage(f"Reloading {os.path.basename(self.current_wave_file)}...")
-        self.load_file(self.current_wave_file)
+        
+        # Save current session state to temporary file
+        import tempfile
+        from pathlib import Path
+        from wavescout.persistence import save_session, load_session
+        
+        if self.wave_widget.session and self.wave_widget.session.waveform_db:
+            try:
+                # Create temporary file for session
+                tmp_fd, tmp_path = tempfile.mkstemp(suffix='.yaml', prefix='wavescout_reload_')
+                temp_session_path = Path(tmp_path)
+                os.close(tmp_fd)  # Close the file descriptor as we'll write using save_session
+                
+                # Save current session state
+                save_session(self.wave_widget.session, temp_session_path)
+                
+                # Reload the waveform with preserved session
+                self.statusBar().showMessage(f"Reloading {os.path.basename(self.current_wave_file)} with preserved session...")
+                
+                # Load the session (which will reload the waveform and restore state)
+                self.load_session_file(str(temp_session_path))
+                
+                # Note: Clean up will happen after the async load completes
+                # Store the temp path to delete it after loading
+                self._temp_reload_session_path = temp_session_path
+                    
+            except Exception as e:
+                # If session preservation fails, fall back to regular reload
+                show_warning(self, "Session Preservation Failed", 
+                           f"Failed to preserve session state. Performing regular reload.\n{str(e)}")
+                self.statusBar().showMessage(f"Reloading {os.path.basename(self.current_wave_file)}...")
+                self.load_file(self.current_wave_file)
+        else:
+            # No session to preserve, just reload the file
+            self.statusBar().showMessage(f"Reloading {os.path.basename(self.current_wave_file)}...")
+            self.load_file(self.current_wave_file)
     
     def _set_waveform_actions_enabled(self, enabled: bool):
         """Enable or disable waveform-related actions."""
@@ -688,6 +720,14 @@ class WaveScoutMainWindow(QMainWindow):
         # that may not exist if loading was interrupted
         if hasattr(self, '_loading_session_path'):
             delattr(self, '_loading_session_path')
+        
+        # Clean up temporary reload session file if it exists
+        if hasattr(self, '_temp_reload_session_path'):
+            try:
+                self._temp_reload_session_path.unlink()
+            except Exception:
+                pass  # Ignore cleanup errors
+            delattr(self, '_temp_reload_session_path')
     
     def _on_loaded_session_signals_preloaded(self):
         """Handle completion of session signal preloading."""
@@ -721,6 +761,14 @@ class WaveScoutMainWindow(QMainWindow):
             self.statusBar().showMessage(f"Session loaded from: {Path(session_file).name}")
             print(f"Successfully loaded session from: {session_file}")
             delattr(self, '_loading_session_path')
+        
+        # Clean up temporary reload session file if it exists
+        if hasattr(self, '_temp_reload_session_path'):
+            try:
+                self._temp_reload_session_path.unlink()
+            except Exception:
+                pass  # Ignore cleanup errors
+            delattr(self, '_temp_reload_session_path')
         
         # Update design tree if we have a waveform
         if session.waveform_db:

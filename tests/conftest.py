@@ -5,12 +5,13 @@ from pathlib import Path
 from wavescout import create_sample_session, WaveScoutWidget
 from wavescout.waveform_loader import create_signal_node_from_var
 from wavescout.data_model import SignalNode
+from .test_utils import get_test_input_path, TestFiles
 
 
 @pytest.fixture
 def vcd_file():
     """Path to test VCD file."""
-    return Path(__file__).parent.parent / "test_inputs" / "swerv1.vcd"
+    return get_test_input_path(TestFiles.SWERV1_VCD)
 
 
 @pytest.fixture

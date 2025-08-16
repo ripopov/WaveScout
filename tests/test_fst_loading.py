@@ -39,6 +39,9 @@ from scout import WaveScoutMainWindow
 from wavescout import save_session
 from wavescout.data_model import SignalNode
 
+# Import test utilities
+from .test_utils import get_test_input_path, TestFiles
+
 
 class FSTTestHelper:
     """
@@ -208,7 +211,7 @@ def test_fst_loading_with_backend(backend_preference):
         
         # Step 1: Start main application with test FST file and backend preference
         print(f"\n1. Starting application with des.fst using {backend_preference} backend...")
-        test_fst = Path(__file__).parent.parent / "test_inputs" / "des.fst"
+        test_fst = get_test_input_path(TestFiles.DES_FST)
         assert test_fst.exists(), f"Test FST not found: {test_fst}"
         
         # Create window without loading any file
