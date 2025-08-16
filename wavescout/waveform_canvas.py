@@ -413,18 +413,18 @@ class WaveformCanvas(QWidget):
         # Paint background
         self._paint_background(painter)
         
-        # Draw grid if enabled
-        self._paint_grid(painter)
-        
         # Render and draw waveforms
         self._paint_waveforms(painter)
+        
+        # Draw grid on top of waveforms (but will be under overlays)
+        self._paint_grid(painter)
     
     def _paint_background(self, painter: QPainter) -> None:
         """Paint the background with different colors for valid/invalid time ranges."""
         self._paint_background_with_boundaries(painter)
     
     def _paint_grid(self, painter: QPainter) -> None:
-        """Draw grid lines behind waveforms."""
+        """Draw grid lines on top of waveforms but below overlays."""
         # Calculate time ruler positions first (needed for grid)
         self._calculate_and_store_ruler_info()
         
@@ -1125,7 +1125,11 @@ class WaveformCanvas(QWidget):
     def _draw_grid_lines(self, painter: QPainter, tick_positions: List[Tuple[float, int]], config: TimeRulerConfig) -> None:
         """Draw vertical grid lines at tick positions."""
         # Set up grid line style (cosmetic for crispness)
-        pen = QPen(QColor(config.grid_color))
+        grid_color = QColor(config.grid_color)
+        # Make grid lines semi-transparent so signal edges remain visible
+        opacity = getattr(config, 'grid_opacity', 0.4)  # Default to 0.4 if not set
+        grid_color.setAlpha(int(opacity * 255))
+        pen = QPen(grid_color)
         pen.setWidth(0)  # cosmetic 1 device-pixel
         if config.grid_style == "dashed":
             pen.setStyle(Qt.PenStyle.DashLine)

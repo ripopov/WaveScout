@@ -191,6 +191,7 @@ class TimeRulerConfig:
     show_grid_lines: bool = True        # Whether to draw vertical grid lines
     grid_color: str = "#3e3e42"         # Color for grid lines
     grid_style: str = "solid"           # Grid line style: "solid", "dashed", "dotted"
+    grid_opacity: float = 0.4           # Grid line opacity (0.0-1.0)
     nice_numbers: List[float] = field(default_factory=lambda: [1, 2, 2.5, 5])  # Multipliers for tick intervals
 
 @dataclass
