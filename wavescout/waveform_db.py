@@ -342,10 +342,20 @@ class WaveformDB:
         """
         if not self._backend:
             return
-            
+        
+        # Deduplicate handles first to avoid loading the same signal multiple times
+        # This is important when the same handle appears multiple times in the input
+        # (e.g., when multiple nodes reference the same signal as aliases)
+        unique_handles = []
+        seen = set()
+        for h in handles:
+            if h not in seen:
+                unique_handles.append(h)
+                seen.add(h)
+        
         # Filter out already cached signals and invalid handles
         handles_to_load = [
-            h for h in handles 
+            h for h in unique_handles 
             if h not in self._signal_cache and h in self._var_map
         ]
         

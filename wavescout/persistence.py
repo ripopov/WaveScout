@@ -51,64 +51,34 @@ def _serialize_node(node: SignalNode) -> Dict[str, Any]:
 
 
 def _resolve_signal_handles(nodes: List[SignalNode], waveform_db: WaveformDBProtocol) -> None:
-    """Resolve signal handles for nodes that have null handles."""
-    if not waveform_db or not waveform_db.hierarchy:
+    """Resolve signal handles for all nodes to ensure they're correct for the current backend.
+    
+    This is crucial when loading sessions across different backends (pylibfst vs pywellen)
+    since they may have different handle assignments and signal name formats.
+    """
+    if not waveform_db:
         return
-        
-    hierarchy = waveform_db.hierarchy
     
-    # Create a cache of signal names to var objects
-    name_to_var: Dict[str, WVar] = {}
-    
-    # Recursively collect all vars from the hierarchy through scope iteration
-    def collect_vars_from_scope(scope: WScope) -> None:
-        # Add vars in this scope
-        for var in scope.vars(hierarchy):
-            full_name = var.full_name(hierarchy)
-            name_to_var[full_name] = var
-        
-        # Process child scopes
-        for child_scope in scope.scopes(hierarchy):
-            collect_vars_from_scope(child_scope)
-    
-    # Start from all top scopes
-    for top_scope in hierarchy.top_scopes():
-        collect_vars_from_scope(top_scope)
-    
-    # Now we need to map var objects to handles
-    # First check if waveform_db has an existing mapping (optional method)
-    var_to_handle = {}
-    mapping = waveform_db.get_var_to_handle_mapping()
-    if mapping is not None:
-        var_to_handle = mapping
-    
-    # If some vars are not in the existing map, we need to add them
-    next_handle = waveform_db.get_next_available_handle()
-    if next_handle is None:
-        next_handle = 0
-    for full_name, var in name_to_var.items():
-        if var not in var_to_handle:
-            # Note: add_var_with_handle is not implemented in WaveformDB
-            # Just use the handle without adding to database
-            var_to_handle[var] = next_handle
-            next_handle += 1
-    
-    # Recursively resolve handles
+    # Recursively resolve handles using the current backend's find_handle_by_path
     def resolve_node(node: SignalNode) -> None:
-        if not node.is_group and node.handle is None:
-            # Try exact match first
-            if node.name in name_to_var:
-                var = name_to_var[node.name]
-                node.handle = var_to_handle[var]
-            else:
-                # Try with TOP. prefix if name doesn't already have a dot
-                if '.' not in node.name:
-                    prefixed_name = f"TOP.{node.name}"
-                    if prefixed_name in name_to_var:
-                        var = name_to_var[prefixed_name]
-                        node.handle = var_to_handle[var]
-                        # Update the name to the full name
-                        node.name = prefixed_name
+        if not node.is_group:
+            # Always try to resolve the handle by name to ensure it's correct for this backend
+            # First try with the exact name
+            handle = waveform_db.find_handle_by_path(node.name)
+            
+            # If not found and name has trailing spaces, try without spaces
+            # (handles the case where pylibfst adds trailing spaces but pywellen doesn't)
+            if handle is None and node.name.endswith(' '):
+                trimmed_name = node.name.rstrip()
+                handle = waveform_db.find_handle_by_path(trimmed_name)
+                if handle is not None:
+                    # Update the node name to match what this backend expects
+                    node.name = trimmed_name
+            
+            # Update the handle if we found it
+            if handle is not None:
+                node.handle = handle
+            # If still None, keep the existing handle (may work for aliases)
         
         # Process children
         for child in node.children:
