@@ -22,6 +22,7 @@ import time as time_module
 import math
 from .protocols import WaveformDBProtocol
 from .data_model import SignalRangeCache
+from .time_grid_renderer import TimeGridRenderer, TickInfo
 
 @dataclass
 class CachedWaveDrawData:
@@ -95,8 +96,10 @@ class WaveformCanvas(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # Accept keyboard focus for V key shortcut
         
         # Grid drawing state
-        self._last_tick_positions: List[Tuple[float, int]] = []
+        self._last_tick_positions: List[TickInfo] = []
         self._last_ruler_config: Optional[TimeRulerConfig] = None
+        # Always initialize time grid renderer with defaults
+        self._time_grid_renderer: TimeGridRenderer = TimeGridRenderer()
 
         # Caching
         self._transition_cache = TransitionCache()
@@ -429,9 +432,10 @@ class WaveformCanvas(QWidget):
         self._calculate_and_store_ruler_info()
         
         # Draw grid lines if enabled
-        if self._last_ruler_config is not None:
-            if self._last_ruler_config.show_grid_lines and self._last_tick_positions:
-                self._draw_grid_lines(painter, self._last_tick_positions, self._last_ruler_config)
+        if self._last_ruler_config and self._last_ruler_config.show_grid_lines and self._last_tick_positions:
+            self._time_grid_renderer.render_grid(
+                painter, self._last_tick_positions, self.width(), self.height(), self._header_height
+            )
     
     def _paint_waveforms(self, painter: QPainter) -> None:
         """Render and paint the waveforms."""
@@ -969,261 +973,47 @@ class WaveformCanvas(QWidget):
         # Get configuration from session if available
         if self._model and self._model._session:
             ruler_config = self._model._session.time_ruler_config
+            # Update renderer with current config and timescale
+            self._time_grid_renderer.update_config(ruler_config)
+            if self._model._session.timescale:
+                self._time_grid_renderer.update_timescale(self._model._session.timescale)
+                display_unit = self._model._session.timescale.unit
+            else:
+                display_unit = ruler_config.time_unit
         else:
-            # Default configuration
+            # Use default configuration
             ruler_config = TimeRulerConfig()
+            self._time_grid_renderer.update_config(ruler_config)
+            display_unit = ruler_config.time_unit
         
         # Calculate tick positions and step size
-        tick_positions, step_size = self._calculate_time_ruler_ticks(ruler_config)
+        tick_infos, step_size = self._time_grid_renderer.calculate_ticks(
+            self._start_time, self._end_time, self.width(), display_unit
+        )
         
         # Store tick positions for grid drawing
-        self._last_tick_positions = tick_positions
+        self._last_tick_positions = tick_infos
         self._last_ruler_config = ruler_config
         
     def _draw_time_ruler(self, painter: QPainter) -> None:
         """Draw the time ruler according to spec 4.11."""
-
         # If model not loaded, don't draw ruler
         if not self._model:
             return
 
         # Use stored configuration if available
-        if self._last_ruler_config is not None:
-            ruler_config = self._last_ruler_config
+        if self._last_ruler_config is not None and self._last_tick_positions:
             tick_positions = self._last_tick_positions
-            _, step_size = self._calculate_time_ruler_ticks(ruler_config)
         else:
             # Fallback: calculate now
             self._calculate_and_store_ruler_info()
-            if self._last_ruler_config is None:
-                return  # Cannot proceed without config
-            ruler_config = self._last_ruler_config
             tick_positions = self._last_tick_positions
-            _, step_size = self._calculate_time_ruler_ticks(ruler_config)
         
-        # Draw ruler background
-        painter.fillRect(0, 0, self.width(), self._header_height, QColor(config.COLORS.HEADER_BACKGROUND))
-        pen = QPen(QColor(config.COLORS.RULER_LINE))
-        pen.setWidth(0)  # cosmetic 1 device-pixel
-        painter.setPen(pen)
-        painter.drawLine(0, self._header_height - 1, self.width(), self._header_height - 1)
-        
-        # Draw ticks and labels
-        font = QFont(RENDERING.FONT_FAMILY_MONO, ruler_config.text_size)
-        painter.setFont(font)
-        
-        # Get font metrics for accurate text measurement
-        fm = QFontMetrics(font)
-        
-        for time_value, pixel_x in tick_positions:
-            if 0 <= pixel_x <= self.width():
-                # Draw tick mark with cosmetic pen
-                tick_pen = QPen(QColor(config.COLORS.RULER_LINE))
-                tick_pen.setWidth(0)
-                painter.setPen(tick_pen)
-                painter.drawLine(int(pixel_x), self._header_height - 6, int(pixel_x), self._header_height - 1)
-                
-                # Format and draw label
-                # Use the session's timescale unit if available, otherwise fall back to config
-                display_unit = ruler_config.time_unit
-                if self._model and self._model._session and self._model._session.timescale:
-                    display_unit = self._model._session.timescale.unit
-                label = self._format_time_label(time_value, display_unit, step_size)
-                
-                # Get actual text dimensions
-                text_rect = fm.boundingRect(label)
-                text_width = text_rect.width()
-                text_height = text_rect.height()
-                
-                # Calculate position to center text above tick
-                text_x = int(pixel_x) - text_width // 2
-                text_y = 5  # Increased margin from top for better spacing
-                
-                # Draw text using simpler drawText overload
-                painter.setPen(QColor(config.COLORS.TEXT))
-                painter.drawText(text_x, text_y + fm.ascent(), label)
+        # Renderer is always available, use it to draw ruler
+        self._time_grid_renderer.render_ruler(
+            painter, tick_positions, self.width(), self._header_height
+        )
     
-    def _calculate_time_ruler_ticks(self, config: TimeRulerConfig) -> Tuple[List[Tuple[float, int]], float]:
-        """Calculate optimal tick positions according to spec 4.11.2.
-        
-        Returns:
-            Tuple of (tick_positions, step_size) where tick_positions is a list of (time, pixel_x) tuples
-        """
-        if self._end_time <= self._start_time or self.width() <= 0:
-            return [], 0
-        
-        # Step 1: Estimate label width requirements
-        viewport_left = self._start_time
-        viewport_right = self._end_time
-        
-        # Create a sample label to estimate width
-        # Use the larger of start/end time for estimation
-        sample_time = max(abs(viewport_left), abs(viewport_right))
-        # For estimation, use a reasonable step size guess
-        estimated_step = (viewport_right - viewport_left) / 10
-        # Use the session's timescale unit if available, otherwise fall back to config
-        display_unit = config.time_unit
-        if self._model and self._model._session and self._model._session.timescale:
-            display_unit = self._model._session.timescale.unit
-        sample_label = self._format_time_label(sample_time, display_unit, estimated_step)
-        
-        # Get font metrics for accurate width calculation
-        font = QFont(RENDERING.FONT_FAMILY_MONO, config.text_size)
-        fm = QFontMetrics(font)
-        
-        # Add some padding between labels
-        label_width = fm.horizontalAdvance(sample_label) + RENDERING.DEBUG_TEXT_PADDING
-        
-        # Step 2: Calculate maximum number of labels that fit
-        available_space = self.width() * config.tick_density
-        max_labels = int(available_space / label_width) + 2
-        
-        # Step 3: Determine base scale
-        viewport_duration = viewport_right - viewport_left
-        if max_labels > 0:
-            raw_step = viewport_duration / max_labels
-        else:
-            raw_step = viewport_duration
-            
-        if raw_step > 0:
-            scale = 10 ** math.floor(math.log10(raw_step))
-        else:
-            scale = 1
-        
-        # Step 4: Find optimal step multiplier
-        nice_multipliers = [1, 2, 2.5, 5, 10, 20, 25, 50]
-        step_size = scale  # Default
-        
-        for multiplier in nice_multipliers:
-            test_step = scale * multiplier
-            
-            # Calculate first tick position (aligned to step)
-            first_tick = math.floor(viewport_left / test_step) * test_step
-            
-            # Count how many ticks would be generated
-            num_ticks = math.ceil((viewport_right - first_tick) / test_step) + 1
-            
-            if num_ticks <= max_labels:
-                step_size = test_step
-                break
-        
-        # Step 5: Generate tick positions
-        tick_positions = []
-        first_tick = math.floor(viewport_left / step_size) * step_size
-        
-        tick_time = first_tick
-        while tick_time <= viewport_right:
-            # Keep full precision for time values
-            pixel_x = self._time_to_x(tick_time)
-            tick_positions.append((tick_time, pixel_x))
-            
-            
-            tick_time += step_size
-            
-        return tick_positions, step_size
-    
-    def _draw_grid_lines(self, painter: QPainter, tick_positions: List[Tuple[float, int]], config: TimeRulerConfig) -> None:
-        """Draw vertical grid lines at tick positions."""
-        # Set up grid line style (cosmetic for crispness)
-        grid_color = QColor(config.grid_color)
-        # Make grid lines semi-transparent so signal edges remain visible
-        opacity = getattr(config, 'grid_opacity', 0.4)  # Default to 0.4 if not set
-        grid_color.setAlpha(int(opacity * 255))
-        pen = QPen(grid_color)
-        pen.setWidth(0)  # cosmetic 1 device-pixel
-        if config.grid_style == "dashed":
-            pen.setStyle(Qt.PenStyle.DashLine)
-        elif config.grid_style == "dotted":
-            pen.setStyle(Qt.PenStyle.DotLine)
-        painter.setPen(pen)
-        
-        # Draw vertical lines from below ruler to bottom
-        for _, pixel_x in tick_positions:
-            if 0 <= pixel_x <= self.width():
-                painter.drawLine(int(pixel_x), RENDERING.DEFAULT_HEADER_HEIGHT, int(pixel_x), self.height())
-    
-    def _format_time_label(self, time: float, unit: TimeUnit, step_size: Optional[float] = None) -> str:
-        """Format time value according to preferred unit.
-        
-        Args:
-            time: Time value in Timescale units
-            unit: The preferred time unit for display
-            step_size: The step size between ticks (used to determine decimal places)
-        """
-        # Get the current timescale
-        if self._model and self._model._session and self._model._session.timescale:
-            timescale = self._model._session.timescale
-        else:
-            # Default to 1ps if not available
-            from .data_model import Timescale, TimeUnit as TU
-            timescale = Timescale(1, TU.PICOSECONDS)
-        
-        # Convert from timescale units to seconds first
-        time_in_seconds = time * timescale.factor * (10 ** timescale.unit.to_exponent())
-        
-        # Convert seconds to the target unit
-        conversions = {
-            TimeUnit.ZEPTOSECONDS: (time_in_seconds * 1e21, "zs"),    # s to zs
-            TimeUnit.ATTOSECONDS: (time_in_seconds * 1e18, "as"),     # s to as
-            TimeUnit.FEMTOSECONDS: (time_in_seconds * 1e15, "fs"),    # s to fs
-            TimeUnit.PICOSECONDS: (time_in_seconds * 1e12, "ps"),     # s to ps
-            TimeUnit.NANOSECONDS: (time_in_seconds * 1e9, "ns"),      # s to ns
-            TimeUnit.MICROSECONDS: (time_in_seconds * 1e6, "μs"),     # s to μs
-            TimeUnit.MILLISECONDS: (time_in_seconds * 1e3, "ms"),     # s to ms
-            TimeUnit.SECONDS: (time_in_seconds, "s")                  # s to s
-        }
-        
-        value, suffix = conversions[unit]
-        
-        # Determine decimal places based on step size
-        if step_size is not None:
-            # Convert step size from timescale units to seconds
-            step_in_seconds = step_size * timescale.factor * (10 ** timescale.unit.to_exponent())
-            
-            # Convert step size to the current display unit
-            step_in_unit = step_in_seconds * (10 ** -unit.to_exponent())
-            
-            # Special handling for units with different factors
-            if unit == TimeUnit.MICROSECONDS:
-                step_in_unit = step_in_seconds * 1e6
-            elif unit == TimeUnit.MILLISECONDS:
-                step_in_unit = step_in_seconds * 1e3
-            
-            # Determine decimal places needed
-            if step_in_unit >= 1:
-                decimal_places = 0
-            elif step_in_unit >= 0.1:
-                decimal_places = 1
-            elif step_in_unit >= 0.01:
-                decimal_places = 2
-            elif step_in_unit >= 0.001:
-                decimal_places = 3
-            else:
-                decimal_places = 4  # Maximum precision
-        else:
-            # Default decimal places when step size is not provided
-            decimal_places = 0
-        
-        # Format with appropriate decimal places
-        if decimal_places == 0:
-            formatted_value = f"{value:.0f}"
-        else:
-            formatted_value = f"{value:.{decimal_places}f}"
-            # Remove trailing zeros after decimal point
-            if '.' in formatted_value:
-                formatted_value = formatted_value.rstrip('0').rstrip('.')
-        
-        # Handle unit upgrades for readability
-        if unit == TimeUnit.PICOSECONDS and value >= 1000:
-            return self._format_time_label(time, TimeUnit.NANOSECONDS, step_size)
-        elif unit == TimeUnit.NANOSECONDS and value >= 1000:
-            return self._format_time_label(time, TimeUnit.MICROSECONDS, step_size)
-        elif unit == TimeUnit.MICROSECONDS and value >= 1000:
-            return self._format_time_label(time, TimeUnit.MILLISECONDS, step_size)
-        elif unit == TimeUnit.MILLISECONDS and value >= 1000:
-            return self._format_time_label(time, TimeUnit.SECONDS, step_size)
-        
-        return f"{formatted_value} {suffix}"
 
 
     

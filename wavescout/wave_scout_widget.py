@@ -373,7 +373,10 @@ class WaveScoutWidget(QWidget):
             
             # Format cursor time using appropriate unit
             if self.session.time_ruler_config:
-                formatted_time = self._canvas._format_time_label(time, self.session.time_ruler_config.time_unit, None)
+                # Renderer is always available
+                formatted_time = self._canvas._time_grid_renderer._format_time_label(
+                    time, self.session.time_ruler_config.time_unit, None
+                )
                 self._info_bar.setText(f"Cursor: {formatted_time}")
             else:
                 # Display with timescale unit suffix
@@ -394,7 +397,10 @@ class WaveScoutWidget(QWidget):
         # Update info bar text similar to _on_cursor_moved
         time = self.session.cursor_time
         if self.session.time_ruler_config:
-            formatted_time = self._canvas._format_time_label(time, self.session.time_ruler_config.time_unit, None)
+            # Renderer is always available
+            formatted_time = self._canvas._time_grid_renderer._format_time_label(
+                time, self.session.time_ruler_config.time_unit, None
+            )
             self._info_bar.setText(f"Cursor: {formatted_time}")
         else:
             if self.session.timescale:
