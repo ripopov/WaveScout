@@ -3,9 +3,10 @@
 Generate PNG snapshots of WaveScout waveform viewer from saved sessions.
 
 Usage:
-    python take_snapshot.py <session.yaml> [output.png]
+    python take_snapshot.py [--backend wellen|libfst] <session.yaml> [output.png]
     
 Args:
+    --backend    - FST backend to use: 'wellen' (pywellen) or 'libfst' (pylibfst)
     session.yaml - WaveScout session file (auto-detected if omitted)
     output.png   - Output image path (default: snapshot.png)
 
@@ -14,12 +15,15 @@ Useful for documentation, testing, and sharing waveform views.
 """
 
 import sys
+import argparse
 from pathlib import Path
+from typing import Optional, Literal
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer
 from wavescout import WaveScoutWidget, load_session
 
-def take_snapshot(session_file: str, output_file: str = "snapshot.png"):
+def take_snapshot(session_file: str, output_file: str = "snapshot.png", 
+                  backend: Optional[Literal["wellen", "libfst"]] = None):
     """Load a session and take a snapshot of the widget."""
     app = QApplication(sys.argv)
     
@@ -30,9 +34,14 @@ def take_snapshot(session_file: str, output_file: str = "snapshot.png"):
     widget = WaveScoutWidget()
     widget.resize(1200, 800)
     
-    # Load session
+    # Load session with backend preference
     print(f"Loading session from: {session_file}")
-    session = load_session(Path(session_file))
+    if backend:
+        print(f"Using backend: {backend}")
+        backend_pref = "pywellen" if backend == "wellen" else "pylibfst"
+        session = load_session(Path(session_file), backend_preference=backend_pref)
+    else:
+        session = load_session(Path(session_file))
     widget.setSession(session)
     
     # Show widget (needed for rendering)
@@ -53,19 +62,27 @@ def take_snapshot(session_file: str, output_file: str = "snapshot.png"):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
+    parser = argparse.ArgumentParser(description="Generate PNG snapshots of WaveScout waveform viewer")
+    parser.add_argument("--backend", choices=["wellen", "libfst"], 
+                        help="FST backend to use: 'wellen' (pywellen) or 'libfst' (pylibfst)")
+    parser.add_argument("session_file", nargs="?", help="WaveScout session file (.yaml)")
+    parser.add_argument("output_file", nargs="?", default="snapshot.png", 
+                        help="Output PNG file (default: snapshot.png)")
+    
+    args = parser.parse_args()
+    
+    # Handle session file auto-detection
+    if not args.session_file:
         # Look for existing session files
         session_files = list(Path(".").glob("*.yaml")) + list(Path(".").glob("*.yml"))
         if session_files:
             session_file = str(session_files[0])
             print(f"No session file specified, using: {session_file}")
         else:
-            print("Usage: python take_snapshot.py <session_file.yaml> [output_file.png]")
             print("Error: No session file specified and no .yaml files found in current directory")
+            parser.print_help()
             sys.exit(1)
     else:
-        session_file = sys.argv[1]
+        session_file = args.session_file
     
-    output_file = sys.argv[2] if len(sys.argv) > 2 else "snapshot.png"
-    
-    take_snapshot(session_file, output_file)
+    take_snapshot(session_file, args.output_file, backend=args.backend)
