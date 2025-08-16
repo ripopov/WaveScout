@@ -56,12 +56,12 @@ Tree Node Structure:
 """
 
 from PySide6.QtCore import Qt, QAbstractItemModel, QModelIndex, QPersistentModelIndex, QObject
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
-from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QIcon
 from typing import Optional, List, overload, Dict, Union
 from .data_model import SignalHandle
 from .protocols import WaveformDBProtocol
 from .backend_types import WHierarchy, WVar, WScope, WScopeIter
+from .icon_cache import get_icon_cache
 
 
 class DesignTreeNode:
@@ -86,6 +86,7 @@ class DesignTreeNode:
         self.children: List['DesignTreeNode'] = []
         self.var_handle: Optional[SignalHandle] = None  # Wellen Var handle for database lookups
         self.var: Optional[WVar] = None  # Backend-agnostic Var object reference
+        self.scope: Optional[WScope] = None  # Backend scope object for scope nodes
 
     def add_child(self, child: 'DesignTreeNode') -> None:
         """Add a child node to this node and set this node as its parent."""
@@ -114,62 +115,11 @@ class DesignTreeModel(QAbstractItemModel):
         super().__init__(parent)
         self.root_node = DesignTreeNode("Root", is_scope=True)
         self.waveform_db = waveform_db
-        self._scope_icon: Optional[QIcon] = None
-        self._signal_icon: Optional[QIcon] = None
-        self._create_icons()
+        self._icon_cache = get_icon_cache()
 
         if waveform_db:
             self.load_hierarchy(waveform_db)
 
-    def _create_icons(self) -> None:
-        """Create visual icons to distinguish between scopes (folders) and signals (waveforms).
-        
-        Creates two 16x16 pixel icons:
-        - Orange folder icon for scopes/modules
-        - Blue waveform icon for signals
-        
-        Icons are created programmatically to avoid external dependencies.
-        If icon creation fails (e.g., no QApplication), icons are set to None.
-        """
-        # Check if QApplication exists (required for GUI operations)
-        app = QApplication.instance()
-        if not app:
-            self._scope_icon = None
-            self._signal_icon = None
-            return
-
-        try:
-            # Create scope icon (folder-like)
-            pixmap = QPixmap(16, 16)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setPen(QColor("#FFA500"))  # Orange
-            painter.drawRect(2, 4, 12, 10)
-            painter.drawLine(2, 4, 6, 2)
-            painter.drawLine(6, 2, 10, 2)
-            painter.drawLine(10, 2, 10, 4)
-            painter.end()
-            self._scope_icon = QIcon(pixmap)
-
-            # Create signal icon (waveform-like)
-            pixmap = QPixmap(16, 16)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setPen(QColor("#33C3F0"))  # Blue
-            painter.drawLine(2, 12, 4, 12)
-            painter.drawLine(4, 12, 4, 4)
-            painter.drawLine(4, 4, 8, 4)
-            painter.drawLine(8, 4, 8, 12)
-            painter.drawLine(8, 12, 12, 12)
-            painter.drawLine(12, 12, 12, 4)
-            painter.drawLine(12, 4, 14, 4)
-            painter.end()
-            self._signal_icon = QIcon(pixmap)
-        except Exception as e:
-            # If icon creation fails, set to None
-            print(f"Failed to create icons: {e}")
-            self._scope_icon = None
-            self._signal_icon = None
 
     def load_hierarchy(self, waveform_db: WaveformDBProtocol) -> None:
         """Load and build the complete design hierarchy from a waveform database.
@@ -237,6 +187,7 @@ class DesignTreeModel(QAbstractItemModel):
             # Create scope node
             scope_name = scope.name(hierarchy)
             scope_node = DesignTreeNode(scope_name, is_scope=True)
+            scope_node.scope = scope  # Store the scope reference for icon selection
             parent_node.add_child(scope_node)
 
             # Add variables in this scope
@@ -412,7 +363,17 @@ class DesignTreeModel(QAbstractItemModel):
                 return node.bit_range
 
         elif role == Qt.ItemDataRole.DecorationRole and column == 0:
-            return self._scope_icon if node.is_scope else self._signal_icon
+            if node.is_scope:
+                # Get scope type from the node's scope object
+                scope_type = "unknown"
+                if node.scope:
+                    try:
+                        scope_type = node.scope.scope_type()
+                    except:
+                        pass
+                return self._icon_cache.get_scope_icon(scope_type)
+            else:
+                return self._icon_cache.get_signal_icon()
 
         elif role == Qt.ItemDataRole.UserRole:
             return node

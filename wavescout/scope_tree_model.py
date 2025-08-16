@@ -10,8 +10,8 @@ from PySide6.QtGui import QIcon
 from .backend_types import WHierarchy, WVar, WScope, WScopeIter
 from .protocols import WaveformDBProtocol
 from .vars_view import VariableData
-
 from .design_tree_model import DesignTreeNode
+from .icon_cache import get_icon_cache
 
 
 class ScopeTreeModel(QAbstractItemModel):
@@ -24,39 +24,11 @@ class ScopeTreeModel(QAbstractItemModel):
         super().__init__(parent)
         self.waveform_db = waveform_db
         self.root_node: Optional[DesignTreeNode] = None
-        self._scope_icon: Optional[QIcon] = None
-        self._create_icon()
+        self._icon_cache = get_icon_cache()
         
         if waveform_db:
             self.load_hierarchy(waveform_db)
     
-    def _create_icon(self) -> None:
-        """Create icon for scope nodes - matching the unified mode design."""
-        from PySide6.QtGui import QPixmap, QPainter, QColor
-        from PySide6.QtWidgets import QApplication
-        
-        # Check if QApplication exists (required for GUI operations)
-        app = QApplication.instance()
-        if not app:
-            self._scope_icon = None
-            return
-        
-        try:
-            # Create scope icon (folder-like) - same as DesignTreeModel
-            pixmap = QPixmap(16, 16)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setPen(QColor("#FFA500"))  # Orange - same as unified mode
-            painter.drawRect(2, 4, 12, 10)      # Folder body
-            painter.drawLine(2, 4, 6, 2)        # Folder tab left
-            painter.drawLine(6, 2, 10, 2)       # Folder tab top
-            painter.drawLine(10, 2, 10, 4)      # Folder tab right
-            painter.end()
-            self._scope_icon = QIcon(pixmap)
-        except Exception as e:
-            # If icon creation fails, set to None
-            print(f"Failed to create scope icon: {e}")
-            self._scope_icon = None
     
     def load_hierarchy(self, waveform_db: WaveformDBProtocol) -> None:
         """Load the hierarchy from waveform database, filtering to show only scopes."""
@@ -91,6 +63,7 @@ class ScopeTreeModel(QAbstractItemModel):
                 is_scope=True,
                 parent=parent_node
             )
+            scope_node.scope = scope  # Store the scope reference for icon selection
             
             # Add to parent
             if parent_node:
@@ -293,7 +266,14 @@ class ScopeTreeModel(QAbstractItemModel):
         if role == Qt.ItemDataRole.DisplayRole:
             return node.name
         elif role == Qt.ItemDataRole.DecorationRole and index.column() == 0:
-            return self._scope_icon
+            # Get scope type from the node's scope object
+            scope_type = "unknown"
+            if node.scope:
+                try:
+                    scope_type = node.scope.scope_type()
+                except:
+                    pass
+            return self._icon_cache.get_scope_icon(scope_type)
         elif role == Qt.ItemDataRole.ToolTipRole:
             # Build full path for tooltip
             path_parts = []
