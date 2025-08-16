@@ -1,8 +1,8 @@
 """Signal names tree view for the WaveScout widget."""
 
-from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate, QWidget, QStyleOptionViewItem, QInputDialog
+from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate, QWidget, QStyleOptionViewItem, QInputDialog, QColorDialog
 from PySide6.QtCore import Qt, Signal, QModelIndex, QAbstractItemModel, QPoint, QSize
-from PySide6.QtGui import QAction, QActionGroup, QKeyEvent
+from PySide6.QtGui import QAction, QActionGroup, QKeyEvent, QColor
 from typing import List, Optional, Callable, Union, TYPE_CHECKING
 from PySide6.QtCore import QPersistentModelIndex
 from .data_model import SignalNode, RenderType, AnalogScalingMode, DataFormat
@@ -179,6 +179,12 @@ class SignalNamesView(BaseColumnView):
             format_group.addAction(action)
             format_menu.addAction(action)
         
+        # Add color selection action
+        color_action = QAction("Set Color...", self)
+        color_action.triggered.connect(self._set_signal_color)
+        menu.addAction(color_action)
+        menu.addSeparator()
+        
         # Add render type submenu for multi-bit signals
         if node.is_multi_bit:
             render_menu = menu.addMenu("Set Render Type")
@@ -269,6 +275,31 @@ class SignalNamesView(BaseColumnView):
     def _set_data_format(self, node: SignalNode, data_format: DataFormat) -> None:
         """Set the data format for the given signal node."""
         self._controller.set_node_format(node.instance_id, data_format=data_format)
+    
+    def _set_signal_color(self) -> None:
+        """Open color dialog and apply selected color to all selected signals."""
+        # Get first selected signal's current color
+        selected = self._get_selected_signal_nodes()
+        if not selected:
+            return
+        
+        current_color = QColor(selected[0].format.color)
+        
+        # Open color dialog
+        new_color = QColorDialog.getColor(
+            current_color, 
+            self, 
+            "Select Signal Color"
+        )
+        
+        if new_color.isValid():
+            # Apply to all selected signals
+            color_str = new_color.name()  # Returns hex format "#RRGGBB"
+            for node in selected:
+                self._controller.set_node_format(
+                    node.instance_id,
+                    color=color_str
+                )
                     
     def _set_height_scaling(self, node: SignalNode, height_scaling: int) -> None:
         """Set the height scaling for the given signal node."""
