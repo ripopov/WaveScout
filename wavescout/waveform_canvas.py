@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import QWidget, QScrollBar
 from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer, QRectF, QRect
-from PySide6.QtGui import QPainter, QPen, QColor, QFont, QFontMetrics, QImage, QResizeEvent, QPaintEvent, QShowEvent, QMouseEvent, QCloseEvent, QKeyEvent
+from PySide6.QtGui import QPainter, QPen, QColor, QFont, QFontMetrics, QImage, QResizeEvent, QPaintEvent, QShowEvent, QMouseEvent, QCloseEvent, QKeyEvent, QBrush
 from typing import List, Tuple, Dict, Optional, Union
 from .waveform_item_model import WaveformItemModel
 from dataclasses import dataclass, field
@@ -92,6 +92,7 @@ class WaveformCanvas(QWidget):
         self._row_to_node: Dict[int, SignalNode] = {}   # Map row index to node
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
         self.setMinimumWidth(RENDERING.MIN_CANVAS_WIDTH)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # Accept keyboard focus for V key shortcut
         
         # Grid drawing state
         self._last_tick_positions: List[Tuple[float, int]] = []
@@ -130,6 +131,10 @@ class WaveformCanvas(QWidget):
         self._roi_selection_active: bool = False
         self._roi_start_x: Optional[int] = None
         self._roi_current_x: Optional[int] = None
+        
+        # Value tooltip state
+        self._value_tooltips_enabled: bool = False  # Toggle state from menu/settings
+        self._value_tooltips_force_enabled: bool = False  # Temporary V key override
     
     def __del__(self) -> None:
         """Clean up on destruction."""
@@ -154,6 +159,10 @@ class WaveformCanvas(QWidget):
         self._row_height = height
         self.update()
         
+    def set_value_tooltips_enabled(self, enabled: bool) -> None:
+        """Enable or disable value tooltips at cursor."""
+        self._value_tooltips_enabled = enabled
+        self.update()
     
 
     def setTimeRange(self, start_time: Time, end_time: Time) -> None:
@@ -463,6 +472,9 @@ class WaveformCanvas(QWidget):
         
         # Draw cursor
         self._paint_cursor(painter, update_rect, is_partial_update)
+        
+        # Draw value tooltips (after cursor so they appear on top)
+        self._paint_value_tooltips(painter)
     
     def _paint_markers(self, painter: QPainter, update_rect: QRect, is_partial_update: bool) -> None:
         """Draw markers if they're visible."""
@@ -521,6 +533,121 @@ class WaveformCanvas(QWidget):
                 pen.setWidth(0)  # cosmetic 1 device-pixel
                 painter.setPen(pen)
                 painter.drawLine(x, 0, x, self.height())
+    
+    def _paint_value_tooltips(self, painter: QPainter) -> None:
+        """Draw value tooltips at cursor position if enabled."""
+        # Check if tooltips should be shown
+        if not (self._value_tooltips_enabled or self._value_tooltips_force_enabled):
+            return
+            
+        # Check if cursor is visible
+        if self._cursor_time < self._start_time or self._cursor_time > self._end_time:
+            return
+            
+        # Check if we have model and visible nodes
+        if not self._model or not self._visible_nodes:
+            return
+            
+        # Get cursor x position
+        cursor_x = int((self._cursor_time - self._start_time) * self.width() / 
+                      (self._end_time - self._start_time))
+        
+        # Get scroll position
+        scroll_value = self._shared_scrollbar.value() if self._shared_scrollbar else 0
+        
+        # Import parse_signal_value for formatting
+        from .signal_sampling import parse_signal_value
+        
+        # Set up font for tooltips
+        font = QFont(RENDERING.FONT_FAMILY_MONO, RENDERING.VALUE_TOOLTIP_FONT_SIZE)
+        painter.setFont(font)
+        fm = QFontMetrics(font)
+        
+        # Prepare colors
+        bg_color = QColor(*config.COLORS.VALUE_TOOLTIP_BACKGROUND)
+        text_color = QColor(config.COLORS.VALUE_TOOLTIP_TEXT)
+        border_color = QColor(config.COLORS.VALUE_TOOLTIP_BORDER)
+        
+        # Iterate through visible nodes and draw tooltips
+        for row_idx, node in enumerate(self._visible_nodes):
+            # Skip groups - they don't have values
+            if node.is_group:
+                continue
+                
+            # Calculate row Y position using scaled heights
+            # Sum up all previous row heights to get the Y position
+            row_y = self._header_height
+            for i in range(row_idx):
+                row_y += self._row_heights.get(i, self._row_height)
+            row_y -= scroll_value
+            
+            # Get the scaled height for this row
+            row_height = self._row_heights.get(row_idx, self._row_height)
+            
+            # Skip if row is outside visible area
+            if row_y + row_height < 0 or row_y > self.height():
+                continue
+                
+            # Get value at cursor
+            if not self._model._session.waveform_db or node.handle is None:
+                continue
+                
+            try:
+                db = self._model._session.waveform_db
+                # Get raw value via query_signal
+                signal_obj = db.get_signal(node.handle)
+                if not signal_obj:
+                    continue
+                query = signal_obj.query_signal(max(0, self._cursor_time))
+                raw_value = query.value
+                
+                # Determine bit width
+                bit_width = db.get_var_bitwidth(node.handle)
+                
+                # Format value using same logic as Values panel
+                value_str, _, _ = parse_signal_value(raw_value, node.format.data_format, bit_width)
+                if not value_str:
+                    continue
+                    
+                # Calculate tooltip position (to the right of cursor)
+                tooltip_x = cursor_x + RENDERING.VALUE_TOOLTIP_MARGIN
+                tooltip_y = row_y + row_height // 2  # Use scaled height for centering
+                
+                # Measure text size
+                text_rect = fm.boundingRect(value_str)
+                tooltip_width = max(text_rect.width() + 2 * RENDERING.VALUE_TOOLTIP_PADDING,
+                                  RENDERING.VALUE_TOOLTIP_MIN_WIDTH)
+                tooltip_height = text_rect.height() + 2 * RENDERING.VALUE_TOOLTIP_PADDING
+                
+                # Adjust position if tooltip would go off right edge
+                if tooltip_x + tooltip_width > self.width():
+                    tooltip_x = cursor_x - tooltip_width - RENDERING.VALUE_TOOLTIP_MARGIN
+                
+                # Create tooltip rectangle
+                tooltip_rect = QRectF(tooltip_x, 
+                                     tooltip_y - tooltip_height // 2,
+                                     tooltip_width, 
+                                     tooltip_height)
+                
+                # Draw tooltip background with rounded corners
+                painter.setPen(QPen(border_color, 1))
+                painter.setBrush(QBrush(bg_color))
+                painter.drawRoundedRect(tooltip_rect, 
+                                       RENDERING.VALUE_TOOLTIP_BORDER_RADIUS,
+                                       RENDERING.VALUE_TOOLTIP_BORDER_RADIUS)
+                
+                # Draw text
+                painter.setPen(QPen(text_color))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                text_pos = tooltip_rect.adjusted(RENDERING.VALUE_TOOLTIP_PADDING,
+                                                RENDERING.VALUE_TOOLTIP_PADDING,
+                                                -RENDERING.VALUE_TOOLTIP_PADDING,
+                                                -RENDERING.VALUE_TOOLTIP_PADDING)
+                painter.drawText(text_pos, Qt.AlignmentFlag.AlignCenter, value_str)
+                
+            except Exception:
+                # Skip this signal if we can't get its value
+                continue
     
     def _paint_debug_info(self, painter: QPainter, is_partial_update: bool) -> None:
         """Draw debug information if not a partial update."""
@@ -1293,12 +1420,25 @@ class WaveformCanvas(QWidget):
             super().mouseReleaseEvent(event)
     
     def keyPressEvent(self, event: QKeyEvent) -> None:
+        # V key temporarily force-enables value tooltips
+        if event.key() == Qt.Key.Key_V:
+            self._value_tooltips_force_enabled = True
+            self.update()
+            # Don't accept the event - let it propagate
         # Escape cancels ROI selection if active
-        if event.key() == Qt.Key.Key_Escape and self._roi_selection_active:
+        elif event.key() == Qt.Key.Key_Escape and self._roi_selection_active:
             self._clear_roi_selection()
             event.accept()
             return
         super().keyPressEvent(event)
+    
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
+        # V key release disables force-enable
+        if event.key() == Qt.Key.Key_V:
+            self._value_tooltips_force_enabled = False
+            self.update()
+            # Don't accept the event - let it propagate
+        super().keyReleaseEvent(event)
     
     def closeEvent(self, event: QCloseEvent) -> None:
         """Clean up resources when closing."""

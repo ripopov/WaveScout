@@ -181,6 +181,10 @@ class WaveScoutWidget(QWidget):
         self._canvas.setTimeRange(session.viewport.start_time, session.viewport.end_time)
         self._canvas.setCursorTime(session.cursor_time)
     
+    def set_value_tooltips_enabled(self, enabled: bool) -> None:
+        """Enable or disable value tooltips at cursor."""
+        self._canvas.set_value_tooltips_enabled(enabled)
+    
     def _setup_model_connections(self) -> None:
         """Set up all signal-slot connections for the model."""
         if not self.model:
@@ -463,9 +467,16 @@ class WaveScoutWidget(QWidget):
                 (key == Qt.Key.Key_S and modifiers == Qt.KeyboardModifier.NoModifier) or
                 (key == Qt.Key.Key_E and modifiers == Qt.KeyboardModifier.NoModifier) or
                 (key == Qt.Key.Key_G and modifiers == Qt.KeyboardModifier.NoModifier) or
+                (key == Qt.Key.Key_V and modifiers == Qt.KeyboardModifier.NoModifier) or
                 key in [Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_PageUp, Qt.Key.Key_PageDown]):
                 # Send the event to our keyPressEvent
                 self.keyPressEvent(key_event)
+                return True
+        elif event.type() == QEvent.Type.KeyRelease:
+            # Handle V key release for tooltips
+            key_event = cast(QKeyEvent, event)
+            if key_event.key() == Qt.Key.Key_V and key_event.modifiers() == Qt.KeyboardModifier.NoModifier:
+                self.keyReleaseEvent(key_event)
                 return True
         
         return super().eventFilter(watched, event)
@@ -528,8 +539,23 @@ class WaveScoutWidget(QWidget):
             # Navigate with default pixel offset from left edge
             self.controller.navigate_to_marker(marker_index, None, canvas_width)
             event.accept()
+        # Handle V key for value tooltips (forward to canvas)
+        elif event.key() == Qt.Key.Key_V and event.modifiers() == Qt.KeyboardModifier.NoModifier:
+            # Forward the key press to canvas for tooltip handling
+            self._canvas.keyPressEvent(event)
+            # Don't accept the event so key release also gets forwarded
         else:
             super().keyPressEvent(event)
+    
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
+        """Handle key release events."""
+        # Handle V key release for value tooltips
+        if event.key() == Qt.Key.Key_V and event.modifiers() == Qt.KeyboardModifier.NoModifier:
+            # Forward the key release to canvas for tooltip handling
+            self._canvas.keyReleaseEvent(event)
+            # Don't accept the event so it propagates normally
+        else:
+            super().keyReleaseEvent(event)
             
     def _delete_selected_nodes(self) -> None:
         """Delete all selected nodes from the data model."""

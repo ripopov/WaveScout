@@ -59,6 +59,13 @@ class RenderingConfig:
     DEBUG_BG_ALPHA: int = 200
     DEBUG_TEXT_PADDING: int = 10
     DEBUG_TEXT_MARGIN: int = 10
+    
+    # Value tooltip settings
+    VALUE_TOOLTIP_PADDING: int = 4  # Internal padding
+    VALUE_TOOLTIP_MARGIN: int = 8  # Distance from cursor
+    VALUE_TOOLTIP_BORDER_RADIUS: int = 4  # Rounded corner radius
+    VALUE_TOOLTIP_MIN_WIDTH: int = 40  # Minimum tooltip width
+    VALUE_TOOLTIP_FONT_SIZE: int = 9  # Font size for values
 
 
 @dataclass(frozen=True)
@@ -108,6 +115,11 @@ class ColorScheme:
     
     # Splitter
     SPLITTER_HANDLE: str = "#3e3e42"
+    
+    # Value tooltips
+    VALUE_TOOLTIP_BACKGROUND: RGBA = (20, 20, 20, 200)  # Semi-transparent dark background
+    VALUE_TOOLTIP_TEXT: str = "#FFFFFF"  # Bright text color
+    VALUE_TOOLTIP_BORDER: str = "#404040"  # Optional border color
 
 
 @dataclass(frozen=True)

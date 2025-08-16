@@ -128,6 +128,10 @@ class WaveScoutMainWindow(QMainWindow):
         self.wave_widget = WaveScoutWidget()
         self.main_splitter.addWidget(self.wave_widget)
         
+        # Load value tooltip preference
+        value_tooltips_enabled = self.settings.value("view/value_tooltips_enabled", False, type=bool)
+        self.wave_widget.set_value_tooltips_enabled(value_tooltips_enabled)
+        
         # Connect navigation signal from signal names view to design tree view
         # The signal now emits (scope_path, signal_name)
         self.wave_widget._names_view.navigate_to_scope_requested.connect(
@@ -212,6 +216,14 @@ class WaveScoutMainWindow(QMainWindow):
         self.pan_right_action.setStatusTip("Pan the view right")
         self.pan_right_action.setEnabled(False)  # Disabled until a file is loaded
         self.pan_right_action.triggered.connect(self.wave_widget._pan_right)
+        
+        # Value tooltip action
+        self.value_tooltip_action = QAction("Value Tooltip at Cursor", self)
+        self.value_tooltip_action.setCheckable(True)
+        self.value_tooltip_action.setStatusTip("Show signal values as tooltips at cursor position")
+        value_tooltips_enabled = self.settings.value("view/value_tooltips_enabled", False, type=bool)
+        self.value_tooltip_action.setChecked(value_tooltips_enabled)
+        self.value_tooltip_action.triggered.connect(self._toggle_value_tooltips)
         
         # Set icons for toolbar
         style = self.style()
@@ -298,6 +310,8 @@ class WaveScoutMainWindow(QMainWindow):
         view_menu.addSeparator()
         view_menu.addAction(self.pan_left_action)
         view_menu.addAction(self.pan_right_action)
+        view_menu.addSeparator()
+        view_menu.addAction(self.value_tooltip_action)
         view_menu.addSeparator()
         
         # UI Scaling submenu
@@ -1114,6 +1128,18 @@ class WaveScoutMainWindow(QMainWindow):
         
         # Update status bar
         self.statusBar().showMessage(f"Theme changed to: {theme_name.value}", 2000)
+    
+    def _toggle_value_tooltips(self, checked: bool):
+        """Toggle value tooltips at cursor and persist the setting."""
+        # Apply the setting to the wave widget
+        self.wave_widget.set_value_tooltips_enabled(checked)
+        
+        # Save the preference
+        self.settings.setValue("view/value_tooltips_enabled", checked)
+        
+        # Update status bar
+        status = "enabled" if checked else "disabled"
+        self.statusBar().showMessage(f"Value tooltips {status}", 2000)
     
     def _on_theme_changed(self, color_scheme):
         """Handle theme change signal by repainting widgets."""

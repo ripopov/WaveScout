@@ -55,6 +55,10 @@ THEMES: Dict[ThemeName, ColorScheme] = {
         ANALOG_HIGHZ_FILL=(255, 255, 0, 100),
         # Splitter
         SPLITTER_HANDLE="#3e3e42",
+        # Value tooltips
+        VALUE_TOOLTIP_BACKGROUND=(20, 20, 20, 200),
+        VALUE_TOOLTIP_TEXT="#FFFFFF",
+        VALUE_TOOLTIP_BORDER="#404040",
     ),
     
     ThemeName.DARKONE: ColorScheme(  # DarkOne theme
@@ -93,6 +97,10 @@ THEMES: Dict[ThemeName, ColorScheme] = {
         ANALOG_HIGHZ_FILL=(229, 192, 123, 100),  # E5C07B at ~40% alpha
         # Splitter
         SPLITTER_HANDLE="#3E4451",
+        # Value tooltips
+        VALUE_TOOLTIP_BACKGROUND=(40, 44, 52, 200),
+        VALUE_TOOLTIP_TEXT="#E5C07B",
+        VALUE_TOOLTIP_BORDER="#5C6370",
     ),
     
     ThemeName.DRACULA: ColorScheme(
@@ -131,6 +139,10 @@ THEMES: Dict[ThemeName, ColorScheme] = {
         ANALOG_HIGHZ_FILL=(241, 250, 140, 100),  # F1FA8C
         # Splitter
         SPLITTER_HANDLE="#44475A",
+        # Value tooltips
+        VALUE_TOOLTIP_BACKGROUND=(40, 42, 54, 200),
+        VALUE_TOOLTIP_TEXT="#F1FA8C",
+        VALUE_TOOLTIP_BORDER="#6272A4",
     ),
 }
 
