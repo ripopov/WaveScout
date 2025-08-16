@@ -114,9 +114,13 @@ make build
 ```
 
 ## Tests
+**IMPORTANT: ALWAYS use `QT_QPA_PLATFORM=offscreen` when running tests to ensure they work in headless environments.**
+
 - Run all tests: make test
-  - Equivalent: poetry run pytest tests/ --ignore=wellen/
+  - Equivalent: `QT_QPA_PLATFORM=offscreen poetry run pytest tests/ --ignore=wellen/`
+- For individual test execution: `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/test_file.py`
 - Pytest is configured via pytest.ini with testpaths = tests
+- The offscreen QT platform ensures tests can run without a display server, which is essential for CI/CD and remote development
 
 ## Type Checking and Linting
 - Type checking (strict): make typecheck

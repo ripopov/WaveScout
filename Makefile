@@ -74,7 +74,7 @@ else
 endif
 
 test:  ## Run tests
-	poetry run pytest tests/ --ignore=wellen/
+	QT_QPA_PLATFORM=offscreen poetry run pytest tests/ --ignore=wellen/
 
 typecheck:  ## Run mypy type checker (strict mode)
 	poetry run mypy wavescout/ --strict --config-file mypy.ini
