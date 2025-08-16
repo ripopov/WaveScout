@@ -6,10 +6,8 @@ from PySide6.QtCore import Qt, QSettings, QModelIndex
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtTest import QTest
 from scout import WaveScoutMainWindow
-from wavescout.waveform_canvas import WaveformCanvas
-from wavescout.wave_scout_widget import WaveScoutWidget
-from wavescout.data_model import SignalNode
 from wavescout import config
+from .test_utils import get_test_input_path, TestFiles
 
 
 @pytest.fixture
@@ -24,7 +22,8 @@ def qt_app():
 @pytest.fixture
 def main_window(qt_app):
     """Create main window with loaded waveform."""
-    window = WaveScoutMainWindow(wave_file="test_inputs/apb_sim.vcd")
+    test_file = str(get_test_input_path(TestFiles.APB_SIM_VCD))
+    window = WaveScoutMainWindow(wave_file=test_file)
     window.show()
     QTest.qWait(500)  # Wait for loading
     yield window
@@ -323,7 +322,7 @@ class TestValueTooltipIntegration:
         # Start with tooltips disabled
         main_window_with_signals.value_tooltip_action.setChecked(False)
         main_window_with_signals._toggle_value_tooltips(False)
-        
+
         # Use V key to temporarily show tooltips
         press_event = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_V, Qt.KeyboardModifier.NoModifier)
         widget.keyPressEvent(press_event)
