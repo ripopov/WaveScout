@@ -103,11 +103,12 @@ class PywellenBackend(WaveformBackend):
         except Exception:
             return None
     
-    def load_signals(self, vars: List[WVar]) -> List[WSignal]:
+    def load_signals(self, vars: List[WVar], multithreaded: bool = False) -> List[WSignal]:
         """Load multiple signals.
         
         Args:
             vars: List of variables to load signals for
+            multithreaded: Whether to use multiple threads for loading (default: False)
             
         Returns:
             List of Signal objects (pywellen.Signal implements WSignal protocol)
@@ -115,23 +116,10 @@ class PywellenBackend(WaveformBackend):
         if self._waveform is None:
             return []
         # vars should be pywellen.Var objects that implement WVar protocol
-        signals = self._waveform.load_signals(vars)
-        # pywellen.Signal objects directly implement our WSignal protocol
-        return list(signals)
-    
-    def load_signals_multithreaded(self, vars: List[WVar]) -> List[WSignal]:
-        """Load multiple signals using multiple threads.
-        
-        Args:
-            vars: List of variables to load signals for
-            
-        Returns:
-            List of Signal objects (pywellen.Signal implements WSignal protocol)
-        """
-        if self._waveform is None:
-            return []
-        # vars should be pywellen.Var objects that implement WVar protocol  
-        signals = self._waveform.load_signals_multithreaded(vars)
+        if multithreaded:
+            signals = self._waveform.load_signals_multithreaded(vars)
+        else:
+            signals = self._waveform.load_signals(vars)
         # pywellen.Signal objects directly implement our WSignal protocol
         return list(signals)
     

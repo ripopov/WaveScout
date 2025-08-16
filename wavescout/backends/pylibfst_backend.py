@@ -98,14 +98,12 @@ class WaveformAdapter:
         signal = self._waveform.get_signal_from_path(abs_hierarchy_path)
         return cast(WSignal, signal)
     
-    def load_signals(self, vars: List[WVar]) -> List[WSignal]:
+    def load_signals(self, vars: List[WVar], multithreaded: bool = False) -> List[WSignal]:
         """Load multiple signals."""
-        signals = self._waveform.load_signals(vars)
-        return [cast(WSignal, sig) for sig in signals]
-    
-    def load_signals_multithreaded(self, vars: List[WVar]) -> List[WSignal]:
-        """Load multiple signals using multiple threads."""
-        signals = self._waveform.load_signals_multithreaded(vars)
+        if multithreaded:
+            signals = self._waveform.load_signals_multithreaded(vars)
+        else:
+            signals = self._waveform.load_signals(vars)
         return [cast(WSignal, sig) for sig in signals]
     
     def unload_signals(self, signals: List[WSignal]) -> None:
@@ -199,31 +197,19 @@ class PylibfstBackend(WaveformBackend):
         except Exception:
             return None
     
-    def load_signals(self, vars: List[WVar]) -> List[WSignal]:
+    def load_signals(self, vars: List[WVar], multithreaded: bool = False) -> List[WSignal]:
         """Load multiple signals.
         
         Args:
             vars: List of variables to load signals for
+            multithreaded: Whether to use multiple threads for loading (default: False)
             
         Returns:
             List of Signal objects (pylibfst.Signal implements WSignal protocol)
         """
         if self._adapted_waveform is None:
             return []
-        return self._adapted_waveform.load_signals(vars)
-    
-    def load_signals_multithreaded(self, vars: List[WVar]) -> List[WSignal]:
-        """Load multiple signals using multiple threads.
-        
-        Args:
-            vars: List of variables to load signals for
-            
-        Returns:
-            List of Signal objects (pylibfst.Signal implements WSignal protocol)
-        """
-        if self._adapted_waveform is None:
-            return []
-        return self._adapted_waveform.load_signals_multithreaded(vars)
+        return self._adapted_waveform.load_signals(vars, multithreaded)
     
     def supports_file_format(self, file_path: str) -> bool:
         """Check if pylibfst supports the given file format.

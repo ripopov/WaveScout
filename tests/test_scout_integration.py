@@ -531,7 +531,7 @@ def test_signal_grouping_and_reordering(qtbot, monkeypatch):
         
         # Preload signals into cache
         if handles_to_preload:
-            waveform_db.preload_signals(handles_to_preload)
+            waveform_db.preload_signals(handles_to_preload, multithreaded=False)
     
     # Now add signals (they should be cached and add immediately)
     for idx in signals_to_add:

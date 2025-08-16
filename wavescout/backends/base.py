@@ -87,23 +87,12 @@ class WaveformBackend(ABC):
         ...
     
     @abstractmethod
-    def load_signals(self, vars: List[WVar]) -> List[WSignal]:
+    def load_signals(self, vars: List[WVar], multithreaded: bool = False) -> List[WSignal]:
         """Load multiple signals.
         
         Args:
             vars: List of variables to load signals for
-            
-        Returns:
-            List of Signal objects conforming to WSignal protocol
-        """
-        ...
-    
-    @abstractmethod
-    def load_signals_multithreaded(self, vars: List[WVar]) -> List[WSignal]:
-        """Load multiple signals using multiple threads.
-        
-        Args:
-            vars: List of variables to load signals for
+            multithreaded: Whether to use multiple threads for loading (default: False)
             
         Returns:
             List of Signal objects conforming to WSignal protocol

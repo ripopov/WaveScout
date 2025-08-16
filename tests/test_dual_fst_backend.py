@@ -94,8 +94,12 @@ def test_backend_protocol_conformance():
         assert hasattr(backend, 'get_time_table')
         assert hasattr(backend, 'get_signal')
         assert hasattr(backend, 'load_signals')
-        assert hasattr(backend, 'load_signals_multithreaded')
         assert hasattr(backend, 'supports_file_format')
+        
+        # Check that load_signals has the multithreaded parameter
+        import inspect
+        sig = inspect.signature(backend.load_signals)
+        assert 'multithreaded' in sig.parameters
 
 
 def test_pylibfst_time_table_adapter():

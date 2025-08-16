@@ -330,12 +330,15 @@ class WaveformDB:
         """
         return all(handle in self._signal_cache for handle in handles)
     
-    def preload_signals(self, handles: List[SignalHandle]) -> None:
+    def preload_signals(self, handles: List[SignalHandle], multithreaded: bool = False) -> None:
         """Preload multiple signals using efficient batch loading.
         
-        This method uses the backend's load_signals_multithreaded for optimal performance.
+        Loading a group of signals is more efficient than loading each signal individually,
+        because we only need to scan the file once and collect all changes for listed signals.
+        
         Args:
             handles: List of signal handles to preload
+            multithreaded: Whether to use multiple threads for loading (default: False)
         """
         if not self._backend:
             return
@@ -362,9 +365,9 @@ class WaveformDB:
         if not vars_to_load:
             return
             
-        # Batch load signals using multithreaded API
+        # Batch load signals using backend API
         try:
-            loaded_signals = self._backend.load_signals_multithreaded(vars_to_load)
+            loaded_signals = self._backend.load_signals(vars_to_load, multithreaded)
             
             # Cache the loaded signals
             for var, signal in zip(vars_to_load, loaded_signals):

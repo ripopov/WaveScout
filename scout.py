@@ -897,9 +897,11 @@ class WaveScoutMainWindow(QMainWindow):
         self._pending_signal_nodes = signal_nodes
         
         # Create and start the loader using the generic LoaderRunnable
+        # Note: multithreaded=False by default for more predictable behavior
         loader = LoaderRunnable(
             waveform_db.preload_signals,
-            handles
+            handles,
+            multithreaded=False
         )
         loader.signals.finished.connect(self._on_signals_loaded)
         loader.signals.error.connect(self._on_signal_load_error)
