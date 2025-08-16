@@ -144,6 +144,7 @@ This project enforces strict type safety. All code must adhere to these guidelin
 4. **Type all parameters and returns**: Every function must have complete type annotations
 5. **Use Union sparingly**: Prefer specific types or protocols over broad unions
 6. **Leverage TypeAlias**: Create type aliases for complex types to improve readability
+7. **No hasattr in production code**: Never use `hasattr` for checking object attributes (see Initialization Guidelines below)
 
 ### Type Annotation Examples
 ```python
@@ -185,6 +186,51 @@ For PySide6/Qt types:
 - Use specific Qt types: `QWidget`, `QEvent`, `QPaintEvent`, etc.
 - Never use `Any` for Qt objects
 - Import types from appropriate modules: `from PySide6.QtCore import QEvent`
+
+## Initialization Guidelines
+
+### No hasattr or delattr
+**NEVER use `hasattr` for checking object attributes or `delattr` for removing them.** All attributes must be properly initialized in `__init__` methods.
+
+#### Required Patterns
+
+1. **Initialize ALL attributes in __init__** - even if initially None
+2. **Use initialization flags** (`self._initialized`) for lifecycle management
+3. **Use dataclasses** for complex temporary state instead of dynamic attributes
+4. **Set to None** instead of delattr
+
+```python
+# CORRECT
+class MyWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.session: Optional[Session] = None  # Initialize even if None
+        self._canvas: Canvas = cast(Canvas, None)  # Use cast if needed
+        self._initialized: bool = False
+        self._setup_ui()
+        self._initialized = True
+    
+    def cleanup(self):
+        if not self._initialized:  # Check flag, not hasattr
+            return
+        if self.session is not None:  # Check None, not hasattr
+            self.session.cleanup()
+
+# For complex state, use dataclass:
+@dataclass
+class LoadingState:
+    session_path: Optional[Path] = None
+    pending_nodes: List[Node] = field(default_factory=list)
+    
+    def clear(self) -> None:
+        self.session_path = None
+        self.pending_nodes = []
+```
+
+#### Only Acceptable hasattr Uses
+- Test code verifying protocol implementation
+- Checking data model objects for optional attributes (e.g., `node.children`)
+- Checking third-party objects for optional methods
 
 ## Notes
 - The pywellen module provides access to VCD/FST waveform files
