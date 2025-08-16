@@ -206,7 +206,7 @@ class WaveformCanvas(QWidget):
             # Full update needed
             self.update()
         
-    def setModel(self, model: WaveformItemModel) -> None:
+    def setModel(self, model: Optional[WaveformItemModel]) -> None:
         """Set the data model and connect to its signals."""
         # Disconnect from old model if exists
         if self._model:

@@ -5,6 +5,8 @@ import sys
 import argparse
 import os
 from pathlib import Path
+from dataclasses import dataclass, field
+from typing import Optional, List
 from PySide6.QtWidgets import (QApplication, QMainWindow, 
                               QSplitter, QTreeView, QFileDialog,
                               QMessageBox, QProgressDialog, QAbstractItemView,
@@ -16,6 +18,7 @@ from wavescout import WaveScoutWidget, create_sample_session, save_session, load
 from wavescout.design_tree_view import DesignTreeView
 from wavescout.config import RENDERING
 from wavescout.theme import theme_manager, ThemeName, apply_saved_theme
+from wavescout.data_model import WaveformSession, SignalNode
 import qdarkstyle
 
 
@@ -46,6 +49,30 @@ class LoaderRunnable(QRunnable):
             self.signals.error.emit(error_msg)
 
 
+
+
+@dataclass
+class LoadingState:
+    """Manages all loading-related temporary state."""
+    session_path: Optional[Path] = None
+    temp_reload_path: Optional[Path] = None
+    pending_session: Optional[WaveformSession] = None
+    pending_loaded_session: Optional[WaveformSession] = None
+    pending_signal_nodes: List[SignalNode] = field(default_factory=list)
+    
+    def clear(self) -> None:
+        """Clear all loading state."""
+        if self.temp_reload_path and self.temp_reload_path.exists():
+            try:
+                self.temp_reload_path.unlink()
+            except:
+                pass
+        # Reset to defaults
+        self.session_path = None
+        self.temp_reload_path = None
+        self.pending_session = None
+        self.pending_loaded_session = None
+        self.pending_signal_nodes = []
 
 
 class WaveScoutMainWindow(QMainWindow):
@@ -79,6 +106,13 @@ class WaveScoutMainWindow(QMainWindow):
         self.fst_backend_preference = self.settings.value("fst_backend", "pywellen", type=str)
         if self.fst_backend_preference not in ["pywellen", "pylibfst"]:
             self.fst_backend_preference = "pywellen"
+        
+        # Initialize loading state management
+        self._loading_state = LoadingState()
+        self.signal_loading_dialog: Optional[QProgressDialog] = None
+        
+        # Initialize optional components
+        self.design_tree_view: Optional[DesignTreeView] = None
         
         # Create main splitter
         self.main_splitter = QSplitter(Qt.Horizontal)
@@ -665,33 +699,22 @@ class WaveScoutMainWindow(QMainWindow):
         # Disable waveform actions on error
         self._set_waveform_actions_enabled(False)
             
-        session_file = getattr(self, '_loading_session_path', 'unknown')
+        session_file = self._loading_state.session_path or 'unknown'
         error_msg = f"Failed to load session from {session_file}:\n{error_msg}"
         print(f"Error: {error_msg}")
         show_critical(self, "Load Error", error_msg)
         self.statusBar().showMessage("Session load failed")
         
-        # Clean up stored path
-        # Note: hasattr check needed because _loading_session_path is a temporary attribute
-        # that may not exist if loading was interrupted
-        if hasattr(self, '_loading_session_path'):
-            delattr(self, '_loading_session_path')
-        
-        # Clean up temporary reload session file if it exists
-        if hasattr(self, '_temp_reload_session_path'):
-            try:
-                self._temp_reload_session_path.unlink()
-            except Exception:
-                pass  # Ignore cleanup errors
-            delattr(self, '_temp_reload_session_path')
+        # Clean up loading state
+        self._loading_state.clear()
     
     def _finalize_session_load(self):
         """Complete the session loading process after signals are preloaded."""
-        if not hasattr(self, '_pending_loaded_session'):
+        if self._loading_state.pending_loaded_session is None:
             return
             
-        session = self._pending_loaded_session
-        delattr(self, '_pending_loaded_session')
+        session = self._loading_state.pending_loaded_session
+        self._loading_state.pending_loaded_session = None
         
         # Close progress dialog
         if self.progress_dialog:
@@ -702,19 +725,13 @@ class WaveScoutMainWindow(QMainWindow):
         self.wave_widget.setSession(session)
         
         # Store the session file path
-        if hasattr(self, '_loading_session_path'):
-            session_file = self._loading_session_path
+        if self._loading_state.session_path is not None:
+            session_file = self._loading_state.session_path
             self.statusBar().showMessage(f"Session loaded from: {Path(session_file).name}")
             print(f"Successfully loaded session from: {session_file}")
-            delattr(self, '_loading_session_path')
         
-        # Clean up temporary reload session file if it exists
-        if hasattr(self, '_temp_reload_session_path'):
-            try:
-                self._temp_reload_session_path.unlink()
-            except Exception:
-                pass  # Ignore cleanup errors
-            delattr(self, '_temp_reload_session_path')
+        # Clean up loading state
+        self._loading_state.clear()
         
         # Update design tree if we have a waveform
         if session.waveform_db:
@@ -820,10 +837,10 @@ class WaveScoutMainWindow(QMainWindow):
     
     def _finalize_waveform_load(self):
         """Complete the waveform loading process after signals are preloaded."""
-        if not hasattr(self, '_pending_session'):
+        if self._loading_state.pending_session is None:
             return
             
-        session = self._pending_session
+        session = self._loading_state.pending_session
         
         # In test mode, exit immediately after loading
         if getattr(self, 'exit_after_load', False):
@@ -832,7 +849,7 @@ class WaveScoutMainWindow(QMainWindow):
             sys.stdout.flush()
             QApplication.instance().quit()
             return
-        delattr(self, '_pending_session')
+        self._loading_state.pending_session = None
         
         # Close progress dialog
         if self.progress_dialog:
@@ -894,7 +911,7 @@ class WaveScoutMainWindow(QMainWindow):
         QApplication.processEvents()
         
         # Store nodes for later addition
-        self._pending_signal_nodes = signal_nodes
+        self._loading_state.pending_signal_nodes = signal_nodes
         
         loader = LoaderRunnable(
             waveform_db.preload_signals,
@@ -915,15 +932,15 @@ class WaveScoutMainWindow(QMainWindow):
             result: Optional result from LoaderRunnable (not used here)
         """
         # Close progress dialog
-        if hasattr(self, 'signal_loading_dialog') and self.signal_loading_dialog:
+        if self.signal_loading_dialog is not None:
             self.signal_loading_dialog.close()
             self.signal_loading_dialog = None
         
         # Add the pending nodes to session
-        if hasattr(self, '_pending_signal_nodes'):
-            for node in self._pending_signal_nodes:
+        if self._loading_state.pending_signal_nodes:
+            for node in self._loading_state.pending_signal_nodes:
                 self._add_node_to_session(node)
-            delattr(self, '_pending_signal_nodes')
+            self._loading_state.pending_signal_nodes = []
         
         # Update status
         self.statusBar().showMessage("Signals loaded successfully", 2000)
@@ -931,13 +948,12 @@ class WaveScoutMainWindow(QMainWindow):
     def _on_signal_load_error(self, error_msg):
         """Handle signal loading error."""
         # Close progress dialog
-        if hasattr(self, 'signal_loading_dialog') and self.signal_loading_dialog:
+        if self.signal_loading_dialog is not None:
             self.signal_loading_dialog.close()
             self.signal_loading_dialog = None
         
         # Clear pending nodes
-        if hasattr(self, '_pending_signal_nodes'):
-            delattr(self, '_pending_signal_nodes')
+        self._loading_state.pending_signal_nodes = []
         
         # Show error message
         show_critical(self, "Signal Loading Error", error_msg)
@@ -1077,22 +1093,15 @@ class WaveScoutMainWindow(QMainWindow):
     def _on_theme_changed(self, color_scheme):
         """Handle theme change signal by repainting widgets."""
         # Update existing signal colors to use new theme default
-        if self.wave_widget and hasattr(self.wave_widget, 'session') and self.wave_widget.session:
+        if self.wave_widget and self.wave_widget.session is not None:
             self._update_signal_colors_to_theme()
         
         # Trigger repaint of all widgets
         if self.wave_widget:
-            self.wave_widget.update()
-            # Update child widgets that depend on colors
-            if hasattr(self.wave_widget, 'canvas'):
-                self.wave_widget.canvas.update()
-            if hasattr(self.wave_widget, 'names_view'):
-                self.wave_widget.names_view.update()
-            if hasattr(self.wave_widget, 'values_view'):
-                self.wave_widget.values_view.update()
+            self.wave_widget.update_all_views()
         
         # Update design tree view if it exists
-        if hasattr(self, 'design_tree_view'):
+        if self.design_tree_view is not None:
             self.design_tree_view.update()
     
     def _update_signal_colors_to_theme(self):

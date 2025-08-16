@@ -30,13 +30,27 @@ class WaveScoutWidget(QWidget):
     
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
+        # Initialize ALL attributes upfront
         self.session: Optional[WaveformSession] = None
         self.model: Optional[WaveformItemModel] = None
         self.controller: WaveformController = WaveformController()
         self._shared_scrollbar: Optional[QScrollBar] = None
         self._selection_model: Optional[QItemSelectionModel] = None
-        self._updating_selection = False
+        self._updating_selection: bool = False
+        self._initialized: bool = False
+        
+        # Initialize UI components - will be set in _setup_ui
+        # Using cast to satisfy mypy while allowing initialization check
+        self._info_bar: QLabel = cast(QLabel, None)
+        self._splitter: QSplitter = cast(QSplitter, None)
+        self._names_view: SignalNamesView = cast(SignalNamesView, None)
+        self._values_view: SignalValuesView = cast(SignalValuesView, None)
+        self._canvas: WaveformCanvas = cast(WaveformCanvas, None)
+        
+        # Now setup UI (which will assign real objects)
         self._setup_ui()
+        self._initialized = True
+        
         # Bind controller events to view updates
         self.controller.on("viewport_changed", self._update_canvas_time_range)
         self.controller.on("cursor_changed", self._on_controller_cursor_changed)
@@ -116,11 +130,12 @@ class WaveScoutWidget(QWidget):
     
     def _cleanup_previous_session(self) -> None:
         """Clean up the previous session resources."""
-        # Note: hasattr checks are necessary here because cleanup may be called
-        # at various stages of the widget lifecycle, and attributes might not exist yet
+        # If not fully initialized, there's nothing to clean up
+        if not self._initialized:
+            return
         
         # Disconnect signals from old model
-        if hasattr(self, 'model') and self.model:
+        if self.model is not None:
             try:
                 self.model.layoutChanged.disconnect(self._update_scrollbar_range)
                 self.model.rowsInserted.disconnect(self._update_scrollbar_range)
@@ -129,14 +144,14 @@ class WaveScoutWidget(QWidget):
                 pass  # Signals might not be connected
         
         # Disconnect selection model signals
-        if hasattr(self, '_selection_model') and self._selection_model:
+        if self._selection_model is not None:
             try:
                 self._selection_model.selectionChanged.disconnect(self._on_selection_changed)
             except:
                 pass
         
         # Disconnect view signals
-        if hasattr(self, '_names_view') and self._names_view.model():
+        if self._names_view is not None and self._names_view.model():
             try:
                 self._names_view.expanded.disconnect(self._sync_expansion)
                 self._names_view.collapsed.disconnect(self._sync_expansion)
@@ -144,17 +159,15 @@ class WaveScoutWidget(QWidget):
                 pass
         
         # Clear models from all views
-        for view_name in ['_names_view', '_values_view', '_canvas']:
-            if hasattr(self, view_name):
-                view = getattr(self, view_name)
-                if view:
-                    view.setModel(None)
+        self._names_view.setModel(None)
+        self._values_view.setModel(None)
+        self._canvas.setModel(None)
         
         # Delete old objects
-        if hasattr(self, '_selection_model') and self._selection_model:
+        if self._selection_model is not None:
             self._selection_model.deleteLater()
             self._selection_model = None
-        if hasattr(self, 'model') and self.model:
+        if self.model is not None:
             # Call cleanup explicitly before deletion
             if hasattr(self.model, '_cleanup'):
                 self.model._cleanup()
@@ -453,6 +466,15 @@ class WaveScoutWidget(QWidget):
         # Manually trigger selection changed to update data model
         self._on_selection_changed(selection, QItemSelection())
         
+    def update_all_views(self) -> None:
+        """Update all child views. Public method for external callers."""
+        self.update()
+        if self._initialized:
+            self._canvas.update()
+            # Update the viewports of tree views
+            self._names_view.viewport().update()
+            self._values_view.viewport().update()
+    
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         """Filter events from child widgets to handle keyboard shortcuts."""
         if event.type() == QEvent.Type.KeyPress:
