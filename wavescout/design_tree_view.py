@@ -7,7 +7,7 @@ A standalone widget providing two viewing modes for the design hierarchy:
 """
 
 from enum import Enum
-from typing import Optional, List, cast
+from typing import Optional, List, cast, Union
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeView, QPushButton,
     QLabel, QStackedWidget, QSplitter, QLineEdit, QTableView,
@@ -301,6 +301,167 @@ class DesignTreeView(QWidget):
             
             self.signals_selected.emit(signal_nodes)
             self.status_message.emit(f"Added {len(signal_nodes)} signal(s)")
+    
+    def navigate_to_scope(self, scope_path: str, signal_name: str = '') -> bool:
+        """Navigate to the specified scope and optionally select a variable.
+        
+        Args:
+            scope_path: Hierarchical path like 'top.cpu.alu'
+            signal_name: Optional full signal path to select the variable
+            
+        Returns:
+            True if navigation successful, False otherwise
+        """
+        if not scope_path:
+            return False
+            
+        path_parts = scope_path.split('.')
+        
+        # Determine which tree to use based on current mode
+        tree: QTreeView
+        model: Optional[Union[DesignTreeModel, ScopeTreeModel]]
+        
+        if self.current_mode == DesignTreeViewMode.UNIFIED:
+            tree = self.unified_tree
+            model = self.design_tree_model
+        else:
+            tree = self.scope_tree
+            model = self.scope_tree_model
+            
+        if not model:
+            return False
+            
+        # Find the scope node
+        index = self._find_scope_by_path(path_parts, model, QModelIndex())
+        if not index.isValid():
+            self.status_message.emit(f"Scope not found: {scope_path}")
+            return False
+            
+        # Expand and select the scope first
+        tree.expand(index)
+        tree.setCurrentIndex(index)
+        
+        # If signal_name provided, find and select the specific variable
+        if signal_name:
+            # Extract the variable name (last component of the signal path)
+            var_name = signal_name.split('.')[-1]
+            # Remove any array indices for comparison (e.g., "signal[7:0]" -> "signal")
+            var_name_base = var_name.split('[')[0] if '[' in var_name else var_name
+            
+            # In unified mode, search in the tree
+            if self.current_mode == DesignTreeViewMode.UNIFIED:
+                # Search for the variable in the scope's children
+                for row in range(model.rowCount(index)):
+                    child_idx = model.index(row, 0, index)
+                    if not child_idx.isValid():
+                        continue
+                        
+                    child_node = child_idx.internalPointer()
+                    if child_node and hasattr(child_node, 'name'):
+                        # Compare base names (without array indices)
+                        child_name_base = child_node.name.split('[')[0] if '[' in child_node.name else child_node.name
+                        if child_name_base == var_name_base and not (hasattr(child_node, 'is_scope') and child_node.is_scope):
+                            # Found the variable, select it
+                            tree.setCurrentIndex(child_idx)
+                            tree.scrollTo(child_idx, QAbstractItemView.ScrollHint.PositionAtCenter)
+                            self.status_message.emit(f"Navigated to: {signal_name}")
+                            return True
+                
+                # Variable not found in unified mode
+                tree.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtCenter)
+                self.status_message.emit(f"Navigated to scope: {scope_path} (variable '{var_name}' not found)")
+            
+            # In split mode, select the variable in the VarsView
+            elif self.current_mode == DesignTreeViewMode.SPLIT and self.vars_view:
+                # The scope selection has already triggered loading variables in VarsView
+                # Now we need to select the matching variable in the table
+                
+                # Give UI time to update after scope selection
+                QApplication.processEvents()
+                
+                # Search through the variables in the table model
+                proxy_model = self.vars_view.filter_proxy
+                source_model = self.vars_view.vars_model
+                
+                if source_model and proxy_model:
+                    # Search in the source model
+                    for row in range(source_model.rowCount()):
+                        var_data = source_model.variables[row] if row < len(source_model.variables) else None
+                        if var_data:
+                            # Get the variable name from the data
+                            table_var_name = var_data.get('name', '')
+                            # Compare base names (without array indices)
+                            table_var_base = table_var_name.split('[')[0] if '[' in table_var_name else table_var_name
+                            
+                            if table_var_base == var_name_base:
+                                # Found the variable, select it in the table
+                                # Map source row to proxy row
+                                source_index = source_model.index(row, 0)
+                                proxy_index = proxy_model.mapFromSource(source_index)
+                                
+                                if proxy_index.isValid():
+                                    # Select the row in the table view
+                                    self.vars_view.table_view.setCurrentIndex(proxy_index)
+                                    self.vars_view.table_view.scrollTo(proxy_index, QAbstractItemView.ScrollHint.PositionAtCenter)
+                                    self.status_message.emit(f"Navigated to: {signal_name}")
+                                    return True
+                    
+                    # Variable not found in VarsView
+                    self.status_message.emit(f"Navigated to scope: {scope_path} (variable '{var_name}' not visible)")
+                else:
+                    tree.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtCenter)
+                    self.status_message.emit(f"Navigated to: {scope_path}")
+        else:
+            # No specific variable requested, just show the scope
+            tree.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtCenter)
+            self.status_message.emit(f"Navigated to: {scope_path}")
+        
+        return True
+    
+    def _find_scope_by_path(self, path_parts: List[str], model: Union[DesignTreeModel, ScopeTreeModel], parent: QModelIndex) -> QModelIndex:
+        """Recursively find a scope node by its path components.
+        
+        Args:
+            path_parts: List of path components to match
+            model: The tree model to search
+            parent: Parent index to start searching from
+            
+        Returns:
+            QModelIndex of found node or invalid index if not found
+        """
+        if not path_parts:
+            return QModelIndex()
+            
+        target_name = path_parts[0]
+        remaining_parts = path_parts[1:]
+        
+        # Search children of current parent
+        for row in range(model.rowCount(parent)):
+            index = model.index(row, 0, parent)
+            if not index.isValid():
+                continue
+                
+            # Get node name
+            node = index.internalPointer()
+            if node and hasattr(node, 'name') and node.name == target_name:
+                # If this is the last part, we found it
+                if not remaining_parts:
+                    return index
+                    
+                # Otherwise, continue searching deeper if it's a scope
+                if hasattr(node, 'is_scope') and node.is_scope:
+                    # Ensure the node is expanded in the view
+                    if self.current_mode == DesignTreeViewMode.UNIFIED:
+                        self.unified_tree.expand(index)
+                    else:
+                        self.scope_tree.expand(index)
+                    
+                    # Recursively search children
+                    result = self._find_scope_by_path(remaining_parts, model, index)
+                    if result.isValid():
+                        return result
+        
+        return QModelIndex()
     
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         """Event filter to handle keyboard shortcuts"""

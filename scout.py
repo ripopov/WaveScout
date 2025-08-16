@@ -128,6 +128,12 @@ class WaveScoutMainWindow(QMainWindow):
         self.wave_widget = WaveScoutWidget()
         self.main_splitter.addWidget(self.wave_widget)
         
+        # Connect navigation signal from signal names view to design tree view
+        # The signal now emits (scope_path, signal_name)
+        self.wave_widget._names_view.navigate_to_scope_requested.connect(
+            lambda scope, signal: self.design_tree_view.navigate_to_scope(scope, signal)
+        )
+        
         # Set splitter sizes (design tree: 30%, wave widget: 70%)
         self.main_splitter.setSizes([420, 980])
         

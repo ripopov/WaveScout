@@ -28,9 +28,10 @@ This feature adds a "Navigate to scope" context menu action in SignalNamesView t
 **Acceptance Criteria:**
 1. Right-clicking on a signal in SignalNamesView shows "Navigate to scope" in the context menu
 2. Clicking the action navigates to and selects the parent scope in the design tree
-3. The design tree expands as needed to make the scope visible
-4. The scope is scrolled into view if necessary
-5. Works for both single-bit and multi-bit signals
+3. The specific variable is also selected within the expanded scope
+4. The design tree expands as needed to make both scope and variable visible
+5. The view scrolls to show the selected variable if necessary
+6. Works for both single-bit and multi-bit signals
 
 ### User Story 2: Multiple Signal Selection Handling
 **As a** user with multiple signals selected  
@@ -70,12 +71,15 @@ This feature adds a "Navigate to scope" context menu action in SignalNamesView t
 - The extraction shall handle all valid Verilog/VHDL hierarchical naming conventions
 - Edge cases like single-level paths ("signal_name") shall be handled gracefully
 
-#### FR3: Tree Navigation Logic
+#### FR3: Tree Navigation and Variable Selection Logic
 - The system shall find the corresponding scope node in the active tree view
 - The tree shall expand all parent nodes necessary to reveal the target scope
 - The target scope shall be selected and made the current item
-- The view shall scroll to ensure the selected scope is visible
+- After selecting the scope, the system shall find and select the specific variable within that scope
+- The variable selection shall expand the scope node if needed to show its children
+- The view shall scroll to ensure both the scope and selected variable are visible
 - If the scope doesn't exist in the tree, an appropriate message shall be shown
+- If the variable is not found within the scope, the scope remains selected
 
 #### FR4: View Mode Handling
 - The system shall detect the current DesignTreeView mode (unified or split)
@@ -172,11 +176,12 @@ class SignalNamesView(BaseColumnView):
 #### DesignTreeView Extensions
 ```python
 class DesignTreeView(QWidget):
-    def navigate_to_scope(self, scope_path: str) -> bool:
-        """Navigate to the specified scope in the tree.
+    def navigate_to_scope(self, scope_path: str, signal_name: str = '') -> bool:
+        """Navigate to the specified scope and optionally select a variable.
         
         Args:
             scope_path: Hierarchical path like 'top.cpu.alu'
+            signal_name: Optional signal name to select within the scope
             
         Returns:
             True if navigation successful, False otherwise
@@ -313,8 +318,8 @@ def _show_context_menu(self, position: QPoint) -> None:
 
 ### Example: Scope Navigation Implementation
 ```python
-def navigate_to_scope(self, scope_path: str) -> bool:
-    """Navigate to the specified scope in the design tree."""
+def navigate_to_scope(self, scope_path: str, signal_name: str = '') -> bool:
+    """Navigate to the specified scope and optionally select a variable."""
     if not scope_path:
         return False
         
@@ -336,8 +341,22 @@ def navigate_to_scope(self, scope_path: str) -> bool:
         self.status_message.emit(f"Scope not found: {scope_path}")
         return False
         
-    # Expand parents and select
+    # Expand and select the scope
+    tree.expand(index)
     tree.setCurrentIndex(index)
+    
+    # If signal_name provided, find and select the variable
+    if signal_name:
+        var_name = signal_name.split('.')[-1]  # Get last component
+        for row in range(model.rowCount(index)):
+            child_idx = model.index(row, 0, index)
+            child_node = child_idx.internalPointer()
+            if child_node and child_node.name == var_name:
+                tree.setCurrentIndex(child_idx)
+                tree.scrollTo(child_idx)
+                self.status_message.emit(f"Navigated to: {signal_name}")
+                return True
+    
     tree.scrollTo(index)
     self.status_message.emit(f"Navigated to: {scope_path}")
     return True

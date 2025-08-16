@@ -75,6 +75,9 @@ class BaseColumnView(QTreeView):
 class SignalNamesView(BaseColumnView):
     """Tree view for signal names (column 0)."""
     
+    # Signals
+    navigate_to_scope_requested = Signal(str, str)  # Emits (scope_path, signal_name)
+    
     def __init__(self, controller: 'WaveformController', parent: Optional[QWidget] = None) -> None:
         super().__init__(visible_column=0, allow_expansion=True, parent=parent)
         self._controller = controller
@@ -231,6 +234,15 @@ class SignalNamesView(BaseColumnView):
         rename_action.triggered.connect(self._rename_selected_signal)
         menu.addAction(rename_action)
         
+        # Add separator before navigation action
+        menu.addSeparator()
+        
+        # Add navigate to scope action (only for signals, not groups)
+        if not node.is_group:
+            navigate_action = QAction("Navigate to scope", self)
+            navigate_action.triggered.connect(self._navigate_to_scope)
+            menu.addAction(navigate_action)
+        
         # Add height scaling submenu
         height_menu = menu.addMenu("Set Height Scaling")
         
@@ -309,6 +321,41 @@ class SignalNamesView(BaseColumnView):
                     return child_index
                     
         return QModelIndex()
+    
+    def _navigate_to_scope(self) -> None:
+        """Navigate to the parent scope of the selected signal."""
+        # Get all selected nodes
+        nodes = self._get_all_selected_nodes()
+        if not nodes:
+            return
+        
+        # Take the first selected node (skip groups)
+        node = None
+        for n in nodes:
+            if not n.is_group:
+                node = n
+                break
+        
+        if not node:
+            return
+        
+        # Extract scope path from signal path
+        scope_path = self._extract_scope_path(node.name)
+        if scope_path:
+            # Emit signal to request navigation with both scope and full signal name
+            self.navigate_to_scope_requested.emit(scope_path, node.name)
+    
+    def _extract_scope_path(self, signal_path: str) -> str:
+        """Extract parent scope from signal path.
+        
+        Examples:
+            'top.cpu.alu.result' -> 'top.cpu.alu'
+            'signal' -> '' (no scope)
+        """
+        parts = signal_path.split('.')
+        if len(parts) <= 1:
+            return ''  # Top-level signal has no parent scope
+        return '.'.join(parts[:-1])
     
     def _rename_selected_signal(self) -> None:
         """Rename the first selected signal or group with a user-defined nickname."""
