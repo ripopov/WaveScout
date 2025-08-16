@@ -37,7 +37,7 @@ class TestReloadFeature:
         while elapsed < timeout_ms:
             if window.wave_widget.session is not None:
                 # Session exists, check if it has been populated
-                if hasattr(window, '_temp_reload_session_path'):
+                if window._loading_state.temp_reload_path is not None:
                     # Still loading
                     QTest.qWait(interval)
                     elapsed += interval

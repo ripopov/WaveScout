@@ -512,7 +512,7 @@ class WaveScoutMainWindow(QMainWindow):
     def _on_waveform_load_finished(self, session):
         """Handle successful waveform load."""
         # Store session for later use
-        self._pending_session = session
+        self._loading_state.pending_session = session
         self._finalize_waveform_load()
         
     def _on_waveform_load_error(self, error_msg):
@@ -686,7 +686,7 @@ class WaveScoutMainWindow(QMainWindow):
     def _on_session_load_finished(self, session):
         """Handle successful session load."""
         # Store session for later use
-        self._pending_loaded_session = session
+        self._loading_state.pending_loaded_session = session
         self._finalize_session_load()
             
     def _on_session_load_error(self, error_msg):
