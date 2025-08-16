@@ -16,6 +16,7 @@ from .data_model import (
     WaveformSession, Viewport, SignalNode, Marker, Time, SignalNodeID,
     DataFormat, GroupRenderMode, DisplayFormat, RenderType
 )
+from .clock_utils import calculate_clock_period, is_valid_clock_signal
 from . import config
 MARKER_LABELS = config.MARKER_LABELS
 RENDERING = config.RENDERING
@@ -740,3 +741,62 @@ class WaveformController:
                 changes={'render_type': mode.value}
             ))
             self._emit("session_changed")
+    
+    # ---- Clock Signal Management ----
+    
+    def set_clock_signal(self, node: Optional[SignalNode]) -> None:
+        """Set a signal as the clock for grid display.
+        
+        Calculates the clock period based on signal type and updates
+        the session's clock_signal field.
+        """
+        if not self.session:
+            return
+        
+        if node is None:
+            self.clear_clock_signal()
+            return
+        
+        # Get the waveform database
+        db = self.session.waveform_db
+        if not db or node.handle is None:
+            return
+        
+        # Get the variable and signal
+        var = db.var_from_handle(node.handle)
+        if not var or not is_valid_clock_signal(var):
+            return
+        
+        signal = db.signal_from_handle(node.handle)
+        if not signal:
+            return
+        
+        # Calculate clock period and phase offset
+        result = calculate_clock_period(signal, var)
+        if result is None:
+            return
+        
+        period, phase_offset = result
+        
+        # Update session with period, phase offset, and node
+        self.session.clock_signal = (period, phase_offset, node)
+        
+        # Emit viewport changed to trigger grid redraw
+        self._emit("viewport_changed")
+    
+    def clear_clock_signal(self) -> None:
+        """Clear the clock signal selection."""
+        if not self.session:
+            return
+        
+        if self.session.clock_signal is not None:
+            self.session.clock_signal = None
+            self._emit("viewport_changed")
+    
+    def is_clock_signal(self, node: SignalNode) -> bool:
+        """Check if a node is the current clock signal."""
+        if not self.session or not self.session.clock_signal:
+            return False
+        
+        _, _, clock_node = self.session.clock_signal  # Now (period, phase, node)
+        return clock_node.instance_id == node.instance_id

@@ -173,6 +173,15 @@ def save_session(session: WaveformSession, path: pathlib.Path) -> None:
             'unit': session.timescale.unit.value
         }
     
+    # Add clock signal if available
+    if session.clock_signal:
+        clock_period, phase_offset, clock_node = session.clock_signal
+        data['clock_signal'] = {
+            'period': clock_period,
+            'phase_offset': phase_offset,
+            'node_id': clock_node.instance_id  # Store node ID for reconnection
+        }
+    
     # Write YAML
     with open(path, 'w') as f:
         yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
@@ -291,4 +300,29 @@ def load_session(path: pathlib.Path, backend_preference: Optional[Literal["pywel
     if max_instance_id > 0:
         SignalNode._id_counter = max_instance_id
     
+    # Restore clock signal if available
+    clock_data = data.get('clock_signal')
+    if clock_data:
+        clock_period = clock_data.get('period')
+        phase_offset = clock_data.get('phase_offset', 0)  # Default to 0 for old sessions
+        clock_node_id = clock_data.get('node_id')
+        
+        # Find the node by ID
+        if clock_period is not None and clock_node_id is not None:
+            clock_node = _find_node_by_id(root_nodes, clock_node_id)
+            if clock_node:
+                session.clock_signal = (clock_period, phase_offset, clock_node)
+    
     return session
+
+
+def _find_node_by_id(nodes: List[SignalNode], node_id: int) -> Optional[SignalNode]:
+    """Find a node by its instance ID in a tree of nodes."""
+    for node in nodes:
+        if node.instance_id == node_id:
+            return node
+        if node.children:
+            found = _find_node_by_id(node.children, node_id)
+            if found:
+                return found
+    return None

@@ -22,6 +22,7 @@ class TickInfo(TypedDict):
     time_value: float  # Time value in Timescale units
     pixel_x: int      # X coordinate in pixels
     label: str        # Formatted label for this tick
+    clock_label: Optional[str]  # Optional clock cycle label (for dual-row display)
 
 
 class ViewportParams(TypedDict):
@@ -58,6 +59,8 @@ class TimeGridRenderer:
         """
         self._config: TimeRulerConfig = config or TimeRulerConfig()
         self._timescale: Timescale = timescale or Timescale(1, TimeUnit.PICOSECONDS)
+        self._clock_period: Optional[Time] = None  # Clock period in Timescale units
+        self._clock_offset: Time = 0  # Clock phase offset
     
     def update_config(self, config: TimeRulerConfig) -> None:
         """Update the ruler configuration.
@@ -75,11 +78,22 @@ class TimeGridRenderer:
         """
         self._timescale = timescale
     
+    def set_clock_signal(self, period: Optional[Time], offset: Time = 0) -> None:
+        """Set clock signal parameters for clock-based grid display.
+        
+        Args:
+            period: Clock period in Timescale units (None to disable clock mode)
+            offset: Clock phase offset in Timescale units
+        """
+        self._clock_period = period
+        self._clock_offset = offset
+    
     def calculate_ticks(self,
                        viewport_start: Time,
                        viewport_end: Time,
                        canvas_width: int,
-                       display_unit: Optional[TimeUnit] = None) -> Tuple[List[TickInfo], float]:
+                       display_unit: Optional[TimeUnit] = None,
+                       clock_mode: bool = False) -> Tuple[List[TickInfo], float]:
         """Calculate optimal tick positions for the viewport.
         
         Args:
@@ -94,6 +108,10 @@ class TimeGridRenderer:
         """
         if viewport_end <= viewport_start or canvas_width <= 0:
             return [], 0.0
+        
+        # Use clock-based calculation if clock mode is active
+        if clock_mode and self._clock_period is not None:
+            return self._calculate_clock_ticks(viewport_start, viewport_end, canvas_width, display_unit)
         
         # Use provided unit or fall back to config
         unit = display_unit or self._config.time_unit
@@ -160,7 +178,8 @@ class TimeGridRenderer:
             tick_infos.append(TickInfo(
                 time_value=tick_time,
                 pixel_x=pixel_x,
-                label=label
+                label=label,
+                clock_label=None
             ))
             
             tick_time += step_size
@@ -171,7 +190,8 @@ class TimeGridRenderer:
                     painter: QPainter,
                     tick_infos: List[TickInfo],
                     canvas_width: int,
-                    header_height: int) -> None:
+                    header_height: int,
+                    clock_mode: bool = False) -> None:
         """Render the time ruler.
         
         Args:
@@ -179,10 +199,28 @@ class TimeGridRenderer:
             tick_infos: List of tick information
             canvas_width: Width of canvas in pixels
             header_height: Height of ruler header in pixels
+            clock_mode: Whether to render in clock mode with dual rows
         """
-        # Draw ruler background
-        painter.fillRect(0, 0, canvas_width, header_height, 
-                        QColor(config.COLORS.HEADER_BACKGROUND))
+        if clock_mode and any(tick.get('clock_label') for tick in tick_infos):
+            # Clock mode with dual-row display
+            half_height = header_height // 2
+            
+            # Get background colors
+            clock_bg, time_bg = self._get_ruler_background_colors(config.COLORS.HEADER_BACKGROUND)
+            
+            # Draw backgrounds for each row
+            painter.fillRect(0, 0, canvas_width, half_height, clock_bg)
+            painter.fillRect(0, half_height, canvas_width, half_height, time_bg)
+            
+            # Draw divider line between rows
+            pen = QPen(QColor(config.COLORS.RULER_LINE))
+            pen.setWidth(0)
+            painter.setPen(pen)
+            painter.drawLine(0, half_height, canvas_width, half_height)
+        else:
+            # Normal mode - single background
+            painter.fillRect(0, 0, canvas_width, header_height, 
+                            QColor(config.COLORS.HEADER_BACKGROUND))
         
         # Draw bottom line of ruler
         pen = QPen(QColor(config.COLORS.RULER_LINE))
@@ -191,7 +229,11 @@ class TimeGridRenderer:
         painter.drawLine(0, header_height - 1, canvas_width, header_height - 1)
         
         # Set font for labels
-        font = QFont(RENDERING.FONT_FAMILY_MONO, self._config.text_size)
+        if clock_mode and any(tick.get('clock_label') for tick in tick_infos):
+            # Smaller font for dual-row display
+            font = QFont(RENDERING.FONT_FAMILY_MONO, self._config.text_size - 1)
+        else:
+            font = QFont(RENDERING.FONT_FAMILY_MONO, self._config.text_size)
         painter.setFont(font)
         fm = QFontMetrics(font)
         
@@ -205,18 +247,40 @@ class TimeGridRenderer:
                 painter.setPen(tick_pen)
                 painter.drawLine(pixel_x, header_height - 6, pixel_x, header_height - 1)
                 
-                # Get label dimensions
-                label = tick_info['label']
-                text_rect = fm.boundingRect(label)
-                text_width = text_rect.width()
-                
-                # Calculate position to center text above tick
-                text_x = pixel_x - text_width // 2
-                text_y = 5  # Margin from top
-                
-                # Draw label
-                painter.setPen(QColor(config.COLORS.TEXT))
-                painter.drawText(text_x, text_y + fm.ascent(), label)
+                if clock_mode and tick_info.get('clock_label'):
+                    # Dual-row mode: clock count above, time below
+                    half_height = header_height // 2
+                    
+                    # Draw clock label
+                    clock_label = tick_info['clock_label']
+                    if clock_label is not None:  # Type guard for mypy
+                        clock_rect = fm.boundingRect(clock_label)
+                        clock_x = pixel_x - clock_rect.width() // 2
+                        clock_y = 2  # Small margin from top
+                        
+                        painter.setPen(QColor(config.COLORS.TEXT))
+                        painter.drawText(clock_x, clock_y + fm.ascent(), clock_label)
+                    
+                    # Draw time label
+                    time_label = tick_info['label']
+                    time_rect = fm.boundingRect(time_label)
+                    time_x = pixel_x - time_rect.width() // 2
+                    time_y = half_height + 2  # Small margin from divider
+                    
+                    painter.drawText(time_x, time_y + fm.ascent(), time_label)
+                else:
+                    # Normal mode: single label
+                    label = tick_info['label']
+                    text_rect = fm.boundingRect(label)
+                    text_width = text_rect.width()
+                    
+                    # Calculate position to center text above tick
+                    text_x = pixel_x - text_width // 2
+                    text_y = 5  # Margin from top
+                    
+                    # Draw label
+                    painter.setPen(QColor(config.COLORS.TEXT))
+                    painter.drawText(text_x, text_y + fm.ascent(), label)
     
     def render_grid(self,
                    painter: QPainter,
@@ -352,3 +416,146 @@ class TimeGridRenderer:
             return self._format_time_label(time, TimeUnit.SECONDS, step_size)
         
         return f"{formatted_value} {suffix}"
+    
+    def _calculate_clock_ticks(self,
+                              viewport_start: Time,
+                              viewport_end: Time,
+                              canvas_width: int,
+                              display_unit: Optional[TimeUnit] = None) -> Tuple[List[TickInfo], float]:
+        """Calculate tick positions aligned to clock edges.
+        
+        Args:
+            viewport_start: Start time of viewport in Timescale units
+            viewport_end: End time of viewport in Timescale units
+            canvas_width: Width of canvas in pixels
+            display_unit: Override display unit (uses config if None)
+            
+        Returns:
+            Tuple of (tick_infos, step_size) with dual labels for clock mode
+        """
+        if self._clock_period is None or self._clock_period <= 0:
+            return [], 0.0
+        
+        unit = display_unit or self._config.time_unit
+        
+        # Calculate visible clock cycles
+        start_cycle = math.floor((viewport_start - self._clock_offset) / self._clock_period)
+        end_cycle = math.ceil((viewport_end - self._clock_offset) / self._clock_period)
+        visible_cycles = end_cycle - start_cycle
+        
+        # Determine clock cycle step (powers of 10)
+        if visible_cycles <= 0:
+            return [], 0.0
+        
+        # Estimate how many labels can fit
+        font = QFont(RENDERING.FONT_FAMILY_MONO, self._config.text_size - 1)  # Smaller font for dual-row
+        fm = QFontMetrics(font)
+        
+        # Estimate label width for clock counts
+        sample_cycle = max(abs(start_cycle), abs(end_cycle))
+        sample_label = str(sample_cycle)
+        label_width = fm.horizontalAdvance(sample_label) + RENDERING.DEBUG_TEXT_PADDING
+        
+        # Calculate maximum number of labels
+        available_space = canvas_width * self._config.tick_density
+        max_labels = int(available_space / label_width) + 2
+        
+        # Also limit based on minimum spacing between ticks (avoid overcrowding)
+        min_tick_spacing = 30  # Minimum pixels between ticks
+        max_labels_by_spacing = canvas_width // min_tick_spacing
+        max_labels = min(max_labels, max_labels_by_spacing)
+        
+        # Find appropriate step size (always integer clock cycles)
+        raw_step = visible_cycles / max_labels if max_labels > 0 else visible_cycles
+        
+        # Ensure minimum step is 1 (never show fractional clock cycles)
+        if raw_step < 1:
+            cycle_step = 1
+        else:
+            # Use powers of 10 for larger steps
+            if raw_step > 0:
+                scale = 10 ** math.floor(math.log10(raw_step))
+            else:
+                scale = 1
+            
+            # Choose nice multiplier
+            nice_multipliers = [1, 2, 5, 10, 20, 50]
+            cycle_step = scale
+            
+            for multiplier in nice_multipliers:
+                test_step = scale * multiplier
+                num_ticks = math.ceil(visible_cycles / test_step) + 1
+                if num_ticks <= max_labels:
+                    cycle_step = test_step
+                    break
+        
+        # Ensure cycle_step is always an integer (should already be, but be explicit)
+        cycle_step = int(cycle_step)
+        
+        # Generate tick positions
+        tick_infos: List[TickInfo] = []
+        
+        # Always align to integer clock cycles
+        if cycle_step == 1:
+            # When showing every clock, start from the first visible integer cycle
+            first_cycle = int(math.floor(start_cycle))
+            if first_cycle < start_cycle:
+                first_cycle += 1
+        else:
+            # For larger steps, align to the step size
+            first_cycle = math.floor(start_cycle / cycle_step) * cycle_step
+            # But ensure it's an integer
+            first_cycle = int(first_cycle)
+        
+        cycle = first_cycle
+        while cycle <= end_cycle:
+            # Calculate time for this clock cycle
+            tick_time = self._clock_offset + cycle * self._clock_period
+            
+            # Skip if outside viewport
+            if tick_time < viewport_start or tick_time > viewport_end:
+                cycle += cycle_step
+                continue
+            
+            # Calculate pixel position
+            pixel_x = self._time_to_pixel(tick_time, viewport_start, viewport_end, canvas_width)
+            
+            # Format labels
+            clock_label = str(int(cycle))  # Clock cycle count
+            time_label = self._format_time_label(tick_time, unit, cycle_step * self._clock_period)
+            
+            tick_infos.append(TickInfo(
+                time_value=tick_time,
+                pixel_x=pixel_x,
+                label=time_label,
+                clock_label=clock_label
+            ))
+            
+            cycle += cycle_step
+        
+        return tick_infos, cycle_step * self._clock_period
+    
+    def _get_ruler_background_colors(self, base_color: str) -> Tuple[QColor, QColor]:
+        """Calculate background colors for clock and time rows.
+        
+        Args:
+            base_color: Base background color
+            
+        Returns:
+            Tuple of (clock_bg_color, time_bg_color)
+        """
+        base = QColor(base_color)
+        
+        # Determine if we're in light or dark mode
+        is_dark = base.lightness() < 128
+        
+        if is_dark:
+            # Dark mode: make clock row slightly lighter
+            clock_bg = base.lighter(110)  # 10% lighter
+            time_bg = base.lighter(105)   # 5% lighter
+        else:
+            # Light mode: make clock row slightly darker
+            clock_bg = base.darker(110)   # 10% darker
+            time_bg = base.darker(105)    # 5% darker
+        
+        return clock_bg, time_bg

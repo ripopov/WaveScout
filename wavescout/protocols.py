@@ -150,6 +150,30 @@ class WaveformDBProtocol(Protocol):
         """
         ...
     
+    def var_from_handle(self, handle: SignalHandle) -> Optional[WVar]:
+        """Get the variable object for the given handle.
+        
+        Args:
+            handle: Signal handle
+        
+        Returns:
+            Backend WVar object if available, None otherwise
+        """
+        ...
+    
+    def signal_from_handle(self, handle: SignalHandle) -> Optional[WSignal]:
+        """Get the signal object for the given handle.
+        
+        This is an alias for get_signal() for consistency.
+        
+        Args:
+            handle: Signal handle
+        
+        Returns:
+            Backend WSignal object if available, None otherwise
+        """
+        ...
+    
     # Backend selection capability
     def get_backend_type(self) -> Literal["pywellen", "pylibfst"]:
         """Get the current backend type.

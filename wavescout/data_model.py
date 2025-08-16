@@ -280,3 +280,4 @@ class WaveformSession:
     selected_nodes: List[SignalNode] = field(default_factory=list)  # Currently selected nodes
     time_ruler_config: TimeRulerConfig = field(default_factory=TimeRulerConfig)  # Configuration for time ruler display
     timescale: Timescale = field(default_factory=lambda: Timescale(1, TimeUnit.PICOSECONDS))  # Timescale from the waveform file, default 1 ps if waveform not specifies timescale
+    clock_signal: Optional[tuple[Time, Time, SignalNode]] = None  # Clock period, phase offset, and signal node for clock-based grid display

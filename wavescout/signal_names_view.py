@@ -7,6 +7,7 @@ from typing import List, Optional, Callable, Union, TYPE_CHECKING
 from PySide6.QtCore import QPersistentModelIndex
 from .data_model import SignalNode, RenderType, AnalogScalingMode, DataFormat
 from .config import RENDERING, UI
+from .clock_utils import is_valid_clock_signal
 
 if TYPE_CHECKING:
     from .waveform_controller import WaveformController
@@ -248,6 +249,24 @@ class SignalNamesView(BaseColumnView):
             navigate_action = QAction("Navigate to scope", self)
             navigate_action.triggered.connect(self._navigate_to_scope)
             menu.addAction(navigate_action)
+            
+            # Add clock signal options if this is a valid clock signal
+            if self._controller.session and self._controller.session.waveform_db:
+                db = self._controller.session.waveform_db
+                if node.handle is not None:
+                    var = db.var_from_handle(node.handle)
+                    if var and is_valid_clock_signal(var):
+                        menu.addSeparator()
+                        
+                        # Check if this signal is already the clock
+                        if self._controller.is_clock_signal(node):
+                            clear_clock_action = QAction("Clear Clock", self)
+                            clear_clock_action.triggered.connect(self._controller.clear_clock_signal)
+                            menu.addAction(clear_clock_action)
+                        else:
+                            set_clock_action = QAction("Set as Clock", self)
+                            set_clock_action.triggered.connect(lambda: self._controller.set_clock_signal(node))
+                            menu.addAction(set_clock_action)
         
         # Add height scaling submenu
         height_menu = menu.addMenu("Set Height Scaling")

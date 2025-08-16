@@ -986,9 +986,18 @@ class WaveformCanvas(QWidget):
             self._time_grid_renderer.update_config(ruler_config)
             display_unit = ruler_config.time_unit
         
+        # Check if clock mode is active
+        clock_mode = False
+        if self._model and self._model._session and self._model._session.clock_signal:
+            clock_period, phase_offset, _ = self._model._session.clock_signal
+            self._time_grid_renderer.set_clock_signal(clock_period, phase_offset)
+            clock_mode = True
+        else:
+            self._time_grid_renderer.set_clock_signal(None)
+        
         # Calculate tick positions and step size
         tick_infos, step_size = self._time_grid_renderer.calculate_ticks(
-            self._start_time, self._end_time, self.width(), display_unit
+            self._start_time, self._end_time, self.width(), display_unit, clock_mode
         )
         
         # Store tick positions for grid drawing
@@ -1009,9 +1018,14 @@ class WaveformCanvas(QWidget):
             self._calculate_and_store_ruler_info()
             tick_positions = self._last_tick_positions
         
+        # Check if clock mode is active
+        clock_mode = False
+        if self._model and self._model._session and self._model._session.clock_signal:
+            clock_mode = True
+        
         # Renderer is always available, use it to draw ruler
         self._time_grid_renderer.render_ruler(
-            painter, tick_positions, self.width(), self._header_height
+            painter, tick_positions, self.width(), self._header_height, clock_mode
         )
     
 

@@ -319,6 +319,26 @@ class WaveformDB:
             
         return self._signal_cache.get(handle)
     
+    def var_from_handle(self, handle: SignalHandle) -> Optional[WVar]:
+        """Get the variable object for the given handle.
+        
+        Returns the first variable if there are aliases.
+        """
+        if handle not in self._var_map:
+            return None
+        
+        var_list = self._var_map[handle]
+        if var_list:
+            return var_list[0]
+        return None
+    
+    def signal_from_handle(self, handle: SignalHandle) -> Optional[WSignal]:
+        """Get the signal object for the given handle.
+        
+        This is an alias for get_signal() for consistency with var_from_handle().
+        """
+        return self.get_signal(handle)
+    
     def are_signals_cached(self, handles: List[SignalHandle]) -> bool:
         """Check if all specified signals are already cached.
         
