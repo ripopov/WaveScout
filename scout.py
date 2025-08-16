@@ -46,37 +46,6 @@ class LoaderRunnable(QRunnable):
             self.signals.error.emit(error_msg)
 
 
-class SignalLoaderSignals(QObject):
-    """Signals for signal loader runnable."""
-    finished = Signal()
-    error = Signal(str)
-
-
-class SignalLoaderRunnable(QRunnable):
-    """Runnable for loading signals in background thread."""
-
-    def __init__(self, waveform_db, handles):
-        """Initialize the signal loader.
-
-        Args:
-            waveform_db: WaveformDB instance to load signals from
-            handles: List of signal handles to preload
-        """
-        super().__init__()
-        self.waveform_db = waveform_db
-        self.handles = handles
-        self.signals = SignalLoaderSignals()
-
-    def run(self):
-        """Execute signal loading in background thread."""
-        try:
-            # Preload signals using the efficient batch API
-            self.waveform_db.preload_signals(self.handles)
-            self.signals.finished.emit()
-        except Exception as e:
-            import traceback
-            error_msg = f"Signal loading failed: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
-            self.signals.error.emit(error_msg)
 
 
 class WaveScoutMainWindow(QMainWindow):
@@ -927,8 +896,11 @@ class WaveScoutMainWindow(QMainWindow):
         # Store nodes for later addition
         self._pending_signal_nodes = signal_nodes
         
-        # Create and start the signal loader
-        loader = SignalLoaderRunnable(waveform_db, handles)
+        # Create and start the loader using the generic LoaderRunnable
+        loader = LoaderRunnable(
+            waveform_db.preload_signals,
+            handles
+        )
         loader.signals.finished.connect(self._on_signals_loaded)
         loader.signals.error.connect(self._on_signal_load_error)
         
@@ -936,8 +908,12 @@ class WaveScoutMainWindow(QMainWindow):
         from PySide6.QtCore import QTimer
         QTimer.singleShot(10, lambda: self.thread_pool.start(loader))
     
-    def _on_signals_loaded(self):
-        """Handle successful signal loading."""
+    def _on_signals_loaded(self, result=None):
+        """Handle successful signal loading.
+        
+        Args:
+            result: Optional result from LoaderRunnable (not used here)
+        """
         # Close progress dialog
         if hasattr(self, 'signal_loading_dialog') and self.signal_loading_dialog:
             self.signal_loading_dialog.close()
