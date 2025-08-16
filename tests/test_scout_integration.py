@@ -463,7 +463,7 @@ def test_height_scaling_for_analog_signals(qtbot):
 # Grouping and Drag & Drop Tests
 # ========================================================================
 
-def test_signal_grouping_and_reordering(qtbot):
+def test_signal_grouping_and_reordering(qtbot, monkeypatch):
     """
     Test signal grouping and drag-and-drop reordering in Names panel.
     
@@ -559,6 +559,10 @@ def test_signal_grouping_and_reordering(qtbot):
     
     names_view.selectionModel().select(selection, QItemSelectionModel.SelectionFlag.ClearAndSelect)
     qtbot.wait(10)
+    
+    # Mock the QInputDialog to return a test group name
+    from PySide6.QtWidgets import QInputDialog
+    monkeypatch.setattr(QInputDialog, 'getText', lambda *args, **kwargs: ("TestGroup", True))
     
     # Create group
     wave_widget._create_group_from_selected()

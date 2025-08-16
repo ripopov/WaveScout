@@ -580,6 +580,8 @@ class WaveScoutWidget(QWidget):
         """Create a new group containing the selected nodes."""
         if not self.session or not self.session.selected_nodes:
             return
+        
+        from PySide6.QtWidgets import QInputDialog
             
         # Use controller to create group
         # Get selected node IDs
@@ -605,8 +607,21 @@ class WaveScoutWidget(QWidget):
                 nodes_to_group_ids.append(node.instance_id)
         
         if nodes_to_group_ids:
-            # Create group name
-            group_name = f"Group {len([n for n in self.session.root_nodes if n.is_group]) + 1}"
+            # Get group name from user
+            group_name, ok = QInputDialog.getText(
+                self,
+                "Create Group",
+                "Enter name for the new group:",
+                text=""
+            )
+            
+            # If user cancelled, don't create the group
+            if not ok:
+                return
+            
+            # If user provided no name, use default
+            if not group_name:
+                group_name = f"Group {len([n for n in self.session.root_nodes if n.is_group]) + 1}"
             
             # Clear selection in UI
             if self._selection_model:

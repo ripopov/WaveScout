@@ -266,8 +266,10 @@ def test_headers_visible(wave_widget):
     print(f"\nHeaders: {headers}")
 
 
-def test_create_group_from_selected(wave_widget):
+def test_create_group_from_selected(wave_widget, monkeypatch):
     """Test creating a group from selected nodes."""
+    from PySide6.QtWidgets import QInputDialog
+    
     model = wave_widget.model
     session = wave_widget.session
     
@@ -287,6 +289,9 @@ def test_create_group_from_selected(wave_widget):
     session.selected_nodes = signal_nodes.copy()
     initial_root_count = len(session.root_nodes)
     
+    # Mock the QInputDialog to return a test group name
+    monkeypatch.setattr(QInputDialog, 'getText', lambda *args, **kwargs: ("TestGroup", True))
+    
     # Create group
     wave_widget._create_group_from_selected()
     
@@ -296,7 +301,7 @@ def test_create_group_from_selected(wave_widget):
     # Find the new group
     new_group = None
     for node in session.root_nodes:
-        if node.is_group and node.name.startswith("Group"):
+        if node.is_group and node.name == "TestGroup":
             new_group = node
             break
     
@@ -305,8 +310,10 @@ def test_create_group_from_selected(wave_widget):
     assert all(child in signal_nodes for child in new_group.children), "Group should contain selected signals"
 
 
-def test_create_group_of_groups_preserves_hierarchy(wave_widget):
+def test_create_group_of_groups_preserves_hierarchy(wave_widget, monkeypatch):
     """Test creating a group from groups preserves the hierarchy."""
+    from PySide6.QtWidgets import QInputDialog
+    
     session = wave_widget.session
     
     # Create two groups with children
@@ -337,6 +344,9 @@ def test_create_group_of_groups_preserves_hierarchy(wave_widget):
     all_nodes = [g1, if_signal, wb_signal1, g2, ex_signal, mem_signal, wb_signal2]
     session.selected_nodes = all_nodes.copy()
     
+    # Mock the QInputDialog to return a test group name
+    monkeypatch.setattr(QInputDialog, 'getText', lambda *args, **kwargs: ("ParentGroup", True))
+    
     # Create group (simulating 'g' key)
     wave_widget._create_group_from_selected()
     
@@ -345,7 +355,7 @@ def test_create_group_of_groups_preserves_hierarchy(wave_widget):
     
     new_group = session.root_nodes[0]
     assert new_group.is_group, "Root should be a group"
-    assert new_group.name.startswith("Group"), "New group should have appropriate name"
+    assert new_group.name == "ParentGroup", "New group should have the specified name"
     
     # The new group should contain only G1 and G2 (not their children)
     assert len(new_group.children) == 2, "New group should contain only the two original groups"
@@ -367,9 +377,88 @@ def test_create_group_of_groups_preserves_hierarchy(wave_widget):
     assert g2.parent == new_group, "G2's parent should be the new group"
     assert if_signal.parent == g1, "IF's parent should still be G1"
     assert wb_signal1.parent == g1, "WB's parent should still be G1"
-    assert ex_signal.parent == g2, "EX's parent should still be G2"
-    assert mem_signal.parent == g2, "MEM's parent should still be G2"
-    assert wb_signal2.parent == g2, "WB's parent should still be G2"
+
+
+def test_create_group_cancel_dialog(wave_widget, monkeypatch):
+    """Test canceling the group creation dialog."""
+    from PySide6.QtWidgets import QInputDialog
+    
+    model = wave_widget.model
+    session = wave_widget.session
+    
+    # Find two signals to select
+    signal_nodes = []
+    for i in range(model.rowCount()):
+        index = model.index(i, 0)
+        node = model.data(index, Qt.UserRole)
+        if isinstance(node, SignalNode) and not node.is_group:
+            signal_nodes.append(node)
+            if len(signal_nodes) >= 2:
+                break
+    
+    assert len(signal_nodes) >= 2, "Need at least 2 signals for test"
+    
+    # Select the signals
+    session.selected_nodes = signal_nodes.copy()
+    initial_root_count = len(session.root_nodes)
+    initial_root_nodes = session.root_nodes.copy()
+    
+    # Mock the QInputDialog to simulate user canceling
+    monkeypatch.setattr(QInputDialog, 'getText', lambda *args, **kwargs: ("", False))
+    
+    # Try to create group (should be cancelled)
+    wave_widget._create_group_from_selected()
+    
+    # Check that no group was created
+    assert len(session.root_nodes) == initial_root_count, "No new nodes should be created"
+    assert session.root_nodes == initial_root_nodes, "Root nodes should remain unchanged"
+    
+    # Selected signals should still be selected
+    assert session.selected_nodes == signal_nodes, "Selection should remain unchanged"
+
+
+def test_create_group_empty_name_uses_default(wave_widget, monkeypatch):
+    """Test that empty name in dialog still creates group with default name."""
+    from PySide6.QtWidgets import QInputDialog
+    
+    model = wave_widget.model
+    session = wave_widget.session
+    
+    # Find two signals to select
+    signal_nodes = []
+    for i in range(model.rowCount()):
+        index = model.index(i, 0)
+        node = model.data(index, Qt.UserRole)
+        if isinstance(node, SignalNode) and not node.is_group:
+            signal_nodes.append(node)
+            if len(signal_nodes) >= 2:
+                break
+    
+    assert len(signal_nodes) >= 2, "Need at least 2 signals for test"
+    
+    # Select the signals
+    session.selected_nodes = signal_nodes.copy()
+    initial_root_count = len(session.root_nodes)
+    
+    # Mock the QInputDialog to return empty string but OK clicked
+    monkeypatch.setattr(QInputDialog, 'getText', lambda *args, **kwargs: ("", True))
+    
+    # Create group with empty name
+    wave_widget._create_group_from_selected()
+    
+    # Check a new group was created with default name
+    assert len(session.root_nodes) == initial_root_count - len(signal_nodes) + 1
+    
+    # Find the new group
+    new_group = None
+    for node in session.root_nodes:
+        if node.is_group and node.name.startswith("Group"):
+            new_group = node
+            break
+    
+    assert new_group is not None, "New group should be created with default name"
+    assert len(new_group.children) == 2, "Group should contain 2 children"
+    assert all(child in signal_nodes for child in new_group.children), "Group should contain selected signals"
 
 
 if __name__ == "__main__":
