@@ -281,6 +281,24 @@ def load_session(path: pathlib.Path, backend_preference: Optional[Literal["pywel
     if waveform_db:
         _resolve_signal_handles(session.root_nodes, cast(WaveformDBProtocol, waveform_db))
         
+        # Preload all signals used in the session while we're still in the loading thread
+        # This avoids cross-thread signal corruption issues
+        handles_to_preload: List[int] = []
+        def collect_handles(nodes: List[SignalNode]) -> None:
+            for node in nodes:
+                if node.handle is not None and not node.is_group:
+                    handles_to_preload.append(node.handle)
+                if node.children:
+                    collect_handles(node.children)
+        collect_handles(session.root_nodes)
+        
+        if handles_to_preload:
+            # Load all signals now while in the same thread as WaveformDB creation
+            # This ensures signals are cached before being accessed from other threads
+            # Use get_signal instead of preload_signals to avoid load_signals_multithreaded
+            for handle in handles_to_preload:
+                waveform_db.get_signal(handle)
+
         # Update viewport total_duration from the waveform's time table
         time_table = waveform_db.get_time_table()
         if time_table and len(time_table) > 0:

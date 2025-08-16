@@ -2,6 +2,7 @@
 
 from typing import List, Tuple, Optional, Dict, Literal
 from pathlib import Path
+import threading
 
 from .data_model import Time, SignalHandle, Timescale, TimeUnit
 from .backend_types import (
@@ -26,7 +27,7 @@ class WaveformDB:
         self._backend: Optional[WaveformBackend] = None  # Current backend instance
         self._backend_preference = backend_preference or "pywellen"  # Default to pywellen
         self._current_backend_type: Optional[Literal["pywellen", "pylibfst"]] = None
-        
+
     @property
     def file_path(self) -> Optional[str]:
         """Get the file path of the opened waveform."""
@@ -333,8 +334,6 @@ class WaveformDB:
         """Preload multiple signals using efficient batch loading.
         
         This method uses the backend's load_signals_multithreaded for optimal performance.
-        With the GIL release fix in pywellen, this can be safely called from a background thread.
-        
         Args:
             handles: List of signal handles to preload
         """
@@ -364,7 +363,6 @@ class WaveformDB:
             return
             
         # Batch load signals using multithreaded API
-        # GIL is now properly released in pywellen during the heavy I/O
         try:
             loaded_signals = self._backend.load_signals_multithreaded(vars_to_load)
             

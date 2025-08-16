@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (QApplication, QMainWindow,
 from wavescout.message_box_utils import show_critical, show_warning, show_information, show_question
 from PySide6.QtCore import Qt, QThreadPool, QRunnable, Signal, QObject, QSettings, QEvent
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
-# QtAsyncio and asyncio removed - using single-threaded execution
 from wavescout import WaveScoutWidget, create_sample_session, save_session, load_session
 from wavescout.design_tree_view import DesignTreeView
 from wavescout.config import RENDERING
@@ -55,10 +54,10 @@ class SignalLoaderSignals(QObject):
 
 class SignalLoaderRunnable(QRunnable):
     """Runnable for loading signals in background thread."""
-    
+
     def __init__(self, waveform_db, handles):
         """Initialize the signal loader.
-        
+
         Args:
             waveform_db: WaveformDB instance to load signals from
             handles: List of signal handles to preload
@@ -67,7 +66,7 @@ class SignalLoaderRunnable(QRunnable):
         self.waveform_db = waveform_db
         self.handles = handles
         self.signals = SignalLoaderSignals()
-        
+
     def run(self):
         """Execute signal loading in background thread."""
         try:
@@ -511,23 +510,7 @@ class WaveScoutMainWindow(QMainWindow):
         """Handle successful waveform load."""
         # Store session for later use
         self._pending_session = session
-        
-        # Extract handles and preload signals in background
-        handles = self._extract_session_handles(session)
-        if handles and session.waveform_db and not session.waveform_db.are_signals_cached(handles):
-            # Need to preload signals
-            if self.progress_dialog:
-                self.progress_dialog.setLabelText(f"Preloading {len(handles)} signals...")
-                QApplication.processEvents()
-            
-            # Load signals in background
-            loader = SignalLoaderRunnable(session.waveform_db, handles)
-            loader.signals.finished.connect(self._on_session_signals_preloaded)
-            loader.signals.error.connect(self._on_session_preload_error)
-            self.thread_pool.start(loader)
-        else:
-            # No preloading needed, continue directly
-            self._finalize_waveform_load()
+        self._finalize_waveform_load()
         
     def _on_waveform_load_error(self, error_msg):
         """Handle waveform load error."""
@@ -701,23 +684,7 @@ class WaveScoutMainWindow(QMainWindow):
         """Handle successful session load."""
         # Store session for later use
         self._pending_loaded_session = session
-        
-        # Extract handles and preload signals in background
-        handles = self._extract_session_handles(session)
-        if handles and session.waveform_db and not session.waveform_db.are_signals_cached(handles):
-            # Need to preload signals
-            if self.progress_dialog:
-                self.progress_dialog.setLabelText(f"Preloading {len(handles)} signals...")
-                QApplication.processEvents()
-            
-            # Load signals in background
-            loader = SignalLoaderRunnable(session.waveform_db, handles)
-            loader.signals.finished.connect(self._on_loaded_session_signals_preloaded)
-            loader.signals.error.connect(self._on_loaded_session_preload_error)
-            self.thread_pool.start(loader)
-        else:
-            # No preloading needed, continue directly
-            self._finalize_session_load()
+        self._finalize_session_load()
             
     def _on_session_load_error(self, error_msg):
         """Handle session load error."""
@@ -748,16 +715,6 @@ class WaveScoutMainWindow(QMainWindow):
             except Exception:
                 pass  # Ignore cleanup errors
             delattr(self, '_temp_reload_session_path')
-    
-    def _on_loaded_session_signals_preloaded(self):
-        """Handle completion of session signal preloading."""
-        self._finalize_session_load()
-    
-    def _on_loaded_session_preload_error(self, error_msg):
-        """Handle error during session signal preloading."""
-        print(f"Warning: Failed to preload session signals: {error_msg}")
-        # Continue anyway - signals will load lazily if needed
-        self._finalize_session_load()
     
     def _finalize_session_load(self):
         """Complete the session loading process after signals are preloaded."""
