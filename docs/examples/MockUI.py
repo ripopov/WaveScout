@@ -1,9 +1,9 @@
-
 import sys
-from PySide6.QtCore import Qt, QPoint, QSize
+from PySide6.QtCore import Qt, QPoint, QSize, QEvent
 from PySide6.QtGui import QPainter, QColor, QPen, QIcon, QAction, QKeySequence, QPixmap
-from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
-                               QWidget, QPushButton, QLabel, QFrame, QSizeGrip, QSplitter, QMenuBar)
+from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
+                               QWidget, QPushButton, QLabel, QFrame, QSizeGrip, QSplitter, QMenuBar, QToolBar)
+
 
 class CustomTitleBar(QWidget):
     def __init__(self, parent):
@@ -57,7 +57,8 @@ class CustomTitleBar(QWidget):
         self.left_button.setChecked(True)
         self.left_button.setIcon(self.create_sidebar_icon(Qt.LeftArrow))
         self.left_button.setFixedSize(30, 30)
-        self.left_button.setStyleSheet("QPushButton { background-color: transparent; border: none; } QPushButton:checked { background-color: #007ACC; }")
+        self.left_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; } QPushButton:checked { background-color: #007ACC; }")
         layout.addWidget(self.left_button)
 
         # Toggle right sidebar button
@@ -66,7 +67,8 @@ class CustomTitleBar(QWidget):
         self.right_button.setChecked(True)
         self.right_button.setIcon(self.create_sidebar_icon(Qt.RightArrow))
         self.right_button.setFixedSize(30, 30)
-        self.right_button.setStyleSheet("QPushButton { background-color: transparent; border: none; } QPushButton:checked { background-color: #007ACC; }")
+        self.right_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; } QPushButton:checked { background-color: #007ACC; }")
         layout.addWidget(self.right_button)
 
         # Toggle bottom panel button
@@ -75,28 +77,37 @@ class CustomTitleBar(QWidget):
         self.bottom_button.setChecked(True)
         self.bottom_button.setIcon(self.create_bottombar_icon(Qt.DownArrow))
         self.bottom_button.setFixedSize(30, 30)
-        self.bottom_button.setStyleSheet("QPushButton { background-color: transparent; border: none; } QPushButton:checked { background-color: #007ACC; }")
+        self.bottom_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; } QPushButton:checked { background-color: #007ACC; }")
         layout.addWidget(self.bottom_button)
 
         self.minimize_button = QPushButton("_")
         self.minimize_button.setFixedSize(30, 30)
-        self.minimize_button.setStyleSheet("QPushButton { background-color: transparent; border: none; color: #CCCCCC; } QPushButton:hover { background-color: #3E3E42; }")
+        self.minimize_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; color: #CCCCCC; } QPushButton:hover { background-color: #3E3E42; }")
         self.minimize_button.clicked.connect(self.parent.showMinimized)
         layout.addWidget(self.minimize_button)
 
         self.maximize_button = QPushButton("[]")
         self.maximize_button.setFixedSize(30, 30)
-        self.maximize_button.setStyleSheet("QPushButton { background-color: transparent; border: none; color: #CCCCCC; } QPushButton:hover { background-color: #3E3E42; }")
+        self.maximize_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; color: #CCCCCC; } QPushButton:hover { background-color: #3E3E42; }")
         self.maximize_button.clicked.connect(self.toggle_maximize)
         layout.addWidget(self.maximize_button)
 
         self.close_button = QPushButton("X")
         self.close_button.setFixedSize(30, 30)
-        self.close_button.setStyleSheet("QPushButton { background-color: transparent; border: none; color: #CCCCCC; } QPushButton:hover { background-color: #C42B1C; }")
+        self.close_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; color: #CCCCCC; } QPushButton:hover { background-color: #C42B1C; }")
         self.close_button.clicked.connect(self.parent.close)
         layout.addWidget(self.close_button)
 
         self.old_pos = None
+        self._system_move_active = False
+
+        # Allow dragging when clicking on menu bar and title label as well
+        self.menu_bar.installEventFilter(self)
+        self.title.installEventFilter(self)
 
     def create_sidebar_icon(self, arrow_direction):
         pixmap = QPixmap(16, 16)
@@ -140,21 +151,78 @@ class CustomTitleBar(QWidget):
         else:
             self.parent.showMaximized()
 
+    def _start_system_move(self, event) -> bool:
+        # Try to use native system move (needed on Wayland); fall back to manual move if not available
+        wh = self.parent.windowHandle() if hasattr(self.parent, 'windowHandle') else None
+        if wh is None:
+            return False
+        if not hasattr(wh, 'startSystemMove'):
+            return False
+        try:
+            # Try common signatures across PySide6/PyQt versions
+            try:
+                return bool(wh.startSystemMove(event.globalPosition().toPoint()))
+            except TypeError:
+                try:
+                    # Older APIs might accept QPoint from globalPos
+                    return bool(wh.startSystemMove(event.globalPos()))
+                except Exception:
+                    # Some versions take no args
+                    return bool(wh.startSystemMove())
+        except Exception:
+            return False
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and not self.parent.isMaximized():
-            self.old_pos = event.globalPosition().toPoint()
+            # Prefer system move where available (e.g., Wayland)
+            if self._start_system_move(event):
+                self._system_move_active = True
+                self.old_pos = None
+            else:
+                self._system_move_active = False
+                self.old_pos = event.globalPosition().toPoint()
 
     def mouseMoveEvent(self, event):
+        if self._system_move_active:
+            # System move is handled by the window system; nothing to do here
+            return
         if self.old_pos:
             delta = QPoint(event.globalPosition().toPoint() - self.old_pos)
             self.parent.move(self.parent.x() + delta.x(), self.parent.y() + delta.y())
             self.old_pos = event.globalPosition().toPoint()
 
     def mouseReleaseEvent(self, event):
+        self._system_move_active = False
         self.old_pos = None
 
     def mouseDoubleClickEvent(self, event):
         self.toggle_maximize()
+
+    def eventFilter(self, obj, event):
+        # Forward mouse events from child widgets (menu bar and title label) to enable window dragging
+        if obj in (self.menu_bar, self.title):
+            if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton and not self.parent.isMaximized():
+                # Prefer system move for Wayland and compatible platforms
+                if self._start_system_move(event):
+                    self._system_move_active = True
+                    self.old_pos = None
+                else:
+                    self._system_move_active = False
+                    self.old_pos = event.globalPosition().toPoint()
+                return False  # do not consume; allow normal behavior too (e.g., menus)
+            elif event.type() == QEvent.MouseMove:
+                if self._system_move_active:
+                    return False
+                if self.old_pos is not None:
+                    delta = event.globalPosition().toPoint() - self.old_pos
+                    self.parent.move(self.parent.x() + delta.x(), self.parent.y() + delta.y())
+                    self.old_pos = event.globalPosition().toPoint()
+                    return True  # we handled the drag
+            elif event.type() == QEvent.MouseButtonRelease:
+                self._system_move_active = False
+                self.old_pos = None
+                return False
+        return super().eventFilter(obj, event)
 
 
 class MainWindow(QMainWindow):
@@ -167,9 +235,9 @@ class MainWindow(QMainWindow):
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-        
+
         self.v_layout = QVBoxLayout(self.central_widget)
-        self.v_layout.setContentsMargins(0,0,0,0)
+        self.v_layout.setContentsMargins(0, 0, 0, 0)
         self.v_layout.setSpacing(0)
 
         self.title_bar = CustomTitleBar(self)
@@ -246,6 +314,7 @@ class MainWindow(QMainWindow):
 
         self._setup_actions()
         self._setup_menu()
+        self._setup_toolbar()
 
     def _setup_actions(self):
         self.title_bar.left_button.clicked.connect(self.toggle_left_sidebar)
@@ -265,13 +334,20 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction("Exit", self.close)
 
-        edit_menu = self.title_bar.menu_bar.addMenu("Edit")
-        edit_menu.addAction("Undo")
-        edit_menu.addAction("Redo")
-        edit_menu.addSeparator()
-        edit_menu.addAction("Cut")
-        edit_menu.addAction("Copy")
-        edit_menu.addAction("Paste")
+        # Edit menu and actions (keep references for toolbar)
+        self.edit_menu = self.title_bar.menu_bar.addMenu("Edit")
+        self.undo_action = self.edit_menu.addAction("Undo")
+        self.undo_action.setShortcut(QKeySequence.Undo)
+        self.redo_action = self.edit_menu.addAction("Redo")
+        # Use common redo shortcuts (platform may map accordingly)
+        self.redo_action.setShortcuts([QKeySequence.Redo])
+        self.edit_menu.addSeparator()
+        self.cut_action = self.edit_menu.addAction("Cut")
+        self.cut_action.setShortcut(QKeySequence.Cut)
+        self.copy_action = self.edit_menu.addAction("Copy")
+        self.copy_action.setShortcut(QKeySequence.Copy)
+        self.paste_action = self.edit_menu.addAction("Paste")
+        self.paste_action.setShortcut(QKeySequence.Paste)
 
         view_menu = self.title_bar.menu_bar.addMenu("View")
         view_menu.addAction("Zoom In")
@@ -279,6 +355,30 @@ class MainWindow(QMainWindow):
         view_menu.addSeparator()
         view_menu.addAction(self.fullscreen_action)
 
+    def _setup_toolbar(self):
+        # Create a mock toolbar and populate it with actions from the Edit menu
+        self.toolbar = QToolBar("Edit Toolbar", self)
+        self.toolbar.setMovable(False)
+        self.toolbar.setFloatable(False)
+        self.toolbar.setIconSize(QSize(16, 16))
+        # Text-only to match the mock style; could be changed to icons if available
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.toolbar.setStyleSheet(
+            "QToolBar { background-color: #2D2D30; border: none; spacing: 4px; padding: 2px 4px; }"
+            "QToolButton { color: #CCCCCC; padding: 4px 8px; }"
+            "QToolButton:hover { background-color: #3E3E42; }"
+        )
+
+        # Insert the toolbar below the custom title bar
+        self.v_layout.insertWidget(1, self.toolbar)
+
+        # Add actions from the Edit menu (skip separators)
+        if hasattr(self, 'edit_menu') and self.edit_menu is not None:
+            for act in self.edit_menu.actions():
+                if act.isSeparator():
+                    self.toolbar.addSeparator()
+                else:
+                    self.toolbar.addAction(act)
 
     def toggle_right_sidebar(self):
         if self.right_sidebar.isVisible():
@@ -325,10 +425,14 @@ class MainWindow(QMainWindow):
         if self.isFullScreen():
             self.showNormal()
             self.title_bar.show()
+            if hasattr(self, 'toolbar'):
+                self.toolbar.show()
             self.grip.show()
         else:
             self.showFullScreen()
             self.title_bar.hide()
+            if hasattr(self, 'toolbar'):
+                self.toolbar.hide()
             self.grip.hide()
 
 
