@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate, QWidget, QStyleOptionViewItem, QInputDialog, QColorDialog
 from PySide6.QtCore import Qt, Signal, QModelIndex, QAbstractItemModel, QPoint, QSize
-from PySide6.QtGui import QAction, QActionGroup, QKeyEvent, QColor
+from PySide6.QtGui import QAction, QActionGroup, QKeyEvent, QColor, QKeySequence
 from typing import List, Optional, Callable, Union, TYPE_CHECKING
 from PySide6.QtCore import QPersistentModelIndex
 from .data_model import SignalNode, RenderType, AnalogScalingMode, DataFormat, GroupRenderMode
@@ -294,7 +294,7 @@ class SignalNamesView(BaseColumnView):
         menu.addSeparator()
         analyze_action = QAction("Analyze...", self)
         analyze_action.triggered.connect(self._trigger_analysis)
-        analyze_action.setShortcut("A")
+        analyze_action.setShortcut(QKeySequence("A"))
         menu.addAction(analyze_action)
         
         # Add height scaling submenu

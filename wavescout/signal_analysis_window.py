@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QRadioButton, QComboBox, QLineEdit, QTableWidget,
     QTableWidgetItem, QProgressBar, QPushButton,
     QLabel, QButtonGroup, QHeaderView, QMessageBox,
-    QAbstractItemView
+    QAbstractItemView, QWidget
 )
 from PySide6.QtGui import QIntValidator, QKeySequence, QClipboard
 from PySide6.QtWidgets import QApplication
@@ -131,6 +131,7 @@ class SignalAnalysisWindow(QDialog):
         self._setup_ui()
         self._populate_signals()
         self._update_interval_options()
+        self._on_interval_changed()  # Initialize marker info display
         self._populate_results_table()
     
     def _setup_ui(self) -> None:
@@ -179,13 +180,40 @@ class SignalAnalysisWindow(QDialog):
         
         # Interval selection group
         interval_group = QGroupBox("Analysis Interval")
-        interval_layout = QHBoxLayout(interval_group)
+        interval_layout = QVBoxLayout(interval_group)
         
-        interval_layout.addWidget(QLabel("Analyze:"))
+        # Combo box row
+        combo_layout = QHBoxLayout()
+        combo_layout.addWidget(QLabel("Analyze:"))
         self._interval_combo = QComboBox()
         self._interval_combo.setMinimumWidth(200)
-        interval_layout.addWidget(self._interval_combo)
-        interval_layout.addStretch()
+        self._interval_combo.currentIndexChanged.connect(self._on_interval_changed)
+        combo_layout.addWidget(self._interval_combo)
+        combo_layout.addStretch()
+        interval_layout.addLayout(combo_layout)
+        
+        # Marker info labels (initially hidden)
+        self._marker_info_widget = QWidget()
+        marker_info_layout = QVBoxLayout(self._marker_info_widget)
+        marker_info_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Marker A timestamp
+        self._marker_a_label = QLabel()
+        self._marker_a_label.setStyleSheet("color: #888;")
+        marker_info_layout.addWidget(self._marker_a_label)
+        
+        # Marker B timestamp
+        self._marker_b_label = QLabel()
+        self._marker_b_label.setStyleSheet("color: #888;")
+        marker_info_layout.addWidget(self._marker_b_label)
+        
+        # Time period
+        self._period_label = QLabel()
+        self._period_label.setStyleSheet("font-weight: bold;")
+        marker_info_layout.addWidget(self._period_label)
+        
+        interval_layout.addWidget(self._marker_info_widget)
+        self._marker_info_widget.setVisible(False)
         
         layout.addWidget(interval_group)
         
@@ -293,6 +321,34 @@ class SignalAnalysisWindow(QDialog):
         else:
             # Only global option available
             self._interval_combo.addItem("Global", "global")
+    
+    def _on_interval_changed(self) -> None:
+        """Handle interval selection change."""
+        interval_type = self._interval_combo.currentData()
+        
+        if interval_type == "markers" and self._controller.session:
+            # Show marker info
+            markers = self._controller.session.markers
+            valid_markers = sorted([m for m in markers if m and m.time >= 0], key=lambda m: m.time)
+            
+            if len(valid_markers) >= 2:
+                marker_a = valid_markers[0]
+                marker_b = valid_markers[1]
+                
+                # Format timestamps
+                self._marker_a_label.setText(f"Marker A ({marker_a.label}): {marker_a.time:,}")
+                self._marker_b_label.setText(f"Marker B ({marker_b.label}): {marker_b.time:,}")
+                
+                # Calculate and format period
+                period = marker_b.time - marker_a.time
+                self._period_label.setText(f"Period: {period:,} time units")
+                
+                self._marker_info_widget.setVisible(True)
+            else:
+                self._marker_info_widget.setVisible(False)
+        else:
+            # Hide marker info for global interval
+            self._marker_info_widget.setVisible(False)
     
     def _populate_results_table(self) -> None:
         """Populate the results table with signal names (values empty initially)."""
@@ -471,11 +527,6 @@ class SignalAnalysisWindow(QDialog):
         self._progress_bar.setVisible(False)
         self._start_button.setEnabled(True)
         self._worker = None
-        
-        # Show completion message if we have results
-        if self._results:
-            QMessageBox.information(self, "Analysis Complete", 
-                                  f"Analysis completed for {len(self._results)} signals")
     
     def _on_error(self, error_msg: str) -> None:
         """Handle error from worker."""
