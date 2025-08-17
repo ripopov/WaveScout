@@ -99,7 +99,7 @@ The Signal Analysis feature enables users to compute statistical measurements (M
      - Minimum value across all samples
      - Maximum value across all samples
      - Sum of all sampled values
-     - Average (arithmetic mean) of sampled values
+       - Average (arithmetic mean) of sampled values
    - Handle different signal types using parse_signal_value():
      - Digital signals: Returns 0.0 or 1.0 in value_float
      - Multi-bit buses: Converted to float based on data format (signed/unsigned/hex/binary)

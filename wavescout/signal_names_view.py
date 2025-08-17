@@ -275,6 +275,27 @@ class SignalNamesView(BaseColumnView):
                             set_clock_action = QAction("Set as Clock", self)
                             set_clock_action.triggered.connect(lambda: self._controller.set_clock_signal(node))
                             menu.addAction(set_clock_action)
+                    
+                    # Add sampling signal options
+                    menu.addSeparator()
+                    # Get the WVar for this node to check if it's a valid signal
+                    var = self._controller.session.waveform_db.var_from_handle(node.handle)
+                    if var and is_valid_clock_signal(var):
+                        if self._controller.is_sampling_signal(node):
+                            clear_sampling_action = QAction("Clear Sampling Signal", self)
+                            clear_sampling_action.triggered.connect(self._controller.clear_sampling_signal)
+                            menu.addAction(clear_sampling_action)
+                        else:
+                            set_sampling_action = QAction("Set as Sampling Signal", self)
+                            set_sampling_action.triggered.connect(lambda: self._controller.set_sampling_signal(node))
+                            menu.addAction(set_sampling_action)
+        
+        # Add analysis option
+        menu.addSeparator()
+        analyze_action = QAction("Analyze...", self)
+        analyze_action.triggered.connect(self._trigger_analysis)
+        analyze_action.setShortcut("A")
+        menu.addAction(analyze_action)
         
         # Add height scaling submenu
         height_menu = menu.addMenu("Set Height Scaling")
@@ -415,6 +436,24 @@ class SignalNamesView(BaseColumnView):
             return ''  # Top-level signal has no parent scope
         return '.'.join(parts[:-1])
     
+    def _trigger_analysis(self) -> None:
+        """Open the signal analysis window for selected signals."""
+        # Get selected non-group signals
+        selected_signals = self._get_selected_signal_nodes()
+        if not selected_signals:
+            return
+        
+        # Import here to avoid circular dependencies
+        from .signal_analysis_window import SignalAnalysisWindow
+        
+        # Create and show the analysis window
+        window = SignalAnalysisWindow(
+            controller=self._controller,
+            selected_signals=selected_signals,
+            parent=self
+        )
+        window.exec()
+    
     def _rename_selected_signal(self) -> None:
         """Rename the first selected signal or group with a user-defined nickname."""
         # Get all selected nodes (including groups)
@@ -472,6 +511,11 @@ class SignalNamesView(BaseColumnView):
         if event.key() == Qt.Key.Key_R and not event.modifiers():
             # Trigger rename for selected signal
             self._rename_selected_signal()
+            event.accept()
+        # Check for 'A' or 'a' key
+        elif event.key() == Qt.Key.Key_A and not event.modifiers():
+            # Trigger analysis for selected signals
+            self._trigger_analysis()
             event.accept()
         else:
             # Pass to parent for default handling

@@ -874,3 +874,38 @@ class WaveformController:
         
         _, _, clock_node = self.session.clock_signal  # Now (period, phase, node)
         return clock_node.instance_id == node.instance_id
+    
+    # ---- Sampling Signal Management (for Signal Analysis) ----
+    
+    def set_sampling_signal(self, node: Optional[SignalNode]) -> None:
+        """Set the signal to be used for sampling in signal analysis."""
+        if not self.session:
+            return
+        
+        # Only allow non-group signals as sampling signals
+        if node and node.is_group:
+            return
+        
+        self.session.sampling_signal = node
+        
+        # Emit a custom event for sampling signal changes
+        if "sampling_signal_changed" not in self._callbacks:
+            self._callbacks["sampling_signal_changed"] = []
+        self._emit("sampling_signal_changed")
+        self._emit("session_changed")
+    
+    def get_sampling_signal(self) -> Optional[SignalNode]:
+        """Get the current sampling signal."""
+        if not self.session:
+            return None
+        return self.session.sampling_signal
+    
+    def clear_sampling_signal(self) -> None:
+        """Clear the current sampling signal."""
+        self.set_sampling_signal(None)
+    
+    def is_sampling_signal(self, node: SignalNode) -> bool:
+        """Check if a node is the current sampling signal."""
+        if not self.session or not self.session.sampling_signal:
+            return False
+        return self.session.sampling_signal.instance_id == node.instance_id
