@@ -34,6 +34,7 @@ For a detailed tree, see the Project Structure section in README.md.
 ### Initial Setup
 
 #### Windows Setup
+MSVC 2022, Rust, Python 3.12, and Poetry must be installed.
 ```powershell
 # Open PowerShell and navigate to project directory
 cd <path-to-WaveScout>
@@ -63,23 +64,6 @@ poetry run build-pywellen
 ## Running
 - Demo application: make dev
   - Equivalent: poetry run python scout.py
-
-### Windows Development Environment
-Windows users must set up the Visual Studio environment before building:
-
-1. **Open PowerShell** (not Command Prompt)
-2. **Source the environment script**: `. .\setup_env.ps1`
-   - This sets up Visual Studio 2022 C++ compiler
-   - Configures vcpkg package manager
-   - Verifies all required tools
-3. **Use standard make commands**: `make install`, `make dev`, `make test`
-
-The setup script will:
-- Find and configure Visual Studio 2022
-- Set up MSVC compiler environment
-- Configure vcpkg for C++ dependencies
-- Add Python Scripts directory to PATH
-- Verify all required tools (cl.exe, make.exe, python.exe)
 
 ### Virtual Environment
 The project uses Poetry with a local virtual environment (.venv) in the project directory.
@@ -128,12 +112,12 @@ make build
 - mypy.ini includes exceptions for pywellen and specific PySide6 import behaviors.
 - There is no separate linter configured in this repo; follow readable, PEP8-ish style and keep type annotations accurate.
 
+## Coding Guidelines
 
-## Key Classes
-- `WaveScoutWidget`: Main waveform viewer widget
-- `WaveformDB`: Waveform database using Wellen library for VCD/FST files
-
-## Type Safety Guidelines
+- DRY (Don’t Repeat Yourself) - every piece of knowledge or logic in a system should exist in a single, authoritative
+  place, avoiding duplication.
+- SRP (Single Responsibility Principle) - class, module, or function should have only one reason to change, i.e., it
+  should focus on a single, well-defined responsibility.
 
 ### Strict Typing Requirements
 This project enforces strict type safety. All code must adhere to these guidelines:
@@ -198,34 +182,6 @@ For PySide6/Qt types:
 2. **Use initialization flags** (`self._initialized`) for lifecycle management
 3. **Use dataclasses** for complex temporary state instead of dynamic attributes
 4. **Set to None** instead of delattr
-
-```python
-# CORRECT
-class MyWidget(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.session: Optional[Session] = None  # Initialize even if None
-        self._canvas: Canvas = cast(Canvas, None)  # Use cast if needed
-        self._initialized: bool = False
-        self._setup_ui()
-        self._initialized = True
-    
-    def cleanup(self):
-        if not self._initialized:  # Check flag, not hasattr
-            return
-        if self.session is not None:  # Check None, not hasattr
-            self.session.cleanup()
-
-# For complex state, use dataclass:
-@dataclass
-class LoadingState:
-    session_path: Optional[Path] = None
-    pending_nodes: List[Node] = field(default_factory=list)
-    
-    def clear(self) -> None:
-        self.session_path = None
-        self.pending_nodes = []
-```
 
 #### Only Acceptable hasattr Uses
 - Test code verifying protocol implementation
