@@ -270,11 +270,14 @@ class TestTimeGridRenderer:
         renderer.set_clock_signal(None)
         assert renderer._clock_period is None
     
-    @pytest.mark.skip(reason="Requires Qt application context for font metrics")
-    def test_calculate_clock_ticks(self):
-        """Test tick calculation in clock mode."""
+    def test_calculate_clock_ticks(self, qapp):
+        """Test tick calculation in clock mode.
+        
+        Args:
+            qapp: QApplication fixture provided by pytest-qt
+        """
         renderer = TimeGridRenderer()
-        renderer.set_clock_signal(100)  # 100 time units per clock
+        renderer.set_clock_signal(100, 0)  # 100 time units per clock, phase 0
         
         # Calculate ticks for viewport
         tick_infos, step_size = renderer._calculate_clock_ticks(

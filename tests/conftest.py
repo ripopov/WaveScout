@@ -2,10 +2,20 @@
 
 import pytest
 from pathlib import Path
+from PySide6.QtWidgets import QApplication
 from wavescout import create_sample_session, WaveScoutWidget
 from wavescout.waveform_loader import create_signal_node_from_var
 from wavescout.data_model import SignalNode
 from .test_utils import get_test_input_path, TestFiles
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    """Create QApplication for tests that need Qt context."""
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    yield app
 
 
 @pytest.fixture
