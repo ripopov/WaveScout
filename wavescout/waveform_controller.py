@@ -477,13 +477,87 @@ class WaveformController:
         if set(ids_list) & self._selected_ids:
             self._emit("selection_changed")
     
+    def filter_nodes_for_grouping(self, nodes: List[SignalNode]) -> List[SignalNode]:
+        """Filter out nodes whose parent is also in the list.
+        
+        This prevents flattening when grouping groups - if a parent group
+        and its children are both selected, only the parent should be grouped.
+        
+        Args:
+            nodes: List of nodes to filter
+            
+        Returns:
+            List of nodes that should actually be grouped
+        """
+        nodes_to_group = []
+        
+        for node in nodes:
+            # Check if any ancestor is in the selected list
+            has_selected_ancestor = False
+            current = node.parent
+            while current:
+                if current in nodes:
+                    has_selected_ancestor = True
+                    break
+                current = current.parent
+            
+            # Only include nodes that don't have a selected ancestor
+            if not has_selected_ancestor:
+                nodes_to_group.append(node)
+                
+        return nodes_to_group
+    
+    def get_default_group_name(self) -> str:
+        """Generate a default group name based on existing groups."""
+        if not self.session:
+            return "Group 1"
+        
+        group_count = len([n for n in self.session.root_nodes if n.is_group]) + 1
+        return f"Group {group_count}"
+    
+    def create_group_from_nodes(
+        self,
+        nodes: List[SignalNode],
+        group_name: Optional[str] = None,
+        mode: GroupRenderMode = GroupRenderMode.SEPARATE_ROWS
+    ) -> SignalNodeID:
+        """Create a group from a list of nodes with proper filtering.
+        
+        This is a high-level method that handles filtering and default naming.
+        
+        Args:
+            nodes: List of nodes to group
+            group_name: Optional group name (will use default if None)
+            mode: Group render mode
+            
+        Returns:
+            ID of the created group, or -1 if failed
+        """
+        if not nodes:
+            return -1
+            
+        # Filter nodes to prevent flattening
+        filtered_nodes = self.filter_nodes_for_grouping(nodes)
+        if not filtered_nodes:
+            return -1
+            
+        # Get node IDs
+        node_ids = [node.instance_id for node in filtered_nodes]
+        
+        # Use default name if not provided
+        if group_name is None:
+            group_name = self.get_default_group_name()
+            
+        # Create the group
+        return self.group_nodes(node_ids, group_name, mode)
+    
     def group_nodes(
         self,
         ids: Iterable[SignalNodeID],
         group_name: str,
         mode: GroupRenderMode
     ) -> SignalNodeID:
-        """Create a new group containing specified nodes."""
+        """Create a new group containing specified nodes (low-level method)."""
         if not self.session:
             return -1
         

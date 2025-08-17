@@ -610,61 +610,37 @@ class WaveScoutWidget(QWidget):
             return
         
         from PySide6.QtWidgets import QInputDialog
-            
-        # Use controller to create group
-        # Get selected node IDs
-        selected_ids = [node.instance_id for node in self.session.selected_nodes]
         
-        # Filter out nodes whose parent is also selected
-        # This prevents flattening when grouping groups
-        nodes_to_group_ids = []
         selected_nodes = list(self.session.selected_nodes)
         
-        for node in selected_nodes:
-            # Check if any ancestor is in the selected list
-            has_selected_ancestor = False
-            current = node.parent
-            while current:
-                if current in selected_nodes:
-                    has_selected_ancestor = True
-                    break
-                current = current.parent
-            
-            # Only include nodes that don't have a selected ancestor
-            if not has_selected_ancestor:
-                nodes_to_group_ids.append(node.instance_id)
+        # Get group name from user
+        group_name, ok = QInputDialog.getText(
+            self,
+            "Create Group",
+            "Enter name for the new group:",
+            text=""
+        )
         
-        if nodes_to_group_ids:
-            # Get group name from user
-            group_name, ok = QInputDialog.getText(
-                self,
-                "Create Group",
-                "Enter name for the new group:",
-                text=""
-            )
-            
-            # If user cancelled, don't create the group
-            if not ok:
-                return
-            
-            # If user provided no name, use default
-            if not group_name:
-                group_name = f"Group {len([n for n in self.session.root_nodes if n.is_group]) + 1}"
-            
-            # Clear selection in UI
-            if self._selection_model:
-                self._updating_selection = True
-                self._selection_model.clearSelection()
-                self._updating_selection = False
-            
-            # Create the group using controller
-            group_id = self.controller.group_nodes(
-                nodes_to_group_ids,
-                group_name,
-                GroupRenderMode.SEPARATE_ROWS
-            )
-            
-            # Restore expansion state after grouping
+        # If user cancelled, don't create the group
+        if not ok:
+            return
+        
+        # Clear selection in UI
+        if self._selection_model:
+            self._updating_selection = True
+            self._selection_model.clearSelection()
+            self._updating_selection = False
+        
+        # Create the group using controller's high-level method
+        # Pass None for empty string to trigger default naming
+        group_id = self.controller.create_group_from_nodes(
+            selected_nodes,
+            group_name if group_name else None,
+            GroupRenderMode.SEPARATE_ROWS
+        )
+        
+        # Restore expansion state after grouping
+        if group_id != -1:
             self._restore_expansion_state()
             
             # Select the new group

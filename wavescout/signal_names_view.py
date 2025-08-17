@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, Signal, QModelIndex, QAbstractItemModel, QPoint, 
 from PySide6.QtGui import QAction, QActionGroup, QKeyEvent, QColor
 from typing import List, Optional, Callable, Union, TYPE_CHECKING
 from PySide6.QtCore import QPersistentModelIndex
-from .data_model import SignalNode, RenderType, AnalogScalingMode, DataFormat
+from .data_model import SignalNode, RenderType, AnalogScalingMode, DataFormat, GroupRenderMode
 from .config import RENDERING, UI
 from .clock_utils import is_valid_clock_signal
 
@@ -142,6 +142,14 @@ class SignalNamesView(BaseColumnView):
             
         # Create context menu
         menu = QMenu(self)
+        
+        # Add "Create Group" action for both groups and signals
+        # This allows users to create nested groups
+        if self._get_all_selected_nodes():  # If any nodes are selected
+            create_group_action = QAction("Create Group", self)
+            create_group_action.triggered.connect(self._create_group_from_selected)
+            menu.addAction(create_group_action)
+            menu.addSeparator()
         
         # For groups, only show rename action
         if node.is_group:
@@ -431,6 +439,32 @@ class SignalNamesView(BaseColumnView):
         
         if ok:
             self._controller.rename_node(node.instance_id, new_nickname if new_nickname else "")
+    
+    def _create_group_from_selected(self) -> None:
+        """Create a new group containing the selected nodes."""
+        selected_nodes = self._get_all_selected_nodes()
+        if not selected_nodes:
+            return
+        
+        # Get group name from user
+        group_name, ok = QInputDialog.getText(
+            self,
+            "Create Group",
+            "Enter name for the new group:",
+            text=""
+        )
+        
+        # If user cancelled, don't create the group
+        if not ok:
+            return
+        
+        # Create the group using controller's high-level method
+        # Pass None for empty string to trigger default naming
+        self._controller.create_group_from_nodes(
+            selected_nodes,
+            group_name if group_name else None,
+            GroupRenderMode.SEPARATE_ROWS
+        )
     
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle key press events."""
