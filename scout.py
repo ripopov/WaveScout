@@ -356,7 +356,7 @@ class WaveScoutMainWindow(QMainWindow):
         view_menu.addSeparator()
         
         # Theme submenu for waveform colors
-        theme_menu = view_menu.addMenu("&Theme")
+        theme_menu = view_menu.addMenu("&Wave Color Theme")
         self.theme_action_group = QActionGroup(self)
         self.theme_action_group.setExclusive(True)
         
@@ -372,7 +372,7 @@ class WaveScoutMainWindow(QMainWindow):
         view_menu.addSeparator()
         
         # Style submenu
-        style_menu = view_menu.addMenu("&Style")
+        style_menu = view_menu.addMenu("&Widgets Style")
         self.style_action_group = QActionGroup(self)
         self.style_action_group.setExclusive(True)
         
