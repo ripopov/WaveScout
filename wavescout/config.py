@@ -91,6 +91,7 @@ class ColorScheme:
     
     # Selections and highlights
     SELECTION: str = "#094771"
+    SELECTION_BACKGROUND: str = "#5B3A8C"  # Solid dark purple selection
     CURSOR: str = "#ff0000"
     MARKER_DEFAULT_COLOR: str = "#00ff00"
     

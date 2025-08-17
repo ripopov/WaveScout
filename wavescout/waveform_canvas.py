@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import QWidget, QScrollBar
 from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer, QRectF, QRect
 from PySide6.QtGui import QPainter, QPen, QColor, QFont, QFontMetrics, QImage, QResizeEvent, QPaintEvent, QShowEvent, QMouseEvent, QCloseEvent, QKeyEvent, QBrush
-from typing import List, Tuple, Dict, Optional, Union
+from typing import List, Tuple, Dict, Optional, Union, Set
 from .waveform_item_model import WaveformItemModel
 from dataclasses import dataclass, field
 from .data_model import SignalNode, SignalHandle, SignalNodeID, Time, TimeUnit, TimeRulerConfig, RenderType, Marker
@@ -138,6 +138,9 @@ class WaveformCanvas(QWidget):
         # Value tooltip state
         self._value_tooltips_enabled: bool = False  # Toggle state from menu/settings
         self._value_tooltips_force_enabled: bool = False  # Temporary V key override
+        
+        # Highlight selected state
+        self._highlight_selected: bool = False  # Toggle state for highlighting selected signals
     
     def __del__(self) -> None:
         """Clean up on destruction."""
@@ -165,6 +168,13 @@ class WaveformCanvas(QWidget):
     def set_value_tooltips_enabled(self, enabled: bool) -> None:
         """Enable or disable value tooltips at cursor."""
         self._value_tooltips_enabled = enabled
+        self.update()
+    
+    def set_highlight_selected(self, enabled: bool) -> None:
+        """Enable or disable highlighting of selected signals."""
+        self._highlight_selected = enabled
+        # Clear the render cache to force re-render with new highlighting
+        self._rendered_image = None
         self.update()
     
 
@@ -211,7 +221,7 @@ class WaveformCanvas(QWidget):
         
     def setModel(self, model: Optional[WaveformItemModel]) -> None:
         """Set the data model and connect to its signals."""
-        # Disconnect from old model if exists
+        # Disconnect from old model and controller if exists
         if self._model:
             try:
                 self._model.layoutChanged.disconnect(self._on_model_layout_changed)
@@ -219,6 +229,9 @@ class WaveformCanvas(QWidget):
                 self._model.rowsRemoved.disconnect(self._on_model_rows_changed)
                 self._model.dataChanged.disconnect(self._on_model_data_changed)
                 self._model.modelReset.disconnect(self._on_model_reset)
+                # Disconnect from controller's selection changes
+                if self._model._controller:
+                    self._model._controller.off("selection_changed", self._on_selection_changed)
             except:
                 pass
         
@@ -231,6 +244,10 @@ class WaveformCanvas(QWidget):
             self._model.rowsRemoved.connect(self._on_model_rows_changed)
             self._model.dataChanged.connect(self._on_model_data_changed)
             self._model.modelReset.connect(self._on_model_reset)
+            
+            # Connect to controller's selection changes
+            if self._model._controller:
+                self._model._controller.on("selection_changed", self._on_selection_changed)
             
             # Update visible nodes
             self.updateVisibleNodes()
@@ -268,6 +285,14 @@ class WaveformCanvas(QWidget):
         self._rendered_image = None  # Invalidate rendered image
         self._last_render_params_hash = None  # Force re-render
         self.update()
+    
+    def _on_selection_changed(self) -> None:
+        """Handle selection changes from controller."""
+        # Only update if highlighting is enabled
+        if self._highlight_selected:
+            self._rendered_image = None  # Invalidate rendered image
+            self._last_render_params_hash = None  # Force re-render
+            self.update()
 
     def updateVisibleNodes(self) -> None:
         """Update the list of visible nodes based on expansion state."""
@@ -696,6 +721,10 @@ class WaveformCanvas(QWidget):
         if self._shared_scrollbar:
             scroll_value = self._shared_scrollbar.value()
         
+        # Get selected IDs from controller
+        selected_ids: Set[int] = set()
+        if self._model and self._model._controller:
+            selected_ids = self._model._controller._selected_ids
         
         # Only copy visible nodes info, not the actual nodes
         visible_nodes_info: List[NodeInfo] = []
@@ -707,7 +736,8 @@ class WaveformCanvas(QWidget):
                 format=node.format,
                 render_type=node.format.render_type,
                 height_scaling=node.height_scaling,
-                instance_id=node.instance_id
+                instance_id=node.instance_id,
+                is_selected=node.instance_id in selected_ids
             )
             visible_nodes_info.append(node_info)
         
@@ -732,7 +762,8 @@ class WaveformCanvas(QWidget):
             base_row_height=self._row_height,
             header_height=self._header_height,  # Include header height for proper rendering
             waveform_max_time=self._waveform_max_time,  # Add waveform max time for renderer
-            signal_range_cache=self._signal_range_cache  # Pass signal range cache for analog rendering
+            signal_range_cache=self._signal_range_cache,  # Pass signal range cache for analog rendering
+            highlight_selected=self._highlight_selected  # Pass highlight flag
         )
     
     def _render_to_image(self, params: RenderParams, generation: int) -> Tuple[QImage, int, float]:
@@ -933,9 +964,20 @@ class WaveformCanvas(QWidget):
     
     def _draw_row(self, painter: QPainter, node_info: NodeInfo, draw_commands: Dict[SignalHandle, SignalDrawingData], row: int, y: int, row_height: int, params: RenderParams) -> None:
         """Thread-safe version of row drawing."""
-        # Draw background
-        if row % 2 == 0:
-            painter.fillRect(0, y, params['width'], row_height, QColor(config.COLORS.ALTERNATE_ROW))
+        # Determine background color
+        if params.get('highlight_selected', False) and node_info.get('is_selected', False):
+            # Use solid dark purple selection background for highlighted selected signals
+            bg_color = QColor(config.COLORS.SELECTION_BACKGROUND)
+        elif row % 2 == 0:
+            # Use alternating row color
+            bg_color = QColor(config.COLORS.ALTERNATE_ROW)
+        else:
+            # Use default background (transparent, no fill needed)
+            bg_color = None
+        
+        # Draw background if needed
+        if bg_color:
+            painter.fillRect(0, y, params['width'], row_height, bg_color)
         
         # Draw border
         border_pen = QPen(QColor(config.COLORS.BORDER))

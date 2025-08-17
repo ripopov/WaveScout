@@ -134,6 +134,10 @@ class WaveScoutMainWindow(QMainWindow):
         value_tooltips_enabled = self.settings.value("view/value_tooltips_enabled", False, type=bool)
         self.wave_widget.set_value_tooltips_enabled(value_tooltips_enabled)
         
+        # Load highlight selected preference
+        highlight_selected_enabled = self.settings.value("view/highlight_selected", False, type=bool)
+        self.wave_widget.set_highlight_selected(highlight_selected_enabled)
+        
         # Connect navigation signal from signal names view to design tree view
         # The signal now emits (scope_path, signal_name)
         self.wave_widget._names_view.navigate_to_scope_requested.connect(
@@ -227,6 +231,14 @@ class WaveScoutMainWindow(QMainWindow):
         self.value_tooltip_action.setChecked(value_tooltips_enabled)
         self.value_tooltip_action.triggered.connect(self._toggle_value_tooltips)
         
+        # Highlight selected action
+        self.highlight_selected_action = QAction("Highlight Selected", self)
+        self.highlight_selected_action.setCheckable(True)
+        self.highlight_selected_action.setStatusTip("Highlight selected signals in the waveform canvas")
+        highlight_selected_enabled = self.settings.value("view/highlight_selected", False, type=bool)
+        self.highlight_selected_action.setChecked(highlight_selected_enabled)
+        self.highlight_selected_action.triggered.connect(self._toggle_highlight_selected)
+        
         # Set icons for toolbar
         style = self.style()
         if style:
@@ -314,6 +326,7 @@ class WaveScoutMainWindow(QMainWindow):
         view_menu.addAction(self.pan_right_action)
         view_menu.addSeparator()
         view_menu.addAction(self.value_tooltip_action)
+        view_menu.addAction(self.highlight_selected_action)
         view_menu.addSeparator()
         
         # UI Scaling submenu
@@ -1089,6 +1102,18 @@ class WaveScoutMainWindow(QMainWindow):
         # Update status bar
         status = "enabled" if checked else "disabled"
         self.statusBar().showMessage(f"Value tooltips {status}", 2000)
+    
+    def _toggle_highlight_selected(self, checked: bool):
+        """Toggle highlighting of selected signals and persist the setting."""
+        # Apply the setting to the wave widget
+        self.wave_widget.set_highlight_selected(checked)
+        
+        # Save the preference
+        self.settings.setValue("view/highlight_selected", checked)
+        
+        # Update status bar
+        status = "enabled" if checked else "disabled"
+        self.statusBar().showMessage(f"Highlight selected {status}", 2000)
     
     def _on_theme_changed(self, color_scheme):
         """Handle theme change signal by repainting widgets."""

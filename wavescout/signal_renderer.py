@@ -40,6 +40,7 @@ class NodeInfo(TypedDict):
     render_type: Optional[RenderType]
     height_scaling: int
     instance_id: SignalNodeID
+    is_selected: bool  # Whether this node is currently selected
 
 class RenderParams(TypedDict, total=False):
     width: int
@@ -59,6 +60,7 @@ class RenderParams(TypedDict, total=False):
     waveform_max_time: Optional[Time]
     signal_range_cache: Dict[SignalNodeID, SignalRangeCache]
     draw_commands: Dict[SignalHandle, SignalDrawingData]  # Draw commands for signals
+    highlight_selected: bool  # Whether to highlight selected signals
 
 
 def calculate_signal_bounds(y: int, row_height: int, margin_top: int = RENDERING.SIGNAL_MARGIN_TOP, 

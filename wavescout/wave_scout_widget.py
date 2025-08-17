@@ -198,6 +198,10 @@ class WaveScoutWidget(QWidget):
         """Enable or disable value tooltips at cursor."""
         self._canvas.set_value_tooltips_enabled(enabled)
     
+    def set_highlight_selected(self, enabled: bool) -> None:
+        """Enable or disable highlighting of selected signals."""
+        self._canvas.set_highlight_selected(enabled)
+    
     def _setup_model_connections(self) -> None:
         """Set up all signal-slot connections for the model."""
         if not self.model:

@@ -37,6 +37,7 @@ THEMES: Dict[ThemeName, ColorScheme] = {
         BUS_TEXT="#ffff00",  # Yellow text for bus values (classic, stands out from green lines)
         # Selections and highlights
         SELECTION="#094771",
+        SELECTION_BACKGROUND="#2E0F5B",  # Solid dark purple selection
         CURSOR="#ff0000",
         MARKER_DEFAULT_COLOR="#00e676",  # Match the signal color
         # ROI selection colors
@@ -79,6 +80,7 @@ THEMES: Dict[ThemeName, ColorScheme] = {
         BUS_TEXT="#E5C07B",  # Orange/yellow text for bus values (distinct from cyan lines)
         # Selections and highlights
         SELECTION="#2C313C",
+        SELECTION_BACKGROUND="#2E0F5B",  # Solid dark purple selection
         CURSOR="#E06C75",  # Red accent for clear visibility
         MARKER_DEFAULT_COLOR="#98C379",  # Green accent
         # ROI selection colors
@@ -121,6 +123,7 @@ THEMES: Dict[ThemeName, ColorScheme] = {
         BUS_TEXT="#F1FA8C",  # Yellow text for bus values (distinct from cyan lines)
         # Selections and highlights
         SELECTION="#44475A",
+        SELECTION_BACKGROUND="#2E0F5B",  # Solid dark purple selection
         CURSOR="#FF79C6",  # Pink accent for high contrast
         MARKER_DEFAULT_COLOR="#50FA7B",  # Green
         # ROI selection colors
