@@ -8,6 +8,8 @@ from pathlib import Path
 # Add pylibfst python directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "pylibfst" / "python"))
 
+from tests.test_utils import get_test_input_path, TestFiles
+
 try:
     import pylibfst
 except ImportError:
@@ -285,18 +287,11 @@ def test_signal_types():
 )
 def test_query_result_comparison():
     """Deep comparison of QueryResult functionality between pywellen and pylibfst"""
-    # Look for analog_signals_short.fst
-    test_files = [
-        "../test_inputs/analog_signals_short.fst",
-        "test_inputs/analog_signals_short.fst",
-    ]
-    
-    fst_file = None
-    for path in test_files:
-        full_path = Path(__file__).parent / path
-        if full_path.exists():
-            fst_file = str(full_path.resolve())
-            break
+    # Use test utilities to get the FST file
+    try:
+        fst_file = str(get_test_input_path(TestFiles.ANALOG_SIGNALS_SHORT_FST))
+    except FileNotFoundError:
+        fst_file = None
 
     if not fst_file:
         pytest.skip("analog_signals_short.fst or analog_signals.fst not found")
@@ -1086,18 +1081,11 @@ def test_hierarchy_deep_comparison():
 )
 def test_performance_comparison():
     """Compare performance between pywellen and pylibfst using analog_signals_short.fst"""
-    # Look for analog_signals_short.fst (smaller test file for reasonable test time)
-    test_files = [
-        "../test_inputs/analog_signals_short.fst",
-        "test_inputs/analog_signals_short.fst",
-    ]
-    
-    fst_file = None
-    for path in test_files:
-        full_path = Path(__file__).parent / path
-        if full_path.exists():
-            fst_file = str(full_path.resolve())
-            break
+    # Use test utilities to get the FST file
+    try:
+        fst_file = str(get_test_input_path(TestFiles.ANALOG_SIGNALS_SHORT_FST))
+    except FileNotFoundError:
+        fst_file = None
     
     if not fst_file:
         pytest.skip("analog_signals_short.fst not found")

@@ -8,6 +8,7 @@ from pathlib import Path
 from wavescout.signal_sampling import parse_signal_value
 from wavescout.data_model import DataFormat
 from wavescout.waveform_db import WaveformDB
+from .test_utils import get_test_input_path, TestFiles
 from wavescout.waveform_loader import create_signal_node_from_var
 
 
@@ -192,11 +193,10 @@ def test_parse_signal_value_none():
 
 def test_with_vcd_file():
     """Test data format with actual VCD file."""
-    # Get the path relative to the project root
-    project_root = Path(__file__).parent.parent
-    vcd_file = project_root / "test_inputs" / "analog_signals_short.vcd"
+    # Use test utilities to get proper path
+    vcd_file = get_test_input_path(TestFiles.ANALOG_SIGNALS_SHORT_VCD)
     
-    # Skip test if file doesn't exist
+    # Skip test if file doesn't exist (though get_test_input_path will raise FileNotFoundError)
     if not vcd_file.exists():
         pytest.skip(f"Test VCD file not found: {vcd_file}")
     

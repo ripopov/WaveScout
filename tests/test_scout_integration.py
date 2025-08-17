@@ -22,6 +22,7 @@ from PySide6.QtTest import QTest
 from wavescout import create_sample_session, WaveScoutWidget, save_session, load_session
 from wavescout.waveform_loader import create_signal_node_from_var
 from wavescout.design_tree_view import DesignTreeViewMode
+from .test_utils import get_test_input_path, TestFiles
 
 
 # ========================================================================
@@ -32,13 +33,12 @@ class TestPaths:
     """Central repository for test file paths."""
     REPO_ROOT = Path(__file__).resolve().parent.parent
     SCOUT_PY = REPO_ROOT / "scout.py"
-    TEST_INPUTS = REPO_ROOT / "test_inputs"
     
-    # Common test VCD files
-    APB_SIM_VCD = TEST_INPUTS / "apb_sim.vcd"
-    ANALOG_SIGNALS_VCD = TEST_INPUTS / "analog_signals_short.vcd"
-    SWERV1_VCD = TEST_INPUTS / "swerv1.vcd"
-    VCD_EXTENSIONS = TEST_INPUTS / "vcd_extensions.vcd"
+    # Common test VCD files - using test utilities
+    APB_SIM_VCD = get_test_input_path(TestFiles.APB_SIM_VCD)
+    ANALOG_SIGNALS_VCD = get_test_input_path(TestFiles.ANALOG_SIGNALS_SHORT_VCD)
+    SWERV1_VCD = get_test_input_path(TestFiles.SWERV1_VCD)
+    VCD_EXTENSIONS = get_test_input_path(TestFiles.VCD_EXTENSIONS)
 
 
 class WaveScoutTestHelper:

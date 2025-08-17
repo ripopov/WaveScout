@@ -8,6 +8,7 @@ from wavescout.data_model import (
     WaveformSession, SignalNode, DisplayFormat, DataFormat,
     Viewport, Marker, SignalNameDisplayMode, AnalysisMode, GroupRenderMode
 )
+from .test_utils import get_test_input_path, TestFiles
 
 
 def create_test_session():
@@ -154,7 +155,7 @@ def test_save_and_load_session():
 def test_save_session_with_waveform_db():
     """Test saving a session that has a waveform database reference."""
     # Create session from VCD file
-    vcd_path = pathlib.Path(__file__).parent.parent / "test_inputs" / "swerv1.vcd"
+    vcd_path = get_test_input_path(TestFiles.SWERV1_VCD)
     session = create_sample_session(str(vcd_path))
     
     # Save to temporary file

@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt, QModelIndex
 from PySide6.QtTest import QTest
 from wavescout import WaveScoutWidget, WaveformItemModel, SignalNode, DisplayFormat, GroupRenderMode
+from .test_utils import get_test_input_path, TestFiles
 
 
 @pytest.fixture
@@ -463,9 +464,12 @@ def test_create_group_empty_name_uses_default(wave_widget, monkeypatch):
 
 if __name__ == "__main__":
     # For manual testing
+    from pathlib import Path
+    from wavescout import create_sample_session
+    
     app = QApplication([])
     
-    vcd_file = Path(__file__).parent.parent / "test_inputs" / "swerv1.vcd"
+    vcd_file = get_test_input_path(TestFiles.SWERV1_VCD)
     session = create_sample_session(str(vcd_file))
     
     widget = WaveScoutWidget()

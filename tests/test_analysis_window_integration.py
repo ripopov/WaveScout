@@ -15,6 +15,7 @@ from wavescout.analysis_engine import (
     compute_signal_statistics,
     generate_sampling_times_signal,
 )
+from tests.test_utils import get_test_input_path, TestFiles
 
 
 def test_analysis_with_analog_signals():
@@ -29,9 +30,9 @@ def test_analysis_with_analog_signals():
     """
     print("\n=== Signal Analysis Integration Test ===")
     
-    # Step 1: Load test_inputs/analog_signals_short.vcd
+    # Step 1: Load analog_signals_short.vcd using test utilities
     db = WaveformDB()
-    db.open("test_inputs/analog_signals_short.vcd")
+    db.open(str(get_test_input_path(TestFiles.ANALOG_SIGNALS_SHORT_VCD)))
     print("✓ Step 1: Loaded analog_signals_short.vcd")
     
     # Step 2: Add all signals to wave (create SignalNode objects)

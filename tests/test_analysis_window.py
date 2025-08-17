@@ -22,6 +22,7 @@ from wavescout.analysis_engine import (
     generate_sampling_times_signal,
     generate_sampling_times_period
 )
+from tests.test_utils import get_test_input_path, TestFiles
 
 
 def test_analysis_with_analog_signals():
@@ -30,7 +31,7 @@ def test_analysis_with_analog_signals():
     
     # Load the waveform directly for debugging
     db = WaveformDB()
-    db.open("test_inputs/analog_signals_short.vcd")
+    db.open(str(get_test_input_path(TestFiles.ANALOG_SIGNALS_SHORT_VCD)))
     
     print(f"Loaded waveform file")
     print(f"Number of unique signals: {len(db._var_map)}")
@@ -153,7 +154,7 @@ def test_analysis_window_integration():
     print("\n=== Testing Analysis Window Integration ===")
     
     # Create main window and load waveform
-    window = WaveScoutMainWindow(wave_file="test_inputs/analog_signals_short.vcd")
+    window = WaveScoutMainWindow(wave_file=str(get_test_input_path(TestFiles.ANALOG_SIGNALS_SHORT_VCD)))
     
     def run_test():
         if not window.wave_widget.session:

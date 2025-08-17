@@ -7,6 +7,7 @@ from wavescout.waveform_db import WaveformDB
 from wavescout.backends import BackendFactory, BackendType
 from wavescout.backends.pywellen_backend import PywellenBackend
 from wavescout.backends.pylibfst_backend import PylibfstBackend
+from .test_utils import get_test_input_path, TestFiles
 
 
 def test_backend_factory_registration():
@@ -18,8 +19,7 @@ def test_backend_factory_registration():
 
 def test_vcd_always_uses_pywellen():
     """Test that VCD files always use pywellen backend regardless of preference."""
-    test_dir = Path(__file__).parent.parent / "test_inputs"
-    vcd_file = test_dir / "swerv1.vcd"
+    vcd_file = get_test_input_path(TestFiles.SWERV1_VCD)
     
     if not vcd_file.exists():
         pytest.skip(f"Test VCD file not found: {vcd_file}")
@@ -39,8 +39,7 @@ def test_vcd_always_uses_pywellen():
 
 def test_fst_backend_preference():
     """Test that FST files respect backend preference."""
-    test_dir = Path(__file__).parent.parent / "test_inputs"
-    fst_file = test_dir / "des.fst"
+    fst_file = get_test_input_path(TestFiles.DES_FST)
     
     if not fst_file.exists():
         pytest.skip(f"Test FST file not found: {fst_file}")
@@ -138,8 +137,7 @@ def test_backend_file_format_support():
 
 def test_waveform_db_backend_switching():
     """Test that WaveformDB can switch backends between file loads."""
-    test_dir = Path(__file__).parent.parent / "test_inputs"
-    vcd_file = test_dir / "swerv1.vcd"
+    vcd_file = get_test_input_path(TestFiles.SWERV1_VCD)
     
     if not vcd_file.exists():
         pytest.skip(f"Test VCD file not found: {vcd_file}")
@@ -162,13 +160,12 @@ def test_waveform_db_backend_switching():
 
 
 @pytest.mark.skipif(
-    not (Path(__file__).parent.parent / "test_inputs" / "des.fst").exists(),
+    not get_test_input_path(TestFiles.DES_FST).exists(),
     reason="FST test file not available"
 )
 def test_fst_backend_data_consistency():
     """Test that both backends produce consistent data for FST files."""
-    test_dir = Path(__file__).parent.parent / "test_inputs"
-    fst_file = test_dir / "des.fst"
+    fst_file = get_test_input_path(TestFiles.DES_FST)
     
     # Load with pywellen backend
     db_pywellen = WaveformDB(backend_preference="pywellen")

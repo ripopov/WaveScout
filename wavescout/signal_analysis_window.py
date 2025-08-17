@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (
     QLabel, QButtonGroup, QHeaderView, QMessageBox,
     QAbstractItemView
 )
-from PySide6.QtGui import QIntValidator
+from PySide6.QtGui import QIntValidator, QKeySequence, QClipboard
+from PySide6.QtWidgets import QApplication
 
 from .data_model import SignalNode, Time
 from .waveform_controller import WaveformController
@@ -227,6 +228,9 @@ class SignalAnalysisWindow(QDialog):
         self._signal_radio.toggled.connect(self._on_mode_changed)
         self._period_radio.toggled.connect(self._on_mode_changed)
         
+        # Setup keyboard shortcuts
+        self._setup_keyboard_shortcuts()
+        
         # Set default mode
         if self._controller.get_sampling_signal():
             self._signal_radio.setChecked(True)
@@ -274,9 +278,6 @@ class SignalAnalysisWindow(QDialog):
             self._interval_combo.addItem("Global", "global")
             return
         
-        # Always add global option
-        self._interval_combo.addItem("Global", "global")
-        
         # Check if we have at least 2 markers
         markers = self._controller.session.markers
         valid_markers = [m for m in markers if m and m.time >= 0]
@@ -284,9 +285,14 @@ class SignalAnalysisWindow(QDialog):
         if len(valid_markers) >= 2:
             # Sort markers by time
             valid_markers.sort(key=lambda m: m.time)
-            # Add marker interval option
+            # Add marker interval option FIRST (so it becomes the default)
             label = f"{valid_markers[0].label} - {valid_markers[1].label}"
             self._interval_combo.addItem(label, "markers")
+            # Then add global option
+            self._interval_combo.addItem("Global", "global")
+        else:
+            # Only global option available
+            self._interval_combo.addItem("Global", "global")
     
     def _populate_results_table(self) -> None:
         """Populate the results table with signal names (values empty initially)."""
@@ -311,6 +317,58 @@ class SignalAnalysisWindow(QDialog):
         else:
             self._signal_combo.setEnabled(False)
             self._period_input.setEnabled(True)
+    
+    def _setup_keyboard_shortcuts(self) -> None:
+        """Setup keyboard shortcuts for the dialog."""
+        # Install event filter to handle Ctrl+C on the table
+        self._results_table.installEventFilter(self)
+    
+    def eventFilter(self, obj: Any, event: Any) -> bool:
+        """Event filter to handle keyboard shortcuts on the results table."""
+        if obj == self._results_table and event.type() == event.Type.KeyPress:
+            if event.key() == Qt.Key.Key_C and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+                self._copy_table_selection()
+                return True
+        return super().eventFilter(obj, event)
+    
+    def _copy_table_selection(self) -> None:
+        """Copy selected table cells to clipboard in tab-separated format."""
+        selection = self._results_table.selectedRanges()
+        if not selection:
+            return
+        
+        # Build text from selected cells
+        copied_text: List[str] = []
+        
+        for range_item in selection:
+            # Get the range boundaries
+            top_row = range_item.topRow()
+            bottom_row = range_item.bottomRow()
+            left_col = range_item.leftColumn()
+            right_col = range_item.rightColumn()
+            
+            # If full rows are selected, include headers
+            if left_col == 0 and right_col == self._results_table.columnCount() - 1:
+                # Add header row if we're starting from the top
+                if top_row == 0 or not copied_text:
+                    headers = []
+                    for col in range(left_col, right_col + 1):
+                        header_item = self._results_table.horizontalHeaderItem(col)
+                        headers.append(header_item.text() if header_item else "")
+                    copied_text.append("\t".join(headers))
+            
+            # Add data rows
+            for row in range(top_row, bottom_row + 1):
+                row_data = []
+                for col in range(left_col, right_col + 1):
+                    item = self._results_table.item(row, col)
+                    row_data.append(item.text() if item else "")
+                copied_text.append("\t".join(row_data))
+        
+        # Copy to clipboard
+        if copied_text:
+            clipboard = QApplication.clipboard()
+            clipboard.setText("\n".join(copied_text))
     
     def _start_analysis(self) -> None:
         """Start the signal analysis."""

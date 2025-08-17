@@ -18,6 +18,9 @@ from wavescout.time_grid_renderer import TimeGridRenderer, TimeRulerConfig
 from wavescout.persistence import save_session, load_session
 import tempfile
 
+# Import test utilities for proper file path handling
+from .test_utils import get_test_input_path, TestFiles
+
 
 class TestClockUtils:
     """Test clock utility functions."""
@@ -377,9 +380,10 @@ class TestRealWaveform:
         from wavescout.waveform_db import WaveformDB
         from wavescout.clock_utils import calculate_clock_period
         
-        # Load the waveform
+        # Load the waveform using proper test utilities
         db = WaveformDB()
-        db.open('test_inputs/apb_sim.vcd')
+        test_file = get_test_input_path(TestFiles.APB_SIM_VCD)
+        db.open(str(test_file))
         
         # Find the clock signal apb_testbench.pclk
         clock_handle = db.find_handle_by_path('apb_testbench.pclk')
@@ -417,9 +421,10 @@ class TestRealWaveform:
         controller = WaveformController()
         session = WaveformSession()
         
-        # Load the waveform
+        # Load the waveform using proper test utilities
         db = WaveformDB()
-        db.open('test_inputs/apb_sim.vcd')
+        test_file = get_test_input_path(TestFiles.APB_SIM_VCD)
+        db.open(str(test_file))
         session.waveform_db = db
         controller.set_session(session)
         

@@ -37,6 +37,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QCoreApplication, QItemSelectionModel
 from PySide6.QtWidgets import QApplication
 from wavescout import WaveScoutWidget, create_sample_session
+from .test_utils import get_test_input_path, TestFiles
 
 
 @pytest.fixture
@@ -47,8 +48,8 @@ def wave_widget(qtbot):
     qtbot.addWidget(widget)
     
     # Create and set session
-    # Use path relative to project root
-    test_file = Path(__file__).parent.parent / "test_inputs" / "swerv1.vcd"
+    # Use test utilities for proper path
+    test_file = get_test_input_path(TestFiles.SWERV1_VCD)
     session = create_sample_session(str(test_file))
     widget.setSession(session)
     

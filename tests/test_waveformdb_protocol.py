@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from wavescout.waveform_db import WaveformDB
 from wavescout.protocols import WaveformDBProtocol
+from .test_utils import get_test_input_path, TestFiles
 
 if TYPE_CHECKING:
     from pywellen import Var
@@ -37,8 +38,7 @@ def test_waveformdb_conforms_to_protocol():
 def test_find_handle_by_path():
     """Test find_handle_by_path with and without TOP prefix."""
     # Find a test VCD file
-    test_dir = Path(__file__).parent.parent / "test_inputs"
-    vcd_file = test_dir / "swerv1.vcd"
+    vcd_file = get_test_input_path(TestFiles.SWERV1_VCD)
     
     if not vcd_file.exists():
         pytest.skip(f"Test VCD file not found: {vcd_file}")
@@ -84,8 +84,7 @@ def test_find_handle_by_path():
 
 def test_get_var_bitwidth():
     """Test get_var_bitwidth for normal and default cases."""
-    test_dir = Path(__file__).parent.parent / "test_inputs"
-    vcd_file = test_dir / "swerv1.vcd"
+    vcd_file = get_test_input_path(TestFiles.SWERV1_VCD)
     
     if not vcd_file.exists():
         pytest.skip(f"Test VCD file not found: {vcd_file}")
@@ -122,8 +121,7 @@ def test_get_var_bitwidth():
 
 def test_iter_handles_and_vars_returns_iterable():
     """Test that iter_handles_and_vars returns an iterable of correct type."""
-    test_dir = Path(__file__).parent.parent / "test_inputs"
-    vcd_file = test_dir / "swerv1.vcd"
+    vcd_file = get_test_input_path(TestFiles.SWERV1_VCD)
     
     if not vcd_file.exists():
         pytest.skip(f"Test VCD file not found: {vcd_file}")

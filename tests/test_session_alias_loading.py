@@ -8,6 +8,7 @@ from typing import List, Dict, Any
 from wavescout.persistence import load_session, save_session
 from wavescout.data_model import WaveformSession, SignalNode, DisplayFormat
 from wavescout.waveform_db import WaveformDB
+from .test_utils import get_test_input_path, TestFiles
 
 
 class TestSessionAliasLoading:
@@ -16,7 +17,13 @@ class TestSessionAliasLoading:
     @pytest.fixture
     def test_waveform_path(self) -> Path:
         """Path to test waveform file."""
-        return Path("test_inputs/apb_sim.fst")
+        # Note: Using FST file which may not exist in TestFiles enum
+        # This test requires apb_sim.fst, not apb_sim.vcd
+        try:
+            return get_test_input_path("apb_sim.fst")
+        except FileNotFoundError:
+            # Fallback to direct path if not in TestFiles
+            return Path(__file__).parent.parent / "test_inputs" / "apb_sim.fst"
     
     @pytest.fixture
     def session_with_aliases(self, test_waveform_path: Path) -> Dict[str, Any]:
