@@ -63,6 +63,23 @@ class RenderParams(TypedDict, total=False):
     highlight_selected: bool  # Whether to highlight selected signals
 
 
+def get_signal_color(format_color: Optional[str]) -> str:
+    """Get the effective signal color - either user-configured or theme default.
+    
+    Args:
+        format_color: The color from DisplayFormat (None for theme default)
+    
+    Returns:
+        The color string to use for rendering
+    """
+    if format_color is not None:
+        # User-configured color
+        return format_color
+    else:
+        # Use theme default
+        return config.COLORS.DEFAULT_SIGNAL
+
+
 def calculate_signal_bounds(y: int, row_height: int, margin_top: int = RENDERING.SIGNAL_MARGIN_TOP, 
                           margin_bottom: int = RENDERING.SIGNAL_MARGIN_BOTTOM) -> Tuple[int, int, int]:
     """Compute vertical drawing band inside a row.
@@ -137,7 +154,8 @@ def draw_digital_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Si
         row_height: Row height in pixels.
         params: Dict with width, start_time, end_time, optional waveform_max_time.
     """
-    color = QColor(node_info['format'].color)
+    effective_color = get_signal_color(node_info['format'].color)
+    color = QColor(effective_color)
     # Force fully opaque color for crisp lines
     if color.alpha() != 255:
         color.setAlpha(255)
@@ -231,7 +249,8 @@ def draw_bus_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Signal
         row_height: Row height in pixels.
         params: Dict with width, start_time, end_time, optional waveform_max_time.
     """
-    color = QColor(node_info['format'].color)
+    effective_color = get_signal_color(node_info['format'].color)
+    color = QColor(effective_color)
     # Force fully opaque color for crisp lines
     if color.alpha() != 255:
         color.setAlpha(255)
@@ -590,7 +609,8 @@ def draw_analog_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sig
         params: Dict with width, start_time, end_time, optional waveform_max_time,
             optional signal_range_cache and waveform_db.
     """
-    color = QColor(node_info['format'].color)
+    effective_color = get_signal_color(node_info['format'].color)
+    color = QColor(effective_color)
     if color.alpha() != 255:
         color.setAlpha(255)
     pen = QPen(color)

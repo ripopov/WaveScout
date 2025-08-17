@@ -85,20 +85,11 @@ class AnalogScalingMode(Enum):
     SCALE_TO_ALL_DATA = "scale_to_all"      # Use global min/max
     SCALE_TO_VISIBLE_DATA = "scale_to_visible"  # Use viewport min/max
 
-def get_default_signal_color() -> str:
-    """Get the default signal color from the current theme."""
-    try:
-        from . import config
-        return config.COLORS.DEFAULT_SIGNAL
-    except ImportError:
-        # Fallback if circular import occurs
-        return "#33C3F0"
-
 @dataclass
 class DisplayFormat:
     render_type: RenderType = RenderType.BOOL
     data_format: DataFormat = DataFormat.UNSIGNED
-    color: str = field(default_factory=get_default_signal_color)  # Uses current theme color
+    color: Optional[str] = None  # None means use theme default, otherwise user-configured
     analog_scaling_mode: AnalogScalingMode = AnalogScalingMode.SCALE_TO_ALL_DATA
 
 @dataclass

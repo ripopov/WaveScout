@@ -56,6 +56,10 @@ class WaveScoutWidget(QWidget):
         self.controller.on("cursor_changed", self._on_controller_cursor_changed)
         self.controller.on("markers_changed", self._on_controller_markers_changed)
         
+        # Connect to theme changes to update signal colors
+        from .theme import theme_manager
+        theme_manager.themeChanged.connect(self._on_theme_changed)
+        
     def _setup_ui(self) -> None:
         """Set up the user interface."""
         # Main layout
@@ -418,6 +422,16 @@ class WaveScoutWidget(QWidget):
         """Handle markers change from controller."""
         if self._canvas:
             self._canvas.update()
+    
+    def _on_theme_changed(self) -> None:
+        """Handle theme changes by triggering a repaint.
+        
+        With the new color management, we don't need to modify any data.
+        Signals with color=None will automatically use the new theme color
+        when repainted, while user-configured colors are preserved.
+        """
+        # Simply trigger a full repaint - the renderers will use the new theme colors
+        self.update_all_views()
             
     def _on_selection_changed(self, selected: QItemSelection, deselected: QItemSelection) -> None:
         """Handle selection changes and update the data model."""
