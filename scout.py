@@ -10,10 +10,12 @@ from typing import Optional, List
 from PySide6.QtWidgets import (QApplication, QMainWindow, 
                               QSplitter, QTreeView, QFileDialog,
                               QMessageBox, QProgressDialog, QAbstractItemView,
-                              QToolBar, QStyle, QStyleFactory)
+                              QToolBar, QStyle, QStyleFactory, QWidget, QHBoxLayout,
+                              QVBoxLayout, QPushButton, QLabel, QFrame, QMenuBar,
+                              QSizeGrip)
 from wavescout.message_box_utils import show_critical, show_warning, show_information, show_question
-from PySide6.QtCore import Qt, QThreadPool, QRunnable, Signal, QObject, QSettings, QEvent
-from PySide6.QtGui import QAction, QActionGroup, QKeySequence
+from PySide6.QtCore import Qt, QThreadPool, QRunnable, Signal, QObject, QSettings, QEvent, QPoint, QSize
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QPainter, QColor, QPen, QIcon, QPixmap
 from wavescout import WaveScoutWidget, create_sample_session, save_session, load_session
 from wavescout.design_tree_view import DesignTreeView
 from wavescout.config import RENDERING
@@ -75,12 +77,292 @@ class LoadingState:
         self.pending_signal_nodes = []
 
 
+class CustomTitleBar(QWidget):
+    """Custom title bar with integrated menu and panel toggle buttons."""
+    
+    def __init__(self, parent: 'WaveScoutMainWindow'):
+        super().__init__(parent)
+        self.parent = parent
+        self.setFixedHeight(35)
+        self.setAutoFillBackground(True)
+        
+        # Set up the palette based on current theme
+        palette = self.palette()
+        # Use a neutral dark color that works with both light and dark themes
+        palette.setColor(self.backgroundRole(), QColor("#252526"))
+        self.setPalette(palette)
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Create menu bar
+        self.menu_bar = QMenuBar(self)
+        self.menu_bar.setStyleSheet("""
+            QMenuBar {
+                background-color: transparent;
+                color: #CCCCCC;
+            }
+            QMenuBar::item {
+                background-color: transparent;
+                padding: 5px 10px;
+            }
+            QMenuBar::item:selected {
+                background-color: #3E3E42;
+            }
+            QMenu {
+                background-color: #252526;
+                color: #CCCCCC;
+                border: 1px solid #3E3E42;
+            }
+            QMenu::item:selected {
+                background-color: #007ACC;
+            }
+        """)
+        layout.addWidget(self.menu_bar)
+        
+        layout.addStretch()
+        
+        # Title label
+        self.title = QLabel("WaveScout - Waveform Viewer", self)
+        self.title.setStyleSheet("color: #CCCCCC;")
+        layout.addWidget(self.title)
+        
+        layout.addStretch()
+        
+        # Toggle left sidebar button
+        self.left_button = QPushButton()
+        self.left_button.setCheckable(True)
+        self.left_button.setChecked(True)
+        self.left_button.setIcon(self.create_sidebar_icon(Qt.LeftArrow))
+        self.left_button.setFixedSize(30, 30)
+        self.left_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; } "
+            "QPushButton:hover { background-color: #3E3E42; } "
+            "QPushButton:checked { background-color: #007ACC; }")
+        layout.addWidget(self.left_button)
+        
+        # Toggle right sidebar button
+        self.right_button = QPushButton()
+        self.right_button.setCheckable(True)
+        self.right_button.setChecked(True)
+        self.right_button.setIcon(self.create_sidebar_icon(Qt.RightArrow))
+        self.right_button.setFixedSize(30, 30)
+        self.right_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; } "
+            "QPushButton:hover { background-color: #3E3E42; } "
+            "QPushButton:checked { background-color: #007ACC; }")
+        layout.addWidget(self.right_button)
+        
+        # Toggle bottom panel button  
+        self.bottom_button = QPushButton()
+        self.bottom_button.setCheckable(True)
+        self.bottom_button.setChecked(True)
+        self.bottom_button.setIcon(self.create_bottom_panel_icon())
+        self.bottom_button.setFixedSize(30, 30)
+        self.bottom_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; } "
+            "QPushButton:hover { background-color: #3E3E42; } "
+            "QPushButton:checked { background-color: #007ACC; }")
+        layout.addWidget(self.bottom_button)
+        
+        # Window control buttons
+        self.minimize_button = QPushButton("_")
+        self.minimize_button.setFixedSize(30, 30)
+        self.minimize_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; color: #CCCCCC; } "
+            "QPushButton:hover { background-color: #3E3E42; }")
+        self.minimize_button.clicked.connect(self.parent.showMinimized)
+        layout.addWidget(self.minimize_button)
+        
+        self.maximize_button = QPushButton("[]")
+        self.maximize_button.setFixedSize(30, 30)
+        self.maximize_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; color: #CCCCCC; } "
+            "QPushButton:hover { background-color: #3E3E42; }")
+        self.maximize_button.clicked.connect(self.toggle_maximize)
+        layout.addWidget(self.maximize_button)
+        
+        self.close_button = QPushButton("X")
+        self.close_button.setFixedSize(30, 30)
+        self.close_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; color: #CCCCCC; } "
+            "QPushButton:hover { background-color: #C42B1C; }")
+        self.close_button.clicked.connect(self.parent.close)
+        layout.addWidget(self.close_button)
+        
+        # For window dragging
+        self.old_pos: Optional[QPoint] = None
+        self._system_move_active = False
+        
+        # Install event filter on menu bar to pass through clicks in empty space
+        self.menu_bar.installEventFilter(self)
+    
+    def create_sidebar_icon(self, arrow_direction) -> QIcon:
+        """Create icon for sidebar toggle buttons."""
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        pen = QPen(QColor("#CCCCCC"))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        
+        if arrow_direction == Qt.LeftArrow:
+            # Left sidebar icon - bar on left with arrow
+            painter.drawRect(1, 1, 6, 14)
+            painter.drawLine(10, 4, 14, 8)
+            painter.drawLine(10, 12, 14, 8)
+        else:
+            # Right sidebar icon - bar on right with arrow
+            painter.drawRect(9, 1, 6, 14)
+            painter.drawLine(6, 4, 2, 8)
+            painter.drawLine(6, 12, 2, 8)
+        
+        painter.end()
+        return QIcon(pixmap)
+    
+    def create_bottom_panel_icon(self) -> QIcon:
+        """Create icon for bottom panel toggle button."""
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        pen = QPen(QColor("#CCCCCC"))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        
+        # Bottom panel icon - horizontal bar with down arrow
+        painter.drawRect(1, 9, 14, 6)
+        painter.drawLine(4, 6, 8, 2)
+        painter.drawLine(12, 6, 8, 2)
+        
+        painter.end()
+        return QIcon(pixmap)
+    
+    def toggle_maximize(self):
+        """Toggle window maximize state."""
+        if self.parent.isMaximized():
+            self.parent.showNormal()
+        else:
+            self.parent.showMaximized()
+    
+    def _start_system_move(self, event: QEvent) -> bool:
+        """Try to use native system move (needed on Wayland)."""
+        wh = self.parent.windowHandle() if self.parent.windowHandle() else None
+        if wh is None:
+            return False
+        if not hasattr(wh, 'startSystemMove'):
+            return False
+        try:
+            # Try common signatures across PySide6/PyQt versions
+            try:
+                return bool(wh.startSystemMove(event.globalPosition().toPoint()))
+            except (TypeError, AttributeError):
+                try:
+                    # Older APIs might accept QPoint from globalPos
+                    return bool(wh.startSystemMove(event.globalPos()))
+                except Exception:
+                    # Some versions take no args
+                    return bool(wh.startSystemMove())
+        except Exception:
+            return False
+    
+    def mousePressEvent(self, event):
+        """Handle mouse press for window dragging."""
+        if event.button() == Qt.LeftButton and not self.parent.isMaximized():
+            # Check if click is in draggable area (not on buttons)
+            click_pos = event.position().toPoint()
+            
+            # Check if click is on any button
+            for button in [self.left_button, self.right_button, self.bottom_button,
+                          self.minimize_button, self.maximize_button, self.close_button]:
+                if button.geometry().contains(click_pos):
+                    return
+            
+            # Check if click is on menu bar (will be handled by eventFilter)
+            if self.menu_bar.geometry().contains(click_pos):
+                return
+            
+            # We're in a draggable area (title or empty space), start drag
+            if self._start_system_move(event):
+                self._system_move_active = True
+                self.old_pos = None
+            else:
+                self._system_move_active = False
+                self.old_pos = event.globalPosition().toPoint()
+    
+    def mouseMoveEvent(self, event):
+        """Handle mouse move for window dragging."""
+        if self._system_move_active:
+            # System move is handled by the window system
+            return
+        if self.old_pos:
+            delta = QPoint(event.globalPosition().toPoint() - self.old_pos)
+            self.parent.move(self.parent.x() + delta.x(), self.parent.y() + delta.y())
+            self.old_pos = event.globalPosition().toPoint()
+    
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release to stop dragging."""
+        self._system_move_active = False
+        self.old_pos = None
+    
+    def mouseDoubleClickEvent(self, event):
+        """Toggle maximize on double-click."""
+        self.toggle_maximize()
+    
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """Filter events from menu bar to allow dragging in empty space."""
+        if obj == self.menu_bar:
+            if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+                # Check if click is in empty space after menu items
+                click_x = event.position().x()
+                
+                # Get the actual width used by menu items
+                last_action = None
+                for action in self.menu_bar.actions():
+                    if action.isVisible():
+                        last_action = action
+                
+                if last_action:
+                    # Get the geometry of the last menu item
+                    action_geom = self.menu_bar.actionGeometry(last_action)
+                    menu_items_width = action_geom.right()
+                    
+                    # If click is beyond the menu items, start dragging
+                    if click_x > menu_items_width + 10:  # Add small margin
+                        if not self.parent.isMaximized():
+                            # Start window drag
+                            if self._start_system_move(event):
+                                self._system_move_active = True
+                                self.old_pos = None
+                            else:
+                                self._system_move_active = False
+                                self.old_pos = event.globalPosition().toPoint()
+                            return True  # Consume the event
+            
+            elif event.type() == QEvent.MouseMove:
+                if self.old_pos is not None:
+                    # Continue dragging
+                    delta = event.globalPosition().toPoint() - self.old_pos
+                    self.parent.move(self.parent.x() + delta.x(), self.parent.y() + delta.y())
+                    self.old_pos = event.globalPosition().toPoint()
+                    return True
+                    
+            elif event.type() == QEvent.MouseButtonRelease:
+                if self.old_pos is not None:
+                    self._system_move_active = False
+                    self.old_pos = None
+                    return True
+                    
+        return super().eventFilter(obj, event)
+
+
 class WaveScoutMainWindow(QMainWindow):
     """Main window for WaveScout App."""
     
     def __init__(self, session_file=None, wave_file: str | None = None, exit_after_load: bool = False):
         super().__init__()
         self.setWindowTitle("WaveScout - Waveform Viewer")
+        self.setWindowFlags(Qt.FramelessWindowHint)
         self.resize(1400, 800)
         
         # Initialize thread pool and progress dialog
@@ -114,21 +396,78 @@ class WaveScoutMainWindow(QMainWindow):
         # Initialize optional components
         self.design_tree_view: Optional[DesignTreeView] = None
         
-        # Create main splitter
-        self.main_splitter = QSplitter(Qt.Horizontal)
+        # Create main widget and layout
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
         
-        # Create design tree view (left pane)
-        self.design_tree_view = DesignTreeView()
+        # Main vertical layout for title bar and content
+        self.main_layout = QVBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
+        
+        # Create and add custom title bar
+        self.title_bar = CustomTitleBar(self)
+        self.main_layout.addWidget(self.title_bar)
+        
+        # Create vertical splitter for main area and bottom panel
+        self.vertical_splitter = QSplitter(Qt.Vertical)
+        self.vertical_splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #3E3E42;
+                height: 1px;
+            }
+            QSplitter::handle:hover {
+                background-color: #007ACC;
+            }
+        """)
+        
+        # Create horizontal splitter for left/center/right
+        self.horizontal_splitter = QSplitter(Qt.Horizontal)
+        self.horizontal_splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #3E3E42;
+                width: 1px;
+            }
+            QSplitter::handle:hover {
+                background-color: #007ACC;
+            }
+        """)
+        
+        # Add horizontal splitter to vertical splitter
+        self.vertical_splitter.addWidget(self.horizontal_splitter)
+        
+        # Create design tree view (left panel)
+        self.left_panel = self.design_tree_view = DesignTreeView()
         self.design_tree_view.signals_selected.connect(self._on_signals_selected)
         self.design_tree_view.status_message.connect(self.statusBar().showMessage)
         self.design_tree_view.install_event_filters()
         
-        # Add design tree view to splitter first to place it on the left
-        self.main_splitter.addWidget(self.design_tree_view)
+        # Add design tree view to horizontal splitter first (left)
+        self.horizontal_splitter.addWidget(self.left_panel)
         
-        # Create wave view widget (right pane)
+        # Create wave view widget (center panel)
         self.wave_widget = WaveScoutWidget()
-        self.main_splitter.addWidget(self.wave_widget)
+        self.horizontal_splitter.addWidget(self.wave_widget)
+        
+        # Create right sidebar (placeholder for now)
+        self.right_panel = QFrame()
+        self.right_panel.setFrameShape(QFrame.NoFrame)
+        self.right_panel.setStyleSheet("background-color: #252526;")
+        self.right_panel_layout = QVBoxLayout(self.right_panel)
+        self.right_panel_layout.addWidget(QLabel("Right Sidebar Content", styleSheet="color: #CCCCCC"))
+        self.horizontal_splitter.addWidget(self.right_panel)
+        
+        # Create bottom panel (placeholder for now)
+        self.bottom_panel = QFrame()
+        self.bottom_panel.setFrameShape(QFrame.NoFrame)
+        self.bottom_panel.setStyleSheet("background-color: #252526;")
+        self.bottom_panel_layout = QVBoxLayout(self.bottom_panel)
+        self.bottom_panel_layout.setContentsMargins(8, 8, 8, 8)
+        self.bottom_panel_layout.addWidget(QLabel("Bottom Panel Content", styleSheet="color: #CCCCCC"))
+        self.vertical_splitter.addWidget(self.bottom_panel)
+        
+        # Add vertical splitter to main layout (below title bar)
+        self.main_layout.addWidget(self.vertical_splitter)
         
         # Load value tooltip preference
         value_tooltips_enabled = self.settings.value("view/value_tooltips_enabled", False, type=bool)
@@ -144,10 +483,15 @@ class WaveScoutMainWindow(QMainWindow):
             lambda scope, signal: self.design_tree_view.navigate_to_scope(scope, signal)
         )
         
-        # Set splitter sizes (design tree: 30%, wave widget: 70%)
-        self.main_splitter.setSizes([420, 980])
+        # Set default splitter sizes first, then restore panel states
+        self.horizontal_splitter.setSizes([420, 730, 250])
+        self.vertical_splitter.setSizes([600, 200])
         
-        self.setCentralWidget(self.main_splitter)
+        # Restore panel states from settings after setting initial sizes
+        self._restore_panel_states()
+        
+        # Connect panel toggle buttons
+        self._connect_panel_toggles()
         
         # Create actions first (shared between menu and toolbar)
         self._create_actions()
@@ -254,7 +598,11 @@ class WaveScoutMainWindow(QMainWindow):
         """Create the main toolbar."""
         self.toolbar = QToolBar("Main Toolbar", self)
         self.toolbar.setObjectName("MainToolbar")  # For saving/restoring state
-        self.addToolBar(self.toolbar)
+        self.toolbar.setMovable(False)
+        self.toolbar.setFloatable(False)
+        
+        # Insert toolbar below title bar in main layout
+        self.main_layout.insertWidget(1, self.toolbar)
         
         # Add actions to toolbar
         self.toolbar.addAction(self.open_action)
@@ -269,7 +617,7 @@ class WaveScoutMainWindow(QMainWindow):
     
     def _create_menus(self):
         """Create application menus."""
-        menubar = self.menuBar()
+        menubar = self.title_bar.menu_bar
         
         # File menu
         file_menu = menubar.addMenu("&File")
@@ -1225,6 +1573,209 @@ class WaveScoutMainWindow(QMainWindow):
             self.pan_left_action.setIcon(new_style.standardIcon(QStyle.StandardPixmap.SP_ArrowLeft))
             self.pan_right_action.setIcon(new_style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight))
             self.zoom_fit_action.setIcon(new_style.standardIcon(QStyle.StandardPixmap.SP_DialogResetButton))
+    
+    def _connect_panel_toggles(self):
+        """Connect panel toggle buttons to their respective methods."""
+        self.title_bar.left_button.clicked.connect(self.toggle_left_sidebar)
+        self.title_bar.right_button.clicked.connect(self.toggle_right_sidebar)
+        self.title_bar.bottom_button.clicked.connect(self.toggle_bottom_panel)
+    
+    def toggle_left_sidebar(self):
+        """Toggle left sidebar visibility."""
+        if self.left_panel.isVisible():
+            self.left_panel.hide()
+            # Update splitter sizes
+            sizes = self.horizontal_splitter.sizes()
+            if len(sizes) >= 3:
+                # Transfer left panel space to center
+                sizes[1] += sizes[0]
+                sizes[0] = 0
+                self.horizontal_splitter.setSizes(sizes)
+        else:
+            self.left_panel.show()
+            # Restore default size or saved size
+            sizes = self.horizontal_splitter.sizes()
+            if len(sizes) >= 3:
+                left_width = self.settings.value("panels/left_width", 420, type=int)
+                # Reduce center panel to make room
+                if sizes[1] > left_width:
+                    sizes[1] -= left_width
+                    sizes[0] = left_width
+                else:
+                    # Distribute space proportionally
+                    total = sum(sizes)
+                    sizes[0] = left_width
+                    remaining = total - left_width
+                    if sizes[2] > 0:  # Right panel visible
+                        right_ratio = sizes[2] / (sizes[1] + sizes[2]) if (sizes[1] + sizes[2]) > 0 else 0.5
+                        sizes[2] = int(remaining * right_ratio)
+                        sizes[1] = remaining - sizes[2]
+                    else:
+                        sizes[1] = remaining
+                self.horizontal_splitter.setSizes(sizes)
+        
+        # Update button state
+        self.title_bar.left_button.setChecked(self.left_panel.isVisible())
+        self._save_panel_states()
+    
+    def toggle_right_sidebar(self):
+        """Toggle right sidebar visibility."""
+        if self.right_panel.isVisible():
+            self.right_panel.hide()
+            # Update splitter sizes
+            sizes = self.horizontal_splitter.sizes()
+            if len(sizes) >= 3:
+                # Transfer right panel space to center
+                sizes[1] += sizes[2]
+                sizes[2] = 0
+                self.horizontal_splitter.setSizes(sizes)
+        else:
+            self.right_panel.show()
+            # Restore default size or saved size
+            sizes = self.horizontal_splitter.sizes()
+            if len(sizes) >= 3:
+                right_width = self.settings.value("panels/right_width", 250, type=int)
+                # Reduce center panel to make room
+                if sizes[1] > right_width:
+                    sizes[1] -= right_width
+                    sizes[2] = right_width
+                else:
+                    # Distribute space proportionally
+                    total = sum(sizes)
+                    sizes[2] = right_width
+                    remaining = total - right_width
+                    if sizes[0] > 0:  # Left panel visible
+                        left_ratio = sizes[0] / (sizes[0] + sizes[1]) if (sizes[0] + sizes[1]) > 0 else 0.5
+                        sizes[0] = int(remaining * left_ratio)
+                        sizes[1] = remaining - sizes[0]
+                    else:
+                        sizes[1] = remaining
+                self.horizontal_splitter.setSizes(sizes)
+        
+        # Update button state
+        self.title_bar.right_button.setChecked(self.right_panel.isVisible())
+        self._save_panel_states()
+    
+    def toggle_bottom_panel(self):
+        """Toggle bottom panel visibility."""
+        if self.bottom_panel.isVisible():
+            self.bottom_panel.hide()
+            # Update splitter sizes
+            sizes = self.vertical_splitter.sizes()
+            if len(sizes) >= 2:
+                # Transfer bottom panel space to top
+                sizes[0] += sizes[1]
+                sizes[1] = 0
+                self.vertical_splitter.setSizes(sizes)
+        else:
+            self.bottom_panel.show()
+            # Restore default size or saved size
+            sizes = self.vertical_splitter.sizes()
+            if len(sizes) >= 2:
+                bottom_height = self.settings.value("panels/bottom_height", 200, type=int)
+                # Reduce top area to make room
+                if sizes[0] > bottom_height:
+                    sizes[0] -= bottom_height
+                    sizes[1] = bottom_height
+                else:
+                    # Minimum reasonable sizes
+                    total = sum(sizes)
+                    sizes[1] = min(bottom_height, total // 3)
+                    sizes[0] = total - sizes[1]
+                self.vertical_splitter.setSizes(sizes)
+        
+        # Update button state
+        self.title_bar.bottom_button.setChecked(self.bottom_panel.isVisible())
+        self._save_panel_states()
+    
+    def _save_panel_states(self):
+        """Save panel visibility and sizes to settings."""
+        # Save visibility states
+        self.settings.setValue("panels/left_visible", self.left_panel.isVisible())
+        self.settings.setValue("panels/right_visible", self.right_panel.isVisible())
+        self.settings.setValue("panels/bottom_visible", self.bottom_panel.isVisible())
+        
+        # Save sizes
+        h_sizes = self.horizontal_splitter.sizes()
+        if len(h_sizes) >= 3:
+            if h_sizes[0] > 0:
+                self.settings.setValue("panels/left_width", h_sizes[0])
+            if h_sizes[2] > 0:
+                self.settings.setValue("panels/right_width", h_sizes[2])
+        
+        v_sizes = self.vertical_splitter.sizes()
+        if len(v_sizes) >= 2 and v_sizes[1] > 0:
+            self.settings.setValue("panels/bottom_height", v_sizes[1])
+        
+        # Save full splitter states for exact restoration
+        self.settings.setValue("panels/horizontal_sizes", h_sizes)
+        self.settings.setValue("panels/vertical_sizes", v_sizes)
+    
+    def _restore_panel_states(self):
+        """Restore panel visibility and sizes from settings."""
+        # Check if we have saved panel settings
+        has_saved_settings = self.settings.contains("panels/left_visible")
+        
+        # Get visibility states with defaults (True if no saved settings)
+        left_visible = self.settings.value("panels/left_visible", True, type=bool)
+        right_visible = self.settings.value("panels/right_visible", True, type=bool)
+        bottom_visible = self.settings.value("panels/bottom_visible", True, type=bool)
+        
+        # Restore splitter sizes if available, or adjust defaults based on visibility
+        h_sizes = self.settings.value("panels/horizontal_sizes", type=list)
+        if h_sizes and len(h_sizes) == 3:
+            # Convert to integers (QSettings may store as strings)
+            h_sizes = [int(s) if isinstance(s, str) else s for s in h_sizes]
+        else:
+            # Use current sizes as base
+            h_sizes = self.horizontal_splitter.sizes()
+        
+        v_sizes = self.settings.value("panels/vertical_sizes", type=list)
+        if v_sizes and len(v_sizes) == 2:
+            # Convert to integers (QSettings may store as strings)
+            v_sizes = [int(s) if isinstance(s, str) else s for s in v_sizes]
+        else:
+            # Use current sizes as base
+            v_sizes = self.vertical_splitter.sizes()
+        
+        # Adjust sizes based on visibility
+        if not left_visible:
+            h_sizes[1] += h_sizes[0]  # Add left space to center
+            h_sizes[0] = 0
+            self.left_panel.hide()
+        else:
+            self.left_panel.show()
+            
+        if not right_visible:
+            h_sizes[1] += h_sizes[2]  # Add right space to center
+            h_sizes[2] = 0
+            self.right_panel.hide()
+        else:
+            self.right_panel.show()
+            
+        if not bottom_visible:
+            v_sizes[0] += v_sizes[1]  # Add bottom space to top
+            v_sizes[1] = 0
+            self.bottom_panel.hide()
+        else:
+            self.bottom_panel.show()
+        
+        # Apply the sizes
+        self.horizontal_splitter.setSizes(h_sizes)
+        self.vertical_splitter.setSizes(v_sizes)
+        
+        # Update toggle button states to match visibility
+        self.title_bar.left_button.setChecked(left_visible)
+        self.title_bar.right_button.setChecked(right_visible)
+        self.title_bar.bottom_button.setChecked(bottom_visible)
+    
+    def closeEvent(self, event):
+        """Handle window close event."""
+        # Save panel states before closing
+        self._save_panel_states()
+        
+        # Call parent implementation
+        super().closeEvent(event)
 
 
 def main():
