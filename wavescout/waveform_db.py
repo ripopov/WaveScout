@@ -383,7 +383,7 @@ class WaveformDB:
             return  # All signals already cached
             
         # Convert handles to Var objects
-        vars_to_load = []
+        vars_to_load : List[WVar] = []
         handle_to_var_map = {}
         for handle in handles_to_load:
             vars_list = self._var_map.get(handle, [])
