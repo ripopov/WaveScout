@@ -379,43 +379,61 @@ class WaveScoutWidget(QWidget):
                     self.model.index(row_count - 1, 1)
                 )
             
-            # Format cursor time using appropriate unit
-            if self.session.time_ruler_config:
-                # Renderer is always available
-                formatted_time = self._canvas._time_grid_renderer._format_time_label(
-                    time, self.session.time_ruler_config.time_unit, None
-                )
-                self._info_bar.setText(f"Cursor: {formatted_time}")
-            else:
-                # Display with timescale unit suffix
-                if self.session.timescale:
-                    unit_suffix = self.session.timescale.unit.value
-                    self._info_bar.setText(f"Cursor: {time} {unit_suffix}")
-                else:
-                    self._info_bar.setText(f"Cursor: {time}")
+            # Update info bar with time and optional clock count
+            self._update_info_bar(time)
             
             self.cursorChanged.emit(time)
             
+    def _update_info_bar(self, time: int) -> None:
+        """Update info bar with cursor time and optional clock count.
+        
+        Args:
+            time: The cursor time in simulation units
+        """
+        if not self.session:
+            return
+            
+        # Format the time value
+        if self.session.time_ruler_config:
+            # Renderer is always available
+            formatted_time = self._canvas._time_grid_renderer._format_time_label(
+                time, self.session.time_ruler_config.time_unit, None
+            )
+        else:
+            # Display with timescale unit suffix
+            if self.session.timescale:
+                unit_suffix = self.session.timescale.unit.value
+                formatted_time = f"{time} {unit_suffix}"
+            else:
+                formatted_time = str(time)
+        
+        # Add clock count if clock signal is set
+        if self.session.clock_signal:
+            period, phase_offset, clock_node = self.session.clock_signal
+            # Calculate clock count from phase offset
+            if period > 0:
+                # Calculate clock cycle number (0-based)
+                clock_count = (time - phase_offset) // period
+                # Only show positive clock counts
+                if clock_count >= 0:
+                    self._info_bar.setText(f"Cursor: {formatted_time} | Clock: {clock_count}")
+                else:
+                    # Before first clock edge
+                    self._info_bar.setText(f"Cursor: {formatted_time} | Clock: --")
+            else:
+                self._info_bar.setText(f"Cursor: {formatted_time}")
+        else:
+            self._info_bar.setText(f"Cursor: {formatted_time}")
+    
     def _on_controller_cursor_changed(self) -> None:
         """Controller signaled cursor change: refresh info bar and canvas."""
         if not self.session:
             return
         # Reuse existing on-canvas cursor formatting by calling canvas setter
         self._canvas.setCursorTime(self.session.cursor_time)
-        # Update info bar text similar to _on_cursor_moved
+        # Update info bar text with time and optional clock count
         time = self.session.cursor_time
-        if self.session.time_ruler_config:
-            # Renderer is always available
-            formatted_time = self._canvas._time_grid_renderer._format_time_label(
-                time, self.session.time_ruler_config.time_unit, None
-            )
-            self._info_bar.setText(f"Cursor: {formatted_time}")
-        else:
-            if self.session.timescale:
-                unit_suffix = self.session.timescale.unit.value
-                self._info_bar.setText(f"Cursor: {time} {unit_suffix}")
-            else:
-                self._info_bar.setText(f"Cursor: {time}")
+        self._update_info_bar(time)
         self.cursorChanged.emit(time)
 
     def _on_controller_markers_changed(self) -> None:
@@ -762,6 +780,8 @@ class WaveScoutWidget(QWidget):
             viewport = self.session.viewport
             self._canvas.setTimeRange(viewport.start_time, viewport.end_time)
             self._canvas.update()
+            # Also update info bar in case clock signal changed
+            self._update_info_bar(self.session.cursor_time)
             
     def _get_minimum_zoom_width(self) -> float:
         """Calculate the minimum allowed zoom width based on constraints.
