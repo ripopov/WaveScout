@@ -5,11 +5,11 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLineEdit, QLabel,
-    QHBoxLayout, QVBoxLayout, QStyle, QFrame
+    QHBoxLayout, QVBoxLayout, QStyle, QFrame, QToolButton
 )
 
 from PySide6.QtCore import Qt, QObject, QEvent, QPoint
-from PySide6.QtWidgets import QWidget, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QStyle, QFrame
+from PySide6.QtWidgets import QWidget, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QStyle, QFrame, QToolButton
 from PySide6.QtGui import QMouseEvent, QCursor
 
 IS_WIN = sys.platform.startswith("win")
@@ -47,9 +47,10 @@ def remove_win_caption(hwnd):
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED)
 
 class Header(QWidget):
-    """Custom in-client header with a search bar.
-       Drag empty header area to move the window.
-       Double-click empty header to toggle maximize/restore.
+    """Custom in-client header with a search bar and standard window buttons.
+       - Drag empty header area to move the window.
+       - Double-click empty header to toggle maximize/restore.
+       - Buttons: minimize, maximize/restore, close.
     """
     def __init__(self, parent):
         super().__init__(parent)
@@ -69,6 +70,20 @@ class Header(QWidget):
         self.search.setClearButtonEnabled(True)
         self.search.returnPressed.connect(self._do_search)
 
+        # Window control buttons (right side)
+        self.btn_min = QToolButton(self)
+        self.btn_max = QToolButton(self)
+        self.btn_close = QToolButton(self)
+        for btn in (self.btn_min, self.btn_max, self.btn_close):
+            btn.setAutoRaise(True)
+            btn.setCursor(Qt.ArrowCursor)
+            btn.setFocusPolicy(Qt.NoFocus)
+        self.btn_min.setToolTip("Minimize")
+        self.btn_max.setToolTip("Maximize")
+        self.btn_close.setToolTip("Close")
+        self._update_button_icons()
+
+        # Layout
         row = QHBoxLayout(self)
         row.setContentsMargins(10, 4, 10, 4)
         row.setSpacing(8)
@@ -76,11 +91,26 @@ class Header(QWidget):
         row.addWidget(self.title)
         row.addSpacing(12)
         row.addWidget(self.search, 1)
+        row.addWidget(self.btn_min)
+        row.addWidget(self.btn_max)
+        row.addWidget(self.btn_close)
+
+        # Connect actions
+        self.btn_min.clicked.connect(self._on_minimize)
+        self.btn_max.clicked.connect(self._on_toggle_max_restore)
+        self.btn_close.clicked.connect(self._on_close)
+
+        # Track parent window state to update max/restore icon
+        self._w().installEventFilter(self)
 
         self.setStyleSheet("""
         #Header { background: palette(window); border-bottom: 1px solid palette(mid); }
         #HeaderTitle { font-weight: 600; }
         QLineEdit { padding: 4px 8px; border-radius: 6px; }
+        QToolButton { border-radius: 4px; padding: 4px; }
+        QToolButton:hover { background: palette(midlight); }
+        QToolButton:pressed { background: palette(mid); }
+        QToolButton#CloseButton:hover { background: #e81123; color: white; }
         """)
 
     def _w(self):
@@ -90,9 +120,14 @@ class Header(QWidget):
         w = self._w()
         return w.windowHandle() if w is not None else None
 
+    def _hit_on_controls(self, p):
+        child = self.childAt(p)
+        return child in (self.btn_min, self.btn_max, self.btn_close)
+
     def mousePressEvent(self, ev: QMouseEvent):
         # Use ev.position() (QPointF) instead of deprecated ev.pos()
-        if ev.button() == Qt.LeftButton and not self.search.geometry().contains(ev.position().toPoint()):
+        pt = ev.position().toPoint()
+        if ev.button() == Qt.LeftButton and not self.search.geometry().contains(pt) and not self._hit_on_controls(pt):
             win = self._winhandle()
             if win:
                 win.startSystemMove()
@@ -100,11 +135,49 @@ class Header(QWidget):
         super().mousePressEvent(ev)
 
     def mouseDoubleClickEvent(self, ev: QMouseEvent):
-        if ev.button() == Qt.LeftButton and not self.search.geometry().contains(ev.position().toPoint()):
+        pt = ev.position().toPoint()
+        if ev.button() == Qt.LeftButton and not self.search.geometry().contains(pt) and not self._hit_on_controls(pt):
             w = self._w()
             w.showNormal() if w.isMaximized() else w.showMaximized()
             return
         super().mouseDoubleClickEvent(ev)
+
+    def _update_button_icons(self):
+        # Set icons based on current window state
+        st = self.style()
+        self.btn_min.setIcon(st.standardIcon(QStyle.SP_TitleBarMinButton))
+        is_max = False
+        w = self._w()
+        if w is not None:
+            is_max = w.isMaximized()
+        if is_max:
+            self.btn_max.setIcon(st.standardIcon(QStyle.SP_TitleBarNormalButton))
+            self.btn_max.setToolTip("Restore")
+        else:
+            self.btn_max.setIcon(st.standardIcon(QStyle.SP_TitleBarMaxButton))
+            self.btn_max.setToolTip("Maximize")
+        self.btn_close.setIcon(st.standardIcon(QStyle.SP_TitleBarCloseButton))
+        self.btn_close.setObjectName("CloseButton")
+
+    def eventFilter(self, obj: QObject, ev: QEvent) -> bool:
+        if obj is self._w() and ev.type() == QEvent.WindowStateChange:
+            self._update_button_icons()
+        return super().eventFilter(obj, ev)
+
+    def _on_minimize(self) -> None:
+        w = self._w()
+        w.showMinimized()
+
+    def _on_toggle_max_restore(self) -> None:
+        w = self._w()
+        if w.isMaximized():
+            w.showNormal()
+        else:
+            w.showMaximized()
+        self._update_button_icons()
+
+    def _on_close(self) -> None:
+        self._w().close()
 
     def _do_search(self):
         text = self.search.text().strip()
