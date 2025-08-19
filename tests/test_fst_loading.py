@@ -24,7 +24,7 @@ Usage:
 import sys
 import os
 import tempfile
-import yaml
+import json
 import pytest
 from pathlib import Path
 from typing import Optional, List
@@ -200,7 +200,7 @@ def test_fst_loading_with_backend(backend_preference):
     app = QApplication.instance() or QApplication(sys.argv)
     
     # Create temporary file for session
-    temp_session = tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False)
+    temp_session = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
     temp_session_path = temp_session.name
     temp_session.close()
     
@@ -296,7 +296,7 @@ def test_fst_loading_with_backend(backend_preference):
         # Step 5: Validate YAML
         print("\n5. Validating saved YAML...")
         with open(temp_session_path, 'r') as f:
-            yaml_data = yaml.safe_load(f)
+            yaml_data = json.load(f)
         
         # Check that we have root_nodes
         assert 'root_nodes' in yaml_data, "YAML missing root_nodes"

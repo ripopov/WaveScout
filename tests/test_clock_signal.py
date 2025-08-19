@@ -329,7 +329,7 @@ class TestSessionPersistence:
         session.clock_signal = (100, 0, clock_node)  # period, phase, node
         
         # Save to temporary file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             temp_path = Path(f.name)
         
         try:
@@ -357,7 +357,7 @@ class TestSessionPersistence:
         ]
         
         # Save to temporary file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             temp_path = Path(f.name)
         
         try:

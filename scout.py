@@ -793,7 +793,7 @@ class WaveScoutMainWindow(QMainWindow):
         if self.wave_widget.session and self.wave_widget.session.waveform_db:
             try:
                 # Create temporary file for session
-                tmp_fd, tmp_path = tempfile.mkstemp(suffix='.yaml', prefix='wavescout_reload_')
+                tmp_fd, tmp_path = tempfile.mkstemp(suffix='.json', prefix='wavescout_reload_')
                 temp_session_path = Path(tmp_path)
                 os.close(tmp_fd)  # Close the file descriptor as we'll write using save_session
                 
@@ -984,7 +984,7 @@ class WaveScoutMainWindow(QMainWindow):
             self,
             "Save Session",
             "",
-            "YAML Files (*.yaml *.yml);;All Files (*)"
+            "Session Files (*.json);;All Files (*)"
         )
         
         if file_path:
@@ -995,7 +995,7 @@ class WaveScoutMainWindow(QMainWindow):
                 show_critical(self, "Save Error", f"Failed to save session:\n{str(e)}")
                 
     def load_session(self):
-        """Load a session from a YAML file using file dialog."""
+        """Load a session from a JSON file using file dialog."""
         # Force garbage collection before opening dialog
         import gc
         gc.collect()
@@ -1005,7 +1005,7 @@ class WaveScoutMainWindow(QMainWindow):
             self,
             "Load Session",
             "",
-            "YAML Files (*.yaml *.yml);;All Files (*)"
+            "Session Files (*.json);;All Files (*)"
         )
         
         if file_path:

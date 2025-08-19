@@ -2,7 +2,7 @@
 
 import pytest
 import tempfile
-import yaml
+import json
 from pathlib import Path
 from typing import List, Dict, Any
 from wavescout.persistence import load_session, save_session
@@ -150,8 +150,8 @@ class TestSessionAliasLoading:
             pytest.skip(f"Test file {test_waveform_path} not found")
         
         # Save the session to a temp file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-            yaml.dump(session_with_aliases, f)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(session_with_aliases, f)
             session_file = Path(f.name)
         
         try:
@@ -203,8 +203,8 @@ class TestSessionAliasLoading:
             pytest.skip(f"Test file {test_waveform_path} not found")
         
         # Save the session to a temp file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-            yaml.dump(session_with_aliases, f)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(session_with_aliases, f)
             session_file = Path(f.name)
         
         try:
@@ -251,8 +251,8 @@ class TestSessionAliasLoading:
         if not test_waveform_path.exists():
             pytest.skip(f"Test file {test_waveform_path} not found")
         
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-            yaml.dump(session_with_aliases, f)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(session_with_aliases, f)
             session_file = Path(f.name)
         
         try:

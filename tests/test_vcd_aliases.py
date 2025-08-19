@@ -145,13 +145,13 @@ def test_save_load_session_with_aliases(vcd_with_aliases, tmp_path):
             break
     
     # Save session
-    yaml_path = tmp_path / "test_aliases.yaml"
+    yaml_path = tmp_path / "test_aliases.json"
     save_session(session, yaml_path)
     
     # Read the YAML to verify handles
-    import yaml
+    import json
     with open(yaml_path, 'r') as f:
-        yaml_data = yaml.safe_load(f)
+        yaml_data = json.load(f)
     
     # Verify both nodes have the same non-null handle
     nodes = yaml_data['root_nodes']

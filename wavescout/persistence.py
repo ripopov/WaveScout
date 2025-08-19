@@ -1,10 +1,11 @@
 """Persistence module for saving and loading WaveformSession state."""
 
-import yaml
+import json
 import pathlib
 from typing import Dict, Any, List, Optional, Union, Literal, cast
 from dataclasses import asdict
 from enum import Enum
+from datetime import datetime
 from .backend_types import WVar, WHierarchy, WScope
 from .protocols import WaveformDBProtocol
 from .data_model import (
@@ -143,9 +144,13 @@ def _deserialize_node(data: Dict[str, Any], parent: Optional[SignalNode] = None)
 
 def save_session(session: WaveformSession, path: pathlib.Path) -> None:
     """
-    Serialize session to YAML, excluding waveform_db pointer
+    Serialize session to JSON, excluding waveform_db pointer
     but preserving its URI for reconnection.
     """
+    # Ensure .json extension
+    if not path.suffix.lower() == '.json':
+        path = path.with_suffix('.json')
+    
     # Get database URI if available (file_path is an optional property)
     db_uri = None
     if session.waveform_db:
@@ -178,22 +183,38 @@ def save_session(session: WaveformSession, path: pathlib.Path) -> None:
             'node_id': clock_node.instance_id  # Store node ID for reconnection
         }
     
-    # Write YAML
+    # Add sampling signal if available
+    if session.sampling_signal:
+        data['sampling_signal'] = {
+            'node_id': session.sampling_signal.instance_id  # Store node ID for reconnection
+        }
+    
+    # Add metadata
+    data['_metadata'] = {
+        'version': '2.0',
+        'generated': datetime.now().isoformat()
+    }
+    
+    # Write JSON with indentation for readability
     with open(path, 'w') as f:
-        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+        json.dump(data, f, indent=2)
 
 
 def load_session(path: pathlib.Path, backend_preference: Optional[Literal["pywellen", "pylibfst"]] = None) -> WaveformSession:
     """
-    Deserialize YAML to dataclasses and reconnect to waveform DB.
+    Deserialize JSON to dataclasses and reconnect to waveform DB.
     
     Args:
         path: Path to the session file
         backend_preference: Optional backend preference ("pywellen" or "pylibfst") for FST files
     """
-    # Read YAML
+    # Check file extension
+    if not path.suffix.lower() == '.json':
+        raise ValueError(f"Expected .json file, got {path.suffix}")
+    
+    # Read JSON
     with open(path, 'r') as f:
-        data = yaml.safe_load(f)
+        data = json.load(f)
     
     # Reconnect to waveform database if URI is provided
     waveform_db = None
@@ -308,6 +329,17 @@ def load_session(path: pathlib.Path, backend_preference: Optional[Literal["pywel
             clock_node = _find_node_by_id(root_nodes, clock_node_id)
             if clock_node:
                 session.clock_signal = (clock_period, phase_offset, clock_node)
+    
+    # Restore sampling signal if available
+    sampling_data = data.get('sampling_signal')
+    if sampling_data:
+        sampling_node_id = sampling_data.get('node_id')
+        
+        # Find the node by ID
+        if sampling_node_id is not None:
+            sampling_node = _find_node_by_id(root_nodes, sampling_node_id)
+            if sampling_node:
+                session.sampling_signal = sampling_node
     
     return session
 

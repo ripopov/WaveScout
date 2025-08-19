@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, Signal, QModelIndex, QAbstractItemModel, QPoint, 
 from PySide6.QtGui import QAction, QActionGroup, QKeyEvent, QColor, QKeySequence, QClipboard
 from typing import List, Optional, Callable, Union, TYPE_CHECKING, Dict, Any
 from PySide6.QtCore import QPersistentModelIndex
-import yaml
+import json
 from .data_model import SignalNode, RenderType, AnalogScalingMode, DataFormat, GroupRenderMode
 from .config import RENDERING, UI
 from .clock_utils import is_valid_clock_signal
@@ -609,17 +609,17 @@ class SignalNamesView(BaseColumnView):
                 pass
     
     def _serialize_nodes(self, nodes: List[SignalNode]) -> str:
-        """Serialize a list of SignalNode objects to YAML string."""
+        """Serialize a list of SignalNode objects to JSON string."""
         data = {
             'version': 1,
             'nodes': [_serialize_node(node) for node in nodes]
         }
-        return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
+        return json.dumps(data)
     
-    def _deserialize_nodes(self, yaml_str: str) -> List[SignalNode]:
-        """Deserialize YAML string to a list of SignalNode objects with new instance IDs."""
+    def _deserialize_nodes(self, json_str: str) -> List[SignalNode]:
+        """Deserialize JSON string to a list of SignalNode objects with new instance IDs."""
         try:
-            data = yaml.safe_load(yaml_str)
+            data = json.loads(json_str)
             if not isinstance(data, dict) or 'nodes' not in data:
                 return []
             

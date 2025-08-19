@@ -7,14 +7,14 @@ Tests the complete marker workflow:
 2. Add signal to waveform view
 3. Place 3 markers at different positions
 4. Navigate to marker using number key
-5. Save session to YAML
+5. Save session to JSON
 6. Validate saved markers and viewport position
 
 Key Features Tested:
 - Marker placement at timestamps (20%, 50%, 80% of duration)
 - Keyboard navigation (keys 1-9 jump to markers)
 - 10-pixel offset positioning (marker appears 10px from left edge)
-- YAML persistence (markers saved with time, label, color)
+- JSON persistence (markers saved with time, label, color)
 - Viewport state after navigation
 
 Usage:
@@ -24,7 +24,7 @@ Usage:
 import sys
 import os
 import tempfile
-import yaml
+import json
 from pathlib import Path
 from typing import Optional
 from PySide6.QtWidgets import QApplication
@@ -159,10 +159,10 @@ def test_marker_integration():
     - Verify: Viewport moves, marker C appears 10px from left edge
     
     Step 5: Save Session
-    - Save to temporary YAML file
+    - Save to temporary JSON file
     - Verify: File created with complete session data
     
-    Step 6: Validate YAML
+    Step 6: Validate JSON
     - Check root_nodes: 1 signal with correct name
     - Check markers: 3 entries with correct times/labels/colors
     - Check viewport: positioned at marker C minus 10px offset
@@ -171,7 +171,7 @@ def test_marker_integration():
     Expected Results:
     - All markers placed correctly
     - Navigation positions viewport with 10px offset
-    - YAML contains complete session state
+    - JSON contains complete session state
     - Viewport calculation: marker_pos - (10px/canvas_width) * viewport_width
     """
     
@@ -179,7 +179,7 @@ def test_marker_integration():
     app = QApplication.instance() or QApplication(sys.argv)
     
     # Create temporary file for session
-    temp_session = tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False)
+    temp_session = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
     temp_session_path = temp_session.name
     temp_session.close()
     
@@ -275,16 +275,16 @@ def test_marker_integration():
         assert new_left != initial_left, "Viewport did not change"
         print(f"   ✓ Viewport moved from {initial_left:.4f} to {new_left:.4f}")
         
-        # Step 5: Save session to YAML
+        # Step 5: Save session to JSON
         print(f"\n5. Saving session to {temp_session_path}...")
-        save_session(session, temp_session_path)
+        save_session(session, Path(temp_session_path))
         print("   ✓ Session saved")
         
-        # Step 6: Verify saved YAML
-        print("\n6. Verifying saved YAML content...")
+        # Step 6: Verify saved JSON
+        print("\n6. Verifying saved JSON content...")
         
         with open(temp_session_path, 'r') as f:
-            saved_data = yaml.safe_load(f)
+            saved_data = json.load(f)
         
         # Check for 1 variable
         assert 'root_nodes' in saved_data, "No root_nodes in saved session"

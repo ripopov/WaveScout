@@ -65,7 +65,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate PNG snapshots of WaveScout waveform viewer")
     parser.add_argument("--backend", choices=["wellen", "libfst"], 
                         help="FST backend to use: 'wellen' (pywellen) or 'libfst' (pylibfst)")
-    parser.add_argument("session_file", nargs="?", help="WaveScout session file (.yaml)")
+    parser.add_argument("session_file", nargs="?", help="WaveScout session file (.json)")
     parser.add_argument("output_file", nargs="?", default="snapshot.png", 
                         help="Output PNG file (default: snapshot.png)")
     
@@ -74,12 +74,12 @@ if __name__ == "__main__":
     # Handle session file auto-detection
     if not args.session_file:
         # Look for existing session files
-        session_files = list(Path(".").glob("*.yaml")) + list(Path(".").glob("*.yml"))
+        session_files = list(Path(".").glob("*.json"))
         if session_files:
             session_file = str(session_files[0])
             print(f"No session file specified, using: {session_file}")
         else:
-            print("Error: No session file specified and no .yaml files found in current directory")
+            print("Error: No session file specified and no .json files found in current directory")
             parser.print_help()
             sys.exit(1)
     else:

@@ -4,7 +4,7 @@ import pytest
 import tempfile
 from pathlib import Path
 from typing import List
-import yaml
+import json
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt, QMimeData, QModelIndex
@@ -201,15 +201,15 @@ def test_copy_paste_signals(qtbot, tmp_path):
     assert len(session.root_nodes) == 11, f"Should have 11 signals after second paste, got {len(session.root_nodes)}"
     
     # Step 6: Save session to YAML
-    session_file = tmp_path / "test_session.yaml"
+    session_file = tmp_path / "test_session.json"
     save_session(session, session_file)
     
     assert session_file.exists(), "Session file should be created"
     
     # Step 7: Verify all SignalNodes are as expected
-    # Load the YAML and check
+    # Load the JSON and check
     with open(session_file, 'r') as f:
-        data = yaml.safe_load(f)
+        data = json.load(f)
     
     assert 'root_nodes' in data, "Session should have root_nodes"
     assert len(data['root_nodes']) == 11, f"Session file should have 11 nodes, got {len(data['root_nodes'])}"
@@ -570,7 +570,7 @@ def test_copy_paste_recursion_regression(qtbot):
     
     from wavescout.data_model import SignalNode, DisplayFormat, RenderType
     from wavescout.persistence import _serialize_node, _deserialize_node
-    import yaml
+    import json
     
     # Create a deeply nested structure
     root = SignalNode(name="ROOT", is_group=True)
@@ -620,14 +620,14 @@ def test_copy_paste_recursion_regression(qtbot):
     # Test 2: Serialization (would fail with recursion)
     try:
         serialized = _serialize_node(root)
-        yaml_str = yaml.dump(serialized, default_flow_style=False)
-        assert len(yaml_str) > 0, "Serialization should produce output"
+        json_str = json.dumps(serialized, indent=2)
+        assert len(json_str) > 0, "Serialization should produce output"
     except RecursionError:
         pytest.fail("RecursionError occurred in serialization - regression detected!")
     
     # Test 3: Deserialization
     try:
-        deserialized_data = yaml.safe_load(yaml_str)
+        deserialized_data = json.loads(json_str)
         deserialized = _deserialize_node(deserialized_data)
         assert deserialized.name == "ROOT", "Deserialized root should have correct name"
         

@@ -13,7 +13,7 @@ from typing import Optional, List, Tuple, Callable
 from unittest.mock import patch, MagicMock
 
 import pytest
-import yaml
+import json
 from PySide6.QtWidgets import QApplication, QInputDialog
 from PySide6.QtCore import Qt, QModelIndex, QItemSelection
 from PySide6.QtCore import QItemSelectionModel
@@ -134,7 +134,7 @@ class WaveScoutTestHelper:
         assert yaml_path.exists(), "Session YAML was not saved"
         
         with open(yaml_path, "r") as f:
-            data = yaml.safe_load(f)
+            data = json.load(f)
         verification_func(data)
     
     @staticmethod
@@ -302,7 +302,7 @@ def test_height_scaling_widget_api(qtbot):
 
     # Verify persistence in YAML
     with tempfile.TemporaryDirectory() as tmpdir:
-        yaml_path = Path(tmpdir) / "test_height_scaling.yaml"
+        yaml_path = Path(tmpdir) / "test_height_scaling.json"
         
         def verify_height_scaling(data):
             nodes = data.get("root_nodes", [])
@@ -375,7 +375,7 @@ def test_height_scaling_ui_interaction(qtbot):
     
     # Verify YAML persistence
     with tempfile.TemporaryDirectory() as tmpdir:
-        yaml_path = Path(tmpdir) / "test_height_scaling.yaml"
+        yaml_path = Path(tmpdir) / "test_height_scaling.json"
         
         def verify_height_scaling(data):
             nodes = data.get("root_nodes", [])
@@ -443,7 +443,7 @@ def test_height_scaling_for_analog_signals(qtbot):
     
     # Verify in YAML
     with tempfile.TemporaryDirectory() as tmpdir:
-        yaml_path = Path(tmpdir) / "test_height_scaling_analog.yaml"
+        yaml_path = Path(tmpdir) / "test_height_scaling_analog.json"
         
         def verify_analog_scaling(data):
             nodes = data.get("root_nodes", [])
@@ -575,7 +575,7 @@ def test_signal_grouping_and_reordering(qtbot, monkeypatch):
     
     with tempfile.TemporaryDirectory() as tmpdir:
         # Verify initial structure
-        yaml_path1 = Path(tmpdir) / "test_grouping_step1.yaml"
+        yaml_path1 = Path(tmpdir) / "test_grouping_step1.json"
         
         def verify_initial_structure(data):
             rn = data.get("root_nodes", [])
@@ -596,7 +596,7 @@ def test_signal_grouping_and_reordering(qtbot, monkeypatch):
         qtbot.wait(10)
         
         # Verify new structure
-        yaml_path2 = Path(tmpdir) / "test_grouping_step2.yaml"
+        yaml_path2 = Path(tmpdir) / "test_grouping_step2.json"
         
         def verify_reordered_structure(data):
             rn = data.get("root_nodes", [])
@@ -692,7 +692,7 @@ def test_split_mode_keyboard_shortcut(qtbot):
     
     # Verify in YAML
     with tempfile.TemporaryDirectory() as tmpdir:
-        yaml_path = Path(tmpdir) / "test_split_mode.yaml"
+        yaml_path = Path(tmpdir) / "test_split_mode.json"
         
         def verify_signal_count(data):
             root_nodes = data.get("root_nodes", [])
@@ -808,7 +808,7 @@ def test_split_mode_inner_scope_selection(qtbot):
     
     # Verify in YAML
     with tempfile.TemporaryDirectory() as tmpdir:
-        yaml_path = Path(tmpdir) / "test_inner_scope.yaml"
+        yaml_path = Path(tmpdir) / "test_inner_scope.json"
         
         def verify_selected_vars(data):
             root_nodes = data.get("root_nodes", [])
@@ -870,7 +870,7 @@ def test_event_signal_render_type_assignment(qtbot):
     # Verify render_type in YAML
     session = window.wave_widget.session
     with tempfile.TemporaryDirectory() as tmpdir:
-        yaml_path = Path(tmpdir) / "event_render_type.yaml"
+        yaml_path = Path(tmpdir) / "event_render_type.json"
         
         def verify_event_render_type(data):
             nodes = data.get("root_nodes", [])
@@ -962,7 +962,7 @@ def test_analog_scale_visible_menu_integration(qtbot):
     
     # Save session to YAML and verify
     with tempfile.TemporaryDirectory() as tmpdir:
-        yaml_path = Path(tmpdir) / "test_analog_scale_visible.yaml"
+        yaml_path = Path(tmpdir) / "test_analog_scale_visible.json"
         
         def verify_analog_scale_visible(data):
             nodes = data.get("root_nodes", [])
@@ -1086,7 +1086,7 @@ def test_signal_rename_and_persistence(qtbot):
     
     # Verify persistence in YAML
     with tempfile.TemporaryDirectory() as tmpdir:
-        yaml_path = Path(tmpdir) / "test_rename_signals.yaml"
+        yaml_path = Path(tmpdir) / "test_rename_signals.json"
         
         def verify_nicknames(data):
             nodes = data.get("root_nodes", [])
@@ -1197,7 +1197,7 @@ def test_group_rename_functionality(qtbot):
     
     # Verify persistence in YAML
     with tempfile.TemporaryDirectory() as tmpdir:
-        yaml_path = Path(tmpdir) / "test_group_rename.yaml"
+        yaml_path = Path(tmpdir) / "test_group_rename.json"
         
         def verify_group_nickname(data):
             nodes = data.get("root_nodes", [])

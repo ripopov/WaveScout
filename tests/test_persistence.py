@@ -83,7 +83,7 @@ def test_save_and_load_session():
     original_session = create_test_session()
     
     # Save to temporary file
-    with tempfile.NamedTemporaryFile(suffix='.yaml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
         temp_path = pathlib.Path(f.name)
     
     try:
@@ -159,7 +159,7 @@ def test_save_session_with_waveform_db():
     session = create_sample_session(str(vcd_path))
     
     # Save to temporary file
-    with tempfile.NamedTemporaryFile(suffix='.yaml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
         temp_path = pathlib.Path(f.name)
     
     try:
@@ -191,7 +191,7 @@ def test_load_session_missing_waveform():
     original_session.waveform_db = fake_db
     
     # Save to temporary file
-    with tempfile.NamedTemporaryFile(suffix='.yaml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
         temp_path = pathlib.Path(f.name)
     
     try:
@@ -210,12 +210,75 @@ def test_load_session_missing_waveform():
         temp_path.unlink(missing_ok=True)
 
 
+def test_sampling_signal_persistence():
+    """Test that sampling_signal is correctly saved and loaded."""
+    # Create session with sampling signal
+    session = WaveformSession()
+    
+    # Add signals
+    signal1 = SignalNode(name='data', handle=1, instance_id=100)
+    signal2 = SignalNode(name='clock', handle=2, instance_id=200)
+    session.root_nodes = [signal1, signal2]
+    
+    # Set sampling signal
+    session.sampling_signal = signal2
+    
+    # Save session
+    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+        temp_path = pathlib.Path(f.name)
+    
+    try:
+        save_session(session, temp_path)
+        
+        # Load session
+        loaded = load_session(temp_path)
+        
+        # Verify sampling signal is restored
+        assert loaded.sampling_signal is not None, "Sampling signal should be restored"
+        assert loaded.sampling_signal.name == 'clock', "Sampling signal name should match"
+        assert loaded.sampling_signal.instance_id == 200, "Sampling signal ID should match"
+        
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def test_sampling_signal_in_nested_group():
+    """Test sampling_signal persistence when signal is in a nested group."""
+    session = WaveformSession()
+    
+    # Create group with children
+    group = SignalNode(name='GROUP', is_group=True, instance_id=1000)
+    child = SignalNode(name='child_signal', handle=10, parent=group, instance_id=1001)
+    group.children = [child]
+    
+    session.root_nodes = [group]
+    session.sampling_signal = child
+    
+    # Save and load
+    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+        temp_path = pathlib.Path(f.name)
+    
+    try:
+        save_session(session, temp_path)
+        loaded = load_session(temp_path)
+        
+        # Verify
+        assert loaded.sampling_signal is not None
+        assert loaded.sampling_signal.name == 'child_signal'
+        assert loaded.sampling_signal.instance_id == 1001
+        assert loaded.sampling_signal.parent is not None
+        assert loaded.sampling_signal.parent.name == 'GROUP'
+        
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
 def test_empty_session_persistence():
     """Test saving and loading an empty session."""
     empty_session = WaveformSession()
     
     # Save to temporary file
-    with tempfile.NamedTemporaryFile(suffix='.yaml', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
         temp_path = pathlib.Path(f.name)
     
     try:
