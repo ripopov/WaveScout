@@ -672,6 +672,16 @@ class WaveScoutMainWindow(QMainWindow):
         self.markers_window_action.triggered.connect(self._show_markers_window)
         edit_menu.addAction(self.markers_window_action)
         
+        edit_menu.addSeparator()
+        
+        # Navigate to Time/Clock action
+        self.navigate_time_action = QAction("Navigate to &Time/Clk", self)
+        self.navigate_time_action.setShortcut(QKeySequence("T"))
+        self.navigate_time_action.setStatusTip("Navigate to specific timestamp or clock cycle")
+        self.navigate_time_action.setEnabled(False)  # Disabled until a file is loaded
+        self.navigate_time_action.triggered.connect(self.wave_widget._show_navigate_time_dialog)
+        edit_menu.addAction(self.navigate_time_action)
+        
         # View menu
         view_menu = menubar.addMenu("&View")
         view_menu.addAction(self.zoom_in_action)
@@ -829,6 +839,7 @@ class WaveScoutMainWindow(QMainWindow):
         self.zoom_fit_action.setEnabled(enabled)
         self.pan_left_action.setEnabled(enabled)
         self.pan_right_action.setEnabled(enabled)
+        self.navigate_time_action.setEnabled(enabled)
     
     def open_file(self):
         """Open a waveform file using file dialog."""

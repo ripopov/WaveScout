@@ -961,3 +961,100 @@ class WaveformController:
         if not self.session or not self.session.sampling_signal:
             return False
         return self.session.sampling_signal.instance_id == node.instance_id
+    
+    # ---- Time/Clock Navigation ----
+    
+    def navigate_to_time(self, time: Time, pixel_offset: Optional[int] = None, canvas_width: Optional[int] = None) -> None:
+        """Navigate to a specific timestamp in the waveform.
+        
+        Args:
+            time: Absolute time in simulation units
+            pixel_offset: Distance in pixels from left edge of viewport (uses MARKER_NAVIGATION_OFFSET if None)
+            canvas_width: Current canvas width in pixels for accurate offset calculation (uses DEFAULT_CANVAS_WIDTH if None)
+        """
+        if pixel_offset is None:
+            pixel_offset = RENDERING.MARKER_NAVIGATION_OFFSET
+        if canvas_width is None:
+            canvas_width = RENDERING.DEFAULT_CANVAS_WIDTH
+        if not self.session:
+            return
+        
+        vp = self.session.viewport
+        if not vp or vp.total_duration <= 0:
+            return
+        
+        # Clamp time to valid range
+        time = max(0, min(time, vp.total_duration))
+        
+        # Get current viewport width in normalized units
+        viewport_width = vp.right - vp.left
+        
+        # Convert pixel offset to normalized time units
+        offset_normalized = (pixel_offset / float(canvas_width)) * viewport_width
+        
+        # Convert time to normalized position (0-1)
+        time_normalized = time / vp.total_duration
+        
+        # Calculate new viewport position
+        new_left = time_normalized - offset_normalized
+        new_right = new_left + viewport_width
+        
+        # Clamp to valid bounds with edge space
+        edge_space = vp.config.edge_space
+        min_allowed_left = -(viewport_width * edge_space)
+        max_allowed_right = 1.0 + (viewport_width * edge_space)
+        
+        if new_left < min_allowed_left:
+            offset = min_allowed_left - new_left
+            new_left = min_allowed_left
+            new_right = new_right + offset
+        elif new_right > max_allowed_right:
+            offset = new_right - max_allowed_right
+            new_left = new_left - offset
+            new_right = max_allowed_right
+        
+        # Update viewport
+        old_left, old_right = vp.left, vp.right
+        vp.left, vp.right = new_left, new_right
+        
+        if old_left != new_left or old_right != new_right:
+            self.event_bus.publish(ViewportChangedEvent(
+                old_left=old_left,
+                old_right=old_right,
+                new_left=new_left,
+                new_right=new_right
+            ))
+        self._emit("viewport_changed")
+    
+    def navigate_to_clock_cycle(self, cycle: int, pixel_offset: Optional[int] = None, canvas_width: Optional[int] = None) -> None:
+        """Navigate to a specific clock cycle.
+        
+        Args:
+            cycle: Clock cycle number (non-negative)
+            pixel_offset: Distance in pixels from left edge of viewport (uses MARKER_NAVIGATION_OFFSET if None)
+            canvas_width: Current canvas width in pixels for accurate offset calculation (uses DEFAULT_CANVAS_WIDTH if None)
+        """
+        if not self.session or not self.session.clock_signal:
+            return
+        
+        if cycle < 0:
+            return
+        
+        # Get clock information
+        period, phase_offset, _ = self.session.clock_signal
+        
+        # Calculate time from clock cycle
+        time = phase_offset + (cycle * period)
+        
+        # Navigate to calculated time
+        self.navigate_to_time(time, pixel_offset, canvas_width)
+    
+    def get_clock_info(self) -> Optional[tuple[Time, Time, SignalNode]]:
+        """Get the current clock signal information.
+        
+        Returns:
+            Tuple of (period, phase_offset, node) if clock is set, None otherwise
+        """
+        if not self.session or not self.session.clock_signal:
+            return None
+        return self.session.clock_signal

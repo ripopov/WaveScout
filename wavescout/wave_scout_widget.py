@@ -532,6 +532,7 @@ class WaveScoutWidget(QWidget):
                 (key == Qt.Key.Key_E and modifiers == Qt.KeyboardModifier.NoModifier) or
                 (key == Qt.Key.Key_G and modifiers == Qt.KeyboardModifier.NoModifier) or
                 (key == Qt.Key.Key_V and modifiers == Qt.KeyboardModifier.NoModifier) or
+                (key == Qt.Key.Key_T and modifiers == Qt.KeyboardModifier.NoModifier) or
                 key in [Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_PageUp, Qt.Key.Key_PageDown]):
                 # Send the event to our keyPressEvent
                 self.keyPressEvent(key_event)
@@ -608,6 +609,10 @@ class WaveScoutWidget(QWidget):
             # Forward the key press to canvas for tooltip handling
             self._canvas.keyPressEvent(event)
             # Don't accept the event so key release also gets forwarded
+        # Handle T key for Navigate to Time/Clock dialog
+        elif event.key() == Qt.Key.Key_T and event.modifiers() == Qt.KeyboardModifier.NoModifier:
+            self._show_navigate_time_dialog()
+            event.accept()
         else:
             super().keyPressEvent(event)
     
@@ -783,6 +788,19 @@ class WaveScoutWidget(QWidget):
             # Also update info bar in case clock signal changed
             self._update_info_bar(self.session.cursor_time)
             
+    def _show_navigate_time_dialog(self) -> None:
+        """Show the Navigate to Time/Clock dialog."""
+        from wavescout.navigate_time_dialog import NavigateTimeDialog
+        
+        if not self.controller:
+            return
+        
+        # Create and show dialog
+        # The dialog will use the controller's navigation methods directly
+        # The controller methods already handle default canvas width if not provided
+        dialog = NavigateTimeDialog(self.controller, self)
+        dialog.exec()
+    
     def _get_minimum_zoom_width(self) -> float:
         """Calculate the minimum allowed zoom width based on constraints.
         
