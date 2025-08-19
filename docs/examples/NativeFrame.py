@@ -8,9 +8,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QVBoxLayout, QStyle, QFrame
 )
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QObject, QEvent, QPoint
 from PySide6.QtWidgets import QWidget, QLineEdit, QLabel, QHBoxLayout, QVBoxLayout, QStyle, QFrame
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtGui import QMouseEvent, QCursor
 
 IS_WIN = sys.platform.startswith("win")
 
@@ -110,30 +110,112 @@ class Header(QWidget):
         text = self.search.text().strip()
         self._w().statusBar().showMessage(f"Search: {text}", 2500)
 
+class ResizeHelper(QObject):
+    """Adds hover cursors and native startSystemResize on frameless platforms.
+    Works only when window is not maximized. Margin controls resize hit area.
+    """
+    def __init__(self, window: QMainWindow, margin: int = 6):
+        super().__init__(window)
+        self._w = window
+        self._margin = margin
+        self._enable_mouse_tracking(window)
+
+    def _enable_mouse_tracking(self, w: QWidget) -> None:
+        w.setMouseTracking(True)
+        w.installEventFilter(self)
+        for child in w.findChildren(QWidget):
+            child.setMouseTracking(True)
+            child.installEventFilter(self)
+
+    def _edges_at(self, pos: QPoint) -> Qt.Edges:
+        r = self._w.rect()
+        m = self._margin
+        edges = Qt.Edges()
+        if pos.x() <= r.left() + m:
+            edges |= Qt.LeftEdge
+        if pos.x() >= r.right() - m:
+            edges |= Qt.RightEdge
+        if pos.y() <= r.top() + m:
+            edges |= Qt.TopEdge
+        if pos.y() >= r.bottom() - m:
+            edges |= Qt.BottomEdge
+        return edges
+
+    def _update_cursor(self, edges: Qt.Edges) -> None:
+        if not edges:
+            self._w.unsetCursor()
+            return
+        lr = bool(edges & (Qt.LeftEdge | Qt.RightEdge))
+        tb = bool(edges & (Qt.TopEdge | Qt.BottomEdge))
+        if lr and tb:
+            # choose diagonal based on quadrant
+            if (edges & Qt.TopEdge and edges & Qt.LeftEdge) or (edges & Qt.BottomEdge and edges & Qt.RightEdge):
+                self._w.setCursor(Qt.SizeFDiagCursor)
+            else:
+                self._w.setCursor(Qt.SizeBDiagCursor)
+        elif lr:
+            self._w.setCursor(Qt.SizeHorCursor)
+        elif tb:
+            self._w.setCursor(Qt.SizeVerCursor)
+
+    def eventFilter(self, obj: QObject, ev: QEvent) -> bool:
+        wh = self._w.windowHandle()
+        if wh is None or self._w.isMaximized():
+            return False
+        t = ev.type()
+        if t == QEvent.MouseMove or t == QEvent.HoverMove:
+            lp = self._w.mapFromGlobal(QCursor.pos())
+            edges = self._edges_at(lp)
+            self._update_cursor(edges)
+        elif t == QEvent.MouseButtonPress:
+            # Start native resize if pressed on hit test zone
+            if isinstance(ev, QMouseEvent) and ev.button() == Qt.LeftButton:
+                edges = self._edges_at(self._w.mapFromGlobal(QCursor.pos()))
+                if edges:
+                    wh.startSystemResize(edges)
+                    return True
+        elif t == QEvent.Leave:
+            self._w.unsetCursor()
+        return False
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Native frame, no caption — custom header (PySide6, Win11)")
         self.setWindowIcon(QIcon.fromTheme("system-search") or QIcon())
 
-        # Keep native frame & buttons, but we’ll strip the caption via Win32
-        self.setWindowFlags(
-            Qt.Window
-            | Qt.CustomizeWindowHint
-            | Qt.WindowSystemMenuHint
-            | Qt.WindowMinimizeButtonHint
-            | Qt.WindowMaximizeButtonHint
-            | Qt.WindowCloseButtonHint
-        )
+        # Windows: keep native frame & buttons, strip caption via Win32
+        # Linux/Wayland: request frameless window to avoid server-side title bar
+        if IS_WIN:
+            self.setWindowFlags(
+                Qt.Window
+                | Qt.CustomizeWindowHint
+                | Qt.WindowSystemMenuHint
+                | Qt.WindowMinimizeButtonHint
+                | Qt.WindowMaximizeButtonHint
+                | Qt.WindowCloseButtonHint
+            )
+        else:
+            # Frameless ensures no system header on Wayland/Ubuntu
+            self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
 
         container = QWidget()
+        container.setObjectName("Root")
         v = QVBoxLayout(container)
-        v.setContentsMargins(0, 0, 0, 0)
+        if IS_WIN:
+            v.setContentsMargins(0, 0, 0, 0)
+        else:
+            v.setContentsMargins(1, 1, 1, 1)
         v.setSpacing(0)
         v.addWidget(Header(self))
         body = QFrame(); body.setFrameShape(QFrame.StyledPanel)
         v.addWidget(body, 1)
         self.setCentralWidget(container)
+        if not IS_WIN:
+            # Thin visual border to mimic native frame on Wayland
+            self.setStyleSheet("#Root { border: 1px solid palette(mid); }")
+            # Enable native resize via Qt 6 startSystemResize + dynamic cursors
+            self._resize_helper = ResizeHelper(self, margin=6)
         self.statusBar().showMessage("Ready")
 
     def showEvent(self, ev):
