@@ -21,6 +21,7 @@ from wavescout.design_tree_view import DesignTreeView
 from wavescout.config import RENDERING
 from wavescout.theme import theme_manager, ThemeName, apply_saved_theme
 from wavescout.data_model import WaveformSession, SignalNode
+from wavescout.settings_manager import SettingsManager
 import qdarkstyle
 
 
@@ -368,12 +369,14 @@ class WaveScoutMainWindow(QMainWindow):
         # Initialize thread pool and progress dialog
         self.thread_pool = QThreadPool()
         self.progress_dialog = None
-        
-        # Initialize settings
-        self.settings = QSettings("WaveScout", "Scout")
+
+        # Initialize settings manager
+        self.settings_manager = SettingsManager()
+        # Keep backward compatibility reference to QSettings
+        self.settings = self.settings_manager.get_settings()
         
         # Store current UI scale
-        self.current_ui_scale = self.settings.value("ui_scale", 1.0, type=float)
+        self.current_ui_scale = self.settings_manager.get_ui_scale()
         
         # Apply saved theme
         apply_saved_theme(self.settings)
@@ -385,7 +388,7 @@ class WaveScoutMainWindow(QMainWindow):
         self.current_wave_file: str | None = None
         
         # Initialize FST backend preference (default to pywellen)
-        self.fst_backend_preference = self.settings.value("fst_backend", "pywellen", type=str)
+        self.fst_backend_preference = self.settings_manager.get_fst_backend()
         if self.fst_backend_preference not in ["pywellen", "pylibfst"]:
             self.fst_backend_preference = "pywellen"
         
@@ -470,11 +473,11 @@ class WaveScoutMainWindow(QMainWindow):
         self.main_layout.addWidget(self.vertical_splitter)
         
         # Load value tooltip preference
-        value_tooltips_enabled = self.settings.value("view/value_tooltips_enabled", False, type=bool)
+        value_tooltips_enabled = self.settings_manager.get_value_tooltips_enabled()
         self.wave_widget.set_value_tooltips_enabled(value_tooltips_enabled)
         
         # Load highlight selected preference
-        highlight_selected_enabled = self.settings.value("view/highlight_selected", False, type=bool)
+        highlight_selected_enabled = self.settings_manager.get_highlight_selected()
         self.wave_widget.set_highlight_selected(highlight_selected_enabled)
         
         # Connect navigation signal from signal names view to design tree view
@@ -571,7 +574,7 @@ class WaveScoutMainWindow(QMainWindow):
         self.value_tooltip_action = QAction("Value Tooltip at Cursor", self)
         self.value_tooltip_action.setCheckable(True)
         self.value_tooltip_action.setStatusTip("Show signal values as tooltips at cursor position")
-        value_tooltips_enabled = self.settings.value("view/value_tooltips_enabled", False, type=bool)
+        value_tooltips_enabled = self.settings_manager.get_value_tooltips_enabled()
         self.value_tooltip_action.setChecked(value_tooltips_enabled)
         self.value_tooltip_action.triggered.connect(self._toggle_value_tooltips)
         
@@ -579,7 +582,7 @@ class WaveScoutMainWindow(QMainWindow):
         self.highlight_selected_action = QAction("Highlight Selected", self)
         self.highlight_selected_action.setCheckable(True)
         self.highlight_selected_action.setStatusTip("Highlight selected signals in the waveform canvas")
-        highlight_selected_enabled = self.settings.value("view/highlight_selected", False, type=bool)
+        highlight_selected_enabled = self.settings_manager.get_highlight_selected()
         self.highlight_selected_action.setChecked(highlight_selected_enabled)
         self.highlight_selected_action.triggered.connect(self._toggle_highlight_selected)
         
@@ -732,7 +735,7 @@ class WaveScoutMainWindow(QMainWindow):
         self.style_action_group.setExclusive(True)
         
         # Track current style (default or qdarkstyle)
-        self.current_style_type = self.settings.value("style_type", "default", type=str)
+        self.current_style_type = self.settings_manager.get_style_type()
         
         # Add default Qt styles
         available_styles = QStyleFactory.keys()
@@ -1367,7 +1370,7 @@ class WaveScoutMainWindow(QMainWindow):
             return
             
         self.fst_backend_preference = backend
-        self.settings.setValue("fst_backend", backend)
+        self.settings_manager.set_fst_backend(backend)
         
         # Update menu checkmarks
         if backend == "pywellen":
@@ -1405,7 +1408,7 @@ class WaveScoutMainWindow(QMainWindow):
     def _set_ui_scale(self, scale: float):
         """Set the UI scaling factor."""
         # Save the scale preference
-        self.settings.setValue("ui_scale", scale)
+        self.settings_manager.set_ui_scale(scale)
         
         # Show message
         self.statusBar().showMessage(f"UI Scale: {int(scale * 100)}%", 2000)
@@ -1452,7 +1455,7 @@ class WaveScoutMainWindow(QMainWindow):
         self.wave_widget.set_value_tooltips_enabled(checked)
         
         # Save the preference
-        self.settings.setValue("view/value_tooltips_enabled", checked)
+        self.settings_manager.set_value_tooltips_enabled(checked)
         
         # Update status bar
         status = "enabled" if checked else "disabled"
@@ -1464,7 +1467,7 @@ class WaveScoutMainWindow(QMainWindow):
         self.wave_widget.set_highlight_selected(checked)
         
         # Save the preference
-        self.settings.setValue("view/highlight_selected", checked)
+        self.settings_manager.set_highlight_selected(checked)
         
         # Update status bar
         status = "enabled" if checked else "disabled"
@@ -1547,8 +1550,7 @@ class WaveScoutMainWindow(QMainWindow):
         app.setStyle(style)
         
         # Persist user choice
-        self.settings.setValue("ui_style", style_name)
-        self.settings.setValue("style_type", "default")
+        self.settings_manager.set_ui_style(style_name)
         self.current_style_type = "default"
         
         # Feedback to user
@@ -1574,7 +1576,7 @@ class WaveScoutMainWindow(QMainWindow):
             app.setStyleSheet(stylesheet)
             
             # Persist user choice
-            self.settings.setValue("style_type", style_type)
+            self.settings_manager.set_style_type(style_type)
             self.current_style_type = style_type
             
             # Feedback to user
@@ -1584,7 +1586,7 @@ class WaveScoutMainWindow(QMainWindow):
             show_warning(self, "Style Error", f"Failed to apply QDarkStyle: {str(e)}")
             # Fall back to default style
             app.setStyleSheet("")
-            self.settings.setValue("style_type", "default")
+            self.settings_manager.set_style_type("default")
             self.current_style_type = "default"
         # Optionally refresh icons to the new style's standard icons
         new_style = self.style()
@@ -1619,7 +1621,7 @@ class WaveScoutMainWindow(QMainWindow):
             # Restore default size or saved size
             sizes = self.horizontal_splitter.sizes()
             if len(sizes) >= 3:
-                left_width = self.settings.value("panels/left_width", 420, type=int)
+                left_width = self.settings_manager.get_panel_size("left_width")
                 # Reduce center panel to make room
                 if sizes[1] > left_width:
                     sizes[1] -= left_width
@@ -1657,7 +1659,7 @@ class WaveScoutMainWindow(QMainWindow):
             # Restore default size or saved size
             sizes = self.horizontal_splitter.sizes()
             if len(sizes) >= 3:
-                right_width = self.settings.value("panels/right_width", 250, type=int)
+                right_width = self.settings_manager.get_panel_size("right_width")
                 # Reduce center panel to make room
                 if sizes[1] > right_width:
                     sizes[1] -= right_width
@@ -1695,7 +1697,7 @@ class WaveScoutMainWindow(QMainWindow):
             # Restore default size or saved size
             sizes = self.vertical_splitter.sizes()
             if len(sizes) >= 2:
-                bottom_height = self.settings.value("panels/bottom_height", 200, type=int)
+                bottom_height = self.settings_manager.get_panel_size("bottom_height")
                 # Reduce top area to make room
                 if sizes[0] > bottom_height:
                     sizes[0] -= bottom_height
@@ -1714,38 +1716,38 @@ class WaveScoutMainWindow(QMainWindow):
     def _save_panel_states(self):
         """Save panel visibility and sizes to settings."""
         # Save visibility states
-        self.settings.setValue("panels/left_visible", self.left_panel.isVisible())
-        self.settings.setValue("panels/right_visible", self.right_panel.isVisible())
-        self.settings.setValue("panels/bottom_visible", self.bottom_panel.isVisible())
+        self.settings_manager.set_panel_visible("left", self.left_panel.isVisible())
+        self.settings_manager.set_panel_visible("right", self.right_panel.isVisible())
+        self.settings_manager.set_panel_visible("bottom", self.bottom_panel.isVisible())
         
         # Save sizes
         h_sizes = self.horizontal_splitter.sizes()
         if len(h_sizes) >= 3:
             if h_sizes[0] > 0:
-                self.settings.setValue("panels/left_width", h_sizes[0])
+                self.settings_manager.set_panel_size("left_width", h_sizes[0])
             if h_sizes[2] > 0:
-                self.settings.setValue("panels/right_width", h_sizes[2])
+                self.settings_manager.set_panel_size("right_width", h_sizes[2])
         
         v_sizes = self.vertical_splitter.sizes()
         if len(v_sizes) >= 2 and v_sizes[1] > 0:
-            self.settings.setValue("panels/bottom_height", v_sizes[1])
+            self.settings_manager.set_panel_size("bottom_height", v_sizes[1])
         
         # Save full splitter states for exact restoration
-        self.settings.setValue("panels/horizontal_sizes", h_sizes)
-        self.settings.setValue("panels/vertical_sizes", v_sizes)
+        self.settings_manager.set_splitter_sizes("horizontal", h_sizes)
+        self.settings_manager.set_splitter_sizes("vertical", v_sizes)
     
     def _restore_panel_states(self):
         """Restore panel visibility and sizes from settings."""
         # Check if we have saved panel settings
-        has_saved_settings = self.settings.contains("panels/left_visible")
+        has_saved_settings = self.settings_manager.has_panel_settings()
         
         # Get visibility states with defaults (True if no saved settings)
-        left_visible = self.settings.value("panels/left_visible", True, type=bool)
-        right_visible = self.settings.value("panels/right_visible", True, type=bool)
-        bottom_visible = self.settings.value("panels/bottom_visible", True, type=bool)
+        left_visible = self.settings_manager.get_panel_visible("left")
+        right_visible = self.settings_manager.get_panel_visible("right")
+        bottom_visible = self.settings_manager.get_panel_visible("bottom")
         
         # Restore splitter sizes if available, or adjust defaults based on visibility
-        h_sizes = self.settings.value("panels/horizontal_sizes", type=list)
+        h_sizes = self.settings_manager.get_splitter_sizes("horizontal")
         if h_sizes and len(h_sizes) == 3:
             # Convert to integers (QSettings may store as strings)
             h_sizes = [int(s) if isinstance(s, str) else s for s in h_sizes]
@@ -1753,7 +1755,7 @@ class WaveScoutMainWindow(QMainWindow):
             # Use current sizes as base
             h_sizes = self.horizontal_splitter.sizes()
         
-        v_sizes = self.settings.value("panels/vertical_sizes", type=list)
+        v_sizes = self.settings_manager.get_splitter_sizes("vertical")
         if v_sizes and len(v_sizes) == 2:
             # Convert to integers (QSettings may store as strings)
             v_sizes = [int(s) if isinstance(s, str) else s for s in v_sizes]
@@ -1811,8 +1813,9 @@ def main():
     args = parser.parse_args()
     
     # Load saved UI scale and apply it before creating QApplication
-    settings = QSettings("WaveScout", "Scout")
-    saved_scale = settings.value("ui_scale", 1.0, type=float)
+    # We need to use SettingsManager here before QApplication exists
+    settings_manager = SettingsManager()
+    saved_scale = settings_manager.get_ui_scale()
     
     # Set the QT_SCALE_FACTOR environment variable
     if saved_scale != 1.0:
@@ -1824,7 +1827,7 @@ def main():
     app = QApplication(sys.argv)
     
     # Apply saved UI style if available
-    style_type = settings.value("style_type", "default", type=str)
+    style_type = settings_manager.get_style_type()
     
     if style_type == "qdarkstyle_dark":
         # Apply QDarkStyle dark theme
@@ -1842,7 +1845,7 @@ def main():
             pass
     else:
         # Apply saved Qt style
-        saved_style = settings.value("ui_style", "", type=str)
+        saved_style = settings_manager.get_ui_style()
         if saved_style:
             try:
                 if saved_style in QStyleFactory.keys():

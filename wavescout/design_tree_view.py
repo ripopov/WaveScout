@@ -13,12 +13,13 @@ from PySide6.QtWidgets import (
     QLabel, QStackedWidget, QSplitter, QLineEdit, QTableView,
     QHeaderView, QProgressDialog, QApplication, QAbstractItemView
 )
-from PySide6.QtCore import Qt, Signal, QSettings, QModelIndex, QSortFilterProxyModel, QEvent, QObject
+from PySide6.QtCore import Qt, Signal, QModelIndex, QSortFilterProxyModel, QEvent, QObject
 from PySide6.QtGui import QKeyEvent
 from .backend_types import WVar
 
 from .design_tree_model import DesignTreeModel, DesignTreeNode
-from .data_model import SignalNode, RenderType, DisplayFormat, SignalHandle
+from .data_model import SignalNode, SignalHandle, RenderType, DisplayFormat
+from .settings_manager import SettingsManager
 from .scope_tree_model import ScopeTreeModel
 from .vars_view import VarsView
 
@@ -50,14 +51,14 @@ class DesignTreeView(QWidget):
         self.vars_view: Optional[VarsView] = None
         self.current_mode = DesignTreeViewMode.UNIFIED
         
-        # Settings
-        self.settings = QSettings("WaveScout", "Scout")
+        # Settings manager
+        self.settings_manager = SettingsManager()
         
         # Setup UI
         self._setup_ui()
         
         # Load saved mode
-        saved_mode = self.settings.value("design_tree_view_mode", "unified")
+        saved_mode = self.settings_manager.get_design_tree_mode()
         self.set_mode(DesignTreeViewMode(saved_mode))
     
     def _setup_ui(self) -> None:
@@ -148,7 +149,7 @@ class DesignTreeView(QWidget):
             self._update_split_mode_models()
         
         # Save preference
-        self.settings.setValue("design_tree_view_mode", mode.value)
+        self.settings_manager.set_design_tree_mode(mode.value)
     
     def _on_mode_toggled(self, checked: bool) -> None:
         """Handle mode toggle button click"""

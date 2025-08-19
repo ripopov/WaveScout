@@ -2,7 +2,7 @@
 
 import pytest
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt, QSettings, QModelIndex
+from PySide6.QtCore import Qt, QModelIndex
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtTest import QTest
 from scout import WaveScoutMainWindow
@@ -94,15 +94,16 @@ class TestValueTooltips:
         assert not canvas._value_tooltips_enabled
     
     def test_settings_persistence(self, main_window):
-        """Test that tooltip setting is saved to QSettings."""
-        settings = QSettings("WaveScout", "Scout")
+        """Test that tooltip setting is saved to SettingsManager."""
+        from wavescout.settings_manager import SettingsManager
+        settings_manager = SettingsManager()
         
         # Enable tooltips
         main_window.value_tooltip_action.setChecked(True)
         main_window._toggle_value_tooltips(True)
         
         # Check setting was saved
-        saved_value = settings.value("view/value_tooltips_enabled", False, type=bool)
+        saved_value = settings_manager.get_value_tooltips_enabled()
         assert saved_value == True
         
         # Disable tooltips
@@ -110,7 +111,7 @@ class TestValueTooltips:
         main_window._toggle_value_tooltips(False)
         
         # Check setting was updated
-        saved_value = settings.value("view/value_tooltips_enabled", False, type=bool)
+        saved_value = settings_manager.get_value_tooltips_enabled()
         assert saved_value == False
     
     def test_v_key_force_enable(self, main_window):
