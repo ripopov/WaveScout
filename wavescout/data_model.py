@@ -118,6 +118,45 @@ class SignalNode:
         """Generate a unique instance ID."""
         cls._id_counter += 1
         return cls._id_counter
+    
+    def deep_copy(self) -> "SignalNode":
+        """Create a deep copy of this node with new instance IDs.
+        
+        Recursively copies children for groups, generates new instance_ids,
+        and clears parent references (to be set by insertion logic).
+        """
+        # Create a new DisplayFormat copy
+        format_copy = DisplayFormat(
+            render_type=self.format.render_type,
+            data_format=self.format.data_format,
+            color=self.format.color,
+            analog_scaling_mode=self.format.analog_scaling_mode
+        )
+        
+        # Create the new node with a new instance ID
+        new_node = SignalNode(
+            name=self.name,
+            handle=self.handle,
+            format=format_copy,
+            nickname=self.nickname,
+            children=[],  # Will be filled below
+            parent=None,  # Parent will be set by insertion logic
+            is_group=self.is_group,
+            group_render_mode=self.group_render_mode,
+            is_expanded=self.is_expanded,
+            height_scaling=self.height_scaling,
+            is_multi_bit=self.is_multi_bit,
+            instance_id=self._generate_id()  # Generate new ID
+        )
+        
+        # Recursively copy children for groups
+        if self.children:
+            for child in self.children:
+                child_copy = child.deep_copy()
+                child_copy.parent = new_node
+                new_node.children.append(child_copy)
+        
+        return new_node
 
 class TimeUnit(Enum):
     ZEPTOSECONDS = "zs"  # 10^-21 seconds

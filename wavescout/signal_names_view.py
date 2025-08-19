@@ -1,13 +1,15 @@
 """Signal names tree view for the WaveScout widget."""
 
-from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate, QWidget, QStyleOptionViewItem, QInputDialog, QColorDialog
-from PySide6.QtCore import Qt, Signal, QModelIndex, QAbstractItemModel, QPoint, QSize
-from PySide6.QtGui import QAction, QActionGroup, QKeyEvent, QColor, QKeySequence
-from typing import List, Optional, Callable, Union, TYPE_CHECKING
+from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate, QWidget, QStyleOptionViewItem, QInputDialog, QColorDialog, QApplication
+from PySide6.QtCore import Qt, Signal, QModelIndex, QAbstractItemModel, QPoint, QSize, QMimeData
+from PySide6.QtGui import QAction, QActionGroup, QKeyEvent, QColor, QKeySequence, QClipboard
+from typing import List, Optional, Callable, Union, TYPE_CHECKING, Dict, Any
 from PySide6.QtCore import QPersistentModelIndex
+import yaml
 from .data_model import SignalNode, RenderType, AnalogScalingMode, DataFormat, GroupRenderMode
 from .config import RENDERING, UI
 from .clock_utils import is_valid_clock_signal
+from .persistence import _serialize_node, _deserialize_node
 
 if TYPE_CHECKING:
     from .waveform_controller import WaveformController
@@ -75,6 +77,9 @@ class BaseColumnView(QTreeView):
 
 class SignalNamesView(BaseColumnView):
     """Tree view for signal names (column 0)."""
+    
+    # Constants
+    SIGNAL_NODE_MIME_TYPE = "application/x-wavescout-signalnodes"
     
     # Signals
     navigate_to_scope_requested = Signal(str, str)  # Emits (scope_path, signal_name)
@@ -507,8 +512,16 @@ class SignalNamesView(BaseColumnView):
     
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle key press events."""
+        # Check for Ctrl+C (Copy)
+        if event.key() == Qt.Key.Key_C and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            self._copy_selected_nodes()
+            event.accept()
+        # Check for Ctrl+V (Paste)
+        elif event.key() == Qt.Key.Key_V and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            self._paste_nodes()
+            event.accept()
         # Check for 'R' or 'r' key
-        if event.key() == Qt.Key.Key_R and not event.modifiers():
+        elif event.key() == Qt.Key.Key_R and not event.modifiers():
             # Trigger rename for selected signal
             self._rename_selected_signal()
             event.accept()
@@ -520,3 +533,153 @@ class SignalNamesView(BaseColumnView):
         else:
             # Pass to parent for default handling
             super().keyPressEvent(event)
+    
+    def _copy_selected_nodes(self) -> None:
+        """Copy selected nodes to clipboard in both internal and plain text formats."""
+        nodes = self._get_all_selected_nodes()
+        if not nodes:
+            return
+        
+        # Serialize nodes for internal format
+        yaml_str = self._serialize_nodes(nodes)
+        
+        # Create plain text format
+        plain_text = self._nodes_to_plain_text(nodes)
+        
+        # Set both formats on clipboard
+        mime_data = QMimeData()
+        mime_data.setData(self.SIGNAL_NODE_MIME_TYPE, yaml_str.encode('utf-8'))
+        mime_data.setText(plain_text)
+        
+        clipboard = QApplication.clipboard()
+        clipboard.setMimeData(mime_data)
+        
+        # Show status message
+        count = len(nodes)
+        self._controller.event_bus.publish(
+            type('StatusMessage', (), {'message': f"Copied {count} signal{'s' if count != 1 else ''}"})()
+        )
+    
+    def _paste_nodes(self) -> None:
+        """Paste nodes from clipboard at the insertion point."""
+        clipboard = QApplication.clipboard()
+        mime_data = clipboard.mimeData()
+        
+        # Check for internal format first
+        if mime_data.hasFormat(self.SIGNAL_NODE_MIME_TYPE):
+            data = mime_data.data(self.SIGNAL_NODE_MIME_TYPE).data()
+            try:
+                # Ensure we have bytes for decoding
+                if isinstance(data, bytes):
+                    yaml_str = data.decode('utf-8')
+                else:
+                    yaml_str = bytes(data).decode('utf-8')
+                nodes = self._deserialize_nodes(yaml_str)
+                
+                if nodes:
+                    # Validate nodes against current WaveformDB
+                    validated_nodes = self._validate_nodes(nodes)
+                    
+                    if validated_nodes:
+                        # Get insertion point from current selection
+                        selected = self._get_all_selected_nodes()
+                        after_id = selected[0].instance_id if selected else None
+                        
+                        # Insert nodes using controller
+                        self._controller.insert_nodes(validated_nodes, after_id)
+                        
+                        # Show status message
+                        count = len(validated_nodes)
+                        self._controller.event_bus.publish(
+                            type('StatusMessage', (), {'message': f"Pasted {count} signal{'s' if count != 1 else ''}"})()
+                        )
+                        
+                        # Scroll to first pasted node if possible
+                        if validated_nodes and self.model():
+                            first_node = validated_nodes[0]
+                            index = self._find_node_index(first_node)
+                            if index.isValid():
+                                self.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtCenter)
+            except Exception:
+                # Silently ignore invalid clipboard data
+                pass
+    
+    def _serialize_nodes(self, nodes: List[SignalNode]) -> str:
+        """Serialize a list of SignalNode objects to YAML string."""
+        data = {
+            'version': 1,
+            'nodes': [_serialize_node(node) for node in nodes]
+        }
+        return yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
+    
+    def _deserialize_nodes(self, yaml_str: str) -> List[SignalNode]:
+        """Deserialize YAML string to a list of SignalNode objects with new instance IDs."""
+        try:
+            data = yaml.safe_load(yaml_str)
+            if not isinstance(data, dict) or 'nodes' not in data:
+                return []
+            
+            nodes = []
+            for node_data in data.get('nodes', []):
+                # Deserialize the node
+                node = _deserialize_node(node_data)
+                # Create a deep copy to ensure new instance IDs
+                node_copy = node.deep_copy()
+                nodes.append(node_copy)
+            
+            return nodes
+        except Exception:
+            return []
+    
+    def _nodes_to_plain_text(self, nodes: List[SignalNode]) -> str:
+        """Convert nodes to plain text format for external paste."""
+        lines = []
+        
+        def add_node(node: SignalNode, indent: int = 0) -> None:
+            # Use nickname if available, otherwise name
+            name = node.nickname if node.nickname else node.name
+            lines.append('  ' * indent + name)
+            
+            # Add children for groups
+            if node.is_group and node.children:
+                for child in node.children:
+                    add_node(child, indent + 1)
+        
+        for node in nodes:
+            add_node(node)
+        
+        return '\n'.join(lines)
+    
+    def _validate_nodes(self, nodes: List[SignalNode]) -> List[SignalNode]:
+        """Validate nodes against current WaveformDB, filtering out invalid handles."""
+        if not self._controller.session or not self._controller.session.waveform_db:
+            # If no waveform loaded, keep groups but remove signals
+            validated = []
+            for node in nodes:
+                if node.is_group:
+                    # Keep group but validate its children
+                    node.children = self._validate_nodes(node.children)
+                    validated.append(node)
+            return validated
+        
+        db = self._controller.session.waveform_db
+        validated = []
+        
+        for node in nodes:
+            if node.is_group:
+                # Always keep groups, but validate their children
+                node.children = self._validate_nodes(node.children)
+                validated.append(node)
+            elif node.handle is not None:
+                # Check if handle exists in current DB
+                try:
+                    # Try to get the variable to validate the handle
+                    var = db.var_from_handle(node.handle)
+                    if var:
+                        validated.append(node)
+                except Exception:
+                    # Skip nodes with invalid handles
+                    pass
+            # Note: Nodes without handles are skipped
+        
+        return validated

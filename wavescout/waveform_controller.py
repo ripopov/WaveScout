@@ -671,6 +671,58 @@ class WaveformController:
         ))
         self._emit("session_changed")
     
+    def insert_nodes(self, nodes: List[SignalNode], after_id: Optional[SignalNodeID] = None) -> None:
+        """Insert nodes after specified node ID.
+        
+        Args:
+            nodes: List of SignalNode objects to insert (should have new instance IDs)
+            after_id: ID of node to insert after. If None, append to end of root_nodes
+        """
+        if not self.session or not nodes:
+            return
+        
+        # Find insertion point
+        if after_id is not None:
+            after_node = self._find_node_by_id(after_id)
+            if not after_node:
+                # If node not found, append to end
+                after_id = None
+        else:
+            after_node = None
+        
+        # Determine parent and insertion index
+        if after_node:
+            parent = after_node.parent
+            if parent:
+                # Insert into parent's children after the target node
+                insert_index = parent.children.index(after_node) + 1
+                for i, node in enumerate(nodes):
+                    node.parent = parent
+                    parent.children.insert(insert_index + i, node)
+            else:
+                # Insert into root_nodes after the target node
+                insert_index = self.session.root_nodes.index(after_node) + 1
+                for i, node in enumerate(nodes):
+                    node.parent = None
+                    self.session.root_nodes.insert(insert_index + i, node)
+        else:
+            # No insertion point specified, append to end of root_nodes
+            for node in nodes:
+                node.parent = None
+                self.session.root_nodes.append(node)
+        
+        # Update selection to newly inserted nodes
+        new_ids = [node.instance_id for node in nodes]
+        self.set_selection_by_ids(new_ids)
+        
+        # Emit events
+        self.event_bus.publish(StructureChangedEvent(
+            change_kind='insert',
+            affected_ids=new_ids,
+            parent_id=after_node.parent.instance_id if after_node and after_node.parent else None
+        ))
+        self._emit("session_changed")
+    
     def ungroup_nodes(self, group_ids: Iterable[SignalNodeID]) -> None:
         """Ungroup the specified groups, moving their children to parent level."""
         if not self.session:
