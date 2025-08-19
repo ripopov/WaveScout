@@ -565,6 +565,10 @@ class SignalNamesView(BaseColumnView):
         clipboard = QApplication.clipboard()
         mime_data = clipboard.mimeData()
         
+        # Check if clipboard has any data
+        if not mime_data:
+            return
+        
         # Check for internal format first
         if mime_data.hasFormat(self.SIGNAL_NODE_MIME_TYPE):
             data = mime_data.data(self.SIGNAL_NODE_MIME_TYPE).data()

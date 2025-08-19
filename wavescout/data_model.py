@@ -112,6 +112,34 @@ class SignalNode:
 
     # Unique identifier for this SignalNode instance
     instance_id: SignalNodeID = field(default_factory=lambda: SignalNode._generate_id())
+    
+    def __eq__(self, other: object) -> bool:
+        """Custom equality comparison that avoids circular reference through parent field.
+        
+        We compare all fields except 'parent' to prevent infinite recursion when
+        comparing nodes in a tree structure. The parent field is excluded because:
+        1. It creates circular references (parent->children->parent)
+        2. Two nodes are equal if their content is the same, regardless of position in tree
+        3. The instance_id already provides unique identification
+        """
+        if not isinstance(other, SignalNode):
+            return False
+        
+        # Compare all fields except parent to avoid circular reference
+        return (
+            self.name == other.name and
+            self.handle == other.handle and
+            self.format == other.format and
+            self.nickname == other.nickname and
+            self.children == other.children and  # This is safe because children don't compare parents
+            # parent field explicitly excluded
+            self.is_group == other.is_group and
+            self.group_render_mode == other.group_render_mode and
+            self.is_expanded == other.is_expanded and
+            self.height_scaling == other.height_scaling and
+            self.is_multi_bit == other.is_multi_bit and
+            self.instance_id == other.instance_id
+        )
 
     @classmethod
     def _generate_id(cls) -> SignalNodeID:

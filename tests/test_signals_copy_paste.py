@@ -341,6 +341,326 @@ def test_copy_paste_with_groups(qtbot, tmp_path):
     print("✅ Group copy-paste test passed!")
 
 
+def test_copy_paste_nested_groups(qtbot, tmp_path):
+    """Test copying and pasting nested groups (groups within groups).
+    
+    This is a regression test for the recursion bug that occurred when
+    copying groups due to circular parent-child references.
+    """
+    
+    # Create main window
+    window = WaveScoutMainWindow(wave_file='test_inputs/apb_sim.vcd')
+    qtbot.addWidget(window)
+    
+    # Wait for file to load
+    max_wait = 5000
+    elapsed = 0
+    while elapsed < max_wait:
+        QTest.qWait(200)
+        elapsed += 200
+        if window.wave_widget.session is not None:
+            break
+    
+    assert window.wave_widget.session is not None, "Session should be loaded"
+    
+    # Add 6 signals
+    signals_to_add = get_signals_from_hierarchy(window, 6)
+    for signal in signals_to_add:
+        window._add_node_to_session(signal)
+    
+    QTest.qWait(100)
+    
+    session = window.wave_widget.session
+    controller = window.wave_widget.controller
+    names_view = window.wave_widget._names_view
+    
+    # Create first group from signals 0-1
+    group1_id = controller.create_group_from_nodes(
+        session.root_nodes[:2],
+        "Group 1"
+    )
+    QTest.qWait(100)
+    
+    # Create second group from signals 2-3 (now at positions 1-2)
+    group2_id = controller.create_group_from_nodes(
+        session.root_nodes[1:3],
+        "Group 2"
+    )
+    QTest.qWait(100)
+    
+    # Now create a parent group containing both groups
+    parent_group_id = controller.create_group_from_nodes(
+        session.root_nodes[:2],  # The two groups
+        "Parent Group"
+    )
+    QTest.qWait(100)
+    
+    # Should have 3 root nodes: Parent Group + 2 remaining signals
+    assert len(session.root_nodes) == 3, f"Should have 3 root nodes, got {len(session.root_nodes)}"
+    
+    # Verify nested structure
+    parent_group = session.root_nodes[0]
+    assert parent_group.is_group, "First node should be parent group"
+    assert len(parent_group.children) == 2, "Parent group should have 2 child groups"
+    assert parent_group.children[0].is_group, "First child should be a group"
+    assert parent_group.children[1].is_group, "Second child should be a group"
+    assert len(parent_group.children[0].children) == 2, "First child group should have 2 signals"
+    assert len(parent_group.children[1].children) == 2, "Second child group should have 2 signals"
+    
+    # Select and copy the nested parent group
+    model = names_view.model()
+    selection_model = names_view.selectionModel()
+    selection_model.clear()
+    
+    index = model.index(0, 0, QModelIndex())
+    selection_model.select(index, selection_model.SelectionFlag.Select | selection_model.SelectionFlag.Rows)
+    
+    # This would previously cause RecursionError due to circular references
+    names_view._copy_selected_nodes()
+    
+    # Verify clipboard has data
+    clipboard = QApplication.clipboard()
+    if clipboard:
+        mime_data = clipboard.mimeData()
+        assert mime_data.hasFormat(SignalNamesView.SIGNAL_NODE_MIME_TYPE), "Clipboard should have signal data"
+    
+    # Paste the nested group
+    selection_model.clear()
+    names_view._paste_nodes()
+    QTest.qWait(100)
+    
+    # Should now have 4 root nodes
+    assert len(session.root_nodes) == 4, f"Should have 4 root nodes after paste, got {len(session.root_nodes)}"
+    
+    # Verify the pasted nested structure
+    pasted_group = session.root_nodes[-1]
+    assert pasted_group.is_group, "Pasted node should be a group"
+    assert len(pasted_group.children) == 2, "Pasted parent should have 2 child groups"
+    assert pasted_group.children[0].is_group, "Pasted first child should be a group"
+    assert pasted_group.children[1].is_group, "Pasted second child should be a group"
+    assert len(pasted_group.children[0].children) == 2, "Pasted first child group should have 2 signals"
+    assert len(pasted_group.children[1].children) == 2, "Pasted second child group should have 2 signals"
+    
+    # Verify all instance IDs are unique
+    all_ids = set()
+    
+    def collect_ids(node):
+        all_ids.add(node.instance_id)
+        for child in node.children:
+            collect_ids(child)
+    
+    for node in session.root_nodes:
+        collect_ids(node)
+    
+    # Count total nodes: 2 remaining signals + 2*(1 parent + 2 groups + 4 signals) = 2 + 2*7 = 16
+    assert len(all_ids) == 16, f"Should have 16 unique IDs, got {len(all_ids)}"
+    
+    # Verify parent references are correct
+    def verify_parent_refs(node, expected_parent=None):
+        assert node.parent == expected_parent, f"Node {node.name} parent reference incorrect"
+        for child in node.children:
+            verify_parent_refs(child, node)
+    
+    for root_node in session.root_nodes:
+        verify_parent_refs(root_node, None)
+    
+    print("✅ Nested groups copy-paste test passed!")
+    print("  • Created nested group structure (groups within groups)")
+    print("  • Successfully copied without RecursionError")
+    print("  • Pasted correctly with all structure preserved")
+    print("  • All instance IDs are unique")
+    print("  • Parent references are correct")
+
+
+def test_copy_paste_mixed_selection(qtbot, tmp_path):
+    """Test copying and pasting a mixed selection of signals and groups."""
+    
+    # Create main window
+    window = WaveScoutMainWindow(wave_file='test_inputs/apb_sim.vcd')
+    qtbot.addWidget(window)
+    
+    # Wait for file to load
+    max_wait = 5000
+    elapsed = 0
+    while elapsed < max_wait:
+        QTest.qWait(200)
+        elapsed += 200
+        if window.wave_widget.session is not None:
+            break
+    
+    assert window.wave_widget.session is not None, "Session should be loaded"
+    
+    # Add 5 signals
+    signals_to_add = get_signals_from_hierarchy(window, 5)
+    for signal in signals_to_add:
+        window._add_node_to_session(signal)
+    
+    QTest.qWait(100)
+    
+    session = window.wave_widget.session
+    controller = window.wave_widget.controller
+    names_view = window.wave_widget._names_view
+    
+    # Create a group from signals 1-2
+    group_id = controller.create_group_from_nodes(
+        session.root_nodes[1:3],
+        "Mixed Group"
+    )
+    QTest.qWait(100)
+    
+    # Now we have: signal0, group(signal1, signal2), signal3, signal4
+    assert len(session.root_nodes) == 4, f"Should have 4 root nodes, got {len(session.root_nodes)}"
+    
+    # Select mixed: first signal + the group + last signal
+    model = names_view.model()
+    selection_model = names_view.selectionModel()
+    selection_model.clear()
+    
+    # Select signal at index 0
+    index0 = model.index(0, 0, QModelIndex())
+    selection_model.select(index0, selection_model.SelectionFlag.Select | selection_model.SelectionFlag.Rows)
+    
+    # Select group at index 1
+    index1 = model.index(1, 0, QModelIndex())
+    selection_model.select(index1, selection_model.SelectionFlag.Select | selection_model.SelectionFlag.Rows)
+    
+    # Select signal at index 3
+    index3 = model.index(3, 0, QModelIndex())
+    selection_model.select(index3, selection_model.SelectionFlag.Select | selection_model.SelectionFlag.Rows)
+    
+    # Verify selection
+    selected_nodes = names_view._get_all_selected_nodes()
+    assert len(selected_nodes) == 3, f"Should have 3 selected nodes, got {len(selected_nodes)}"
+    
+    # Copy the mixed selection
+    names_view._copy_selected_nodes()
+    
+    # Paste at end
+    selection_model.clear()
+    names_view._paste_nodes()
+    QTest.qWait(100)
+    
+    # Should now have 7 root nodes (4 original + 3 pasted)
+    assert len(session.root_nodes) == 7, f"Should have 7 root nodes after paste, got {len(session.root_nodes)}"
+    
+    # Verify the pasted nodes
+    # Last 3 should be: signal (copy of first), group (copy), signal (copy of last)
+    assert not session.root_nodes[-3].is_group, "First pasted should be a signal"
+    assert session.root_nodes[-2].is_group, "Second pasted should be a group"
+    assert not session.root_nodes[-1].is_group, "Third pasted should be a signal"
+    
+    # Verify the pasted group has children
+    pasted_group = session.root_nodes[-2]
+    assert len(pasted_group.children) == 2, f"Pasted group should have 2 children, got {len(pasted_group.children)}"
+    
+    print("✅ Mixed selection copy-paste test passed!")
+    print("  • Selected mix of signals and groups")
+    print("  • Successfully copied mixed selection")
+    print("  • Pasted correctly with structure preserved")
+
+
+def test_copy_paste_recursion_regression(qtbot):
+    """Regression test to ensure the recursion bug doesn't return.
+    
+    This test specifically creates the conditions that caused the original bug:
+    - Deep nesting of groups
+    - Circular parent-child references
+    - Equality comparisons that would trigger infinite recursion
+    """
+    
+    from wavescout.data_model import SignalNode, DisplayFormat, RenderType
+    from wavescout.persistence import _serialize_node, _deserialize_node
+    import yaml
+    
+    # Create a deeply nested structure
+    root = SignalNode(name="ROOT", is_group=True)
+    
+    # Level 1
+    level1 = SignalNode(name="L1", is_group=True)
+    level1.parent = root
+    root.children.append(level1)
+    
+    # Level 2
+    level2 = SignalNode(name="L2", is_group=True)
+    level2.parent = level1
+    level1.children.append(level2)
+    
+    # Level 3
+    level3 = SignalNode(name="L3", is_group=True)
+    level3.parent = level2
+    level2.children.append(level3)
+    
+    # Add signals at each level
+    for i, parent in enumerate([root, level1, level2, level3]):
+        signal = SignalNode(
+            name=f"{parent.name}_signal",
+            handle=i,
+            format=DisplayFormat(render_type=RenderType.BOOL)
+        )
+        signal.parent = parent
+        parent.children.append(signal)
+    
+    # Test 1: Equality comparison (would previously cause RecursionError)
+    try:
+        result = (root == root)
+        assert result == True, "Self-equality should be True"
+        
+        # Compare different nodes
+        result2 = (level1 == level2)
+        assert result2 == False, "Different nodes should not be equal"
+        
+        # Compare with deep copy
+        copied = root.deep_copy()
+        result3 = (root == copied)
+        assert result3 == False, "Original and copy should have different instance_ids"
+        
+    except RecursionError:
+        pytest.fail("RecursionError occurred in equality comparison - regression detected!")
+    
+    # Test 2: Serialization (would fail with recursion)
+    try:
+        serialized = _serialize_node(root)
+        yaml_str = yaml.dump(serialized, default_flow_style=False)
+        assert len(yaml_str) > 0, "Serialization should produce output"
+    except RecursionError:
+        pytest.fail("RecursionError occurred in serialization - regression detected!")
+    
+    # Test 3: Deserialization
+    try:
+        deserialized_data = yaml.safe_load(yaml_str)
+        deserialized = _deserialize_node(deserialized_data)
+        assert deserialized.name == "ROOT", "Deserialized root should have correct name"
+        
+        # Verify structure
+        assert len(deserialized.children) == 2, "Root should have 2 children (L1 + signal)"
+        assert deserialized.children[0].name == "L1", "First child should be L1"
+        assert len(deserialized.children[0].children) == 2, "L1 should have 2 children"
+        
+    except RecursionError:
+        pytest.fail("RecursionError occurred in deserialization - regression detected!")
+    
+    # Test 4: Deep copy with circular references
+    try:
+        deep_copied = deserialized.deep_copy()
+        
+        # Verify parent references are set correctly
+        assert deep_copied.parent is None, "Root parent should be None"
+        assert deep_copied.children[0].parent == deep_copied, "L1 parent should be root"
+        
+        # Verify instance IDs are different
+        assert deep_copied.instance_id != deserialized.instance_id, "Instance IDs should differ"
+        
+    except RecursionError:
+        pytest.fail("RecursionError occurred in deep_copy - regression detected!")
+    
+    print("✅ Recursion regression test passed!")
+    print("  • Deep nested structures work correctly")
+    print("  • Equality comparisons don't cause recursion")
+    print("  • Serialization/deserialization works")
+    print("  • Deep copy maintains correct parent references")
+    print("  • No infinite recursion detected")
+
+
 if __name__ == "__main__":
     # Run tests directly (without pytest)
     import sys
@@ -358,9 +678,32 @@ if __name__ == "__main__":
     qtbot = FakeQtBot()
     
     try:
+        print("Running comprehensive copy-paste regression tests...\n")
+        print("=" * 60)
+        
         test_copy_paste_signals(qtbot, tmp_dir)
+        print("=" * 60)
+        
         test_copy_paste_with_groups(qtbot, tmp_dir)
-        print("\n✅ All tests completed successfully!")
+        print("=" * 60)
+        
+        test_copy_paste_nested_groups(qtbot, tmp_dir)
+        print("=" * 60)
+        
+        test_copy_paste_mixed_selection(qtbot, tmp_dir)
+        print("=" * 60)
+        
+        test_copy_paste_recursion_regression(qtbot)
+        print("=" * 60)
+        
+        print("\n✅ All comprehensive regression tests passed successfully!")
+        print("\nSummary of tests:")
+        print("  1. Basic signal copy-paste")
+        print("  2. Group copy-paste")
+        print("  3. Nested groups (groups within groups)")
+        print("  4. Mixed selection (signals + groups)")
+        print("  5. Recursion regression (deep nesting)")
+        
     finally:
         # Clean up temp directory
         import shutil
