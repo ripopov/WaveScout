@@ -9,7 +9,7 @@ from .backend_types import WVar, WHierarchy, WScope
 from .protocols import WaveformDBProtocol
 from .data_model import (
     WaveformSession, SignalNode, DisplayFormat, DataFormat, 
-    GroupRenderMode, RenderType, Viewport, ViewportConfig, Marker, SignalNameDisplayMode, 
+    GroupRenderMode, RenderType, Viewport, ViewportConfig, Marker, 
     AnalysisMode
 )
 from .waveform_db import WaveformDB
@@ -23,8 +23,6 @@ def _serialize_node(node: SignalNode) -> Dict[str, Any]:
         # Convert enum values to strings
         if 'data_format' in format_dict and isinstance(format_dict['data_format'], Enum):
             format_dict['data_format'] = format_dict['data_format'].value
-        if 'signal_name_mode' in format_dict and isinstance(format_dict['signal_name_mode'], Enum):
-            format_dict['signal_name_mode'] = format_dict['signal_name_mode'].value
         if 'render_type' in format_dict and isinstance(format_dict['render_type'], Enum):
             format_dict['render_type'] = format_dict['render_type'].value
         if 'analog_scaling_mode' in format_dict and isinstance(format_dict['analog_scaling_mode'], Enum):
@@ -98,8 +96,6 @@ def _deserialize_node(data: Dict[str, Any], parent: Optional[SignalNode] = None)
         # Convert string enum values back to enums
         if 'data_format' in format_data and isinstance(format_data['data_format'], str):
             format_data['data_format'] = DataFormat(format_data['data_format'])
-        if 'signal_name_mode' in format_data and isinstance(format_data['signal_name_mode'], str):
-            format_data['signal_name_mode'] = SignalNameDisplayMode(format_data['signal_name_mode'])
         if 'render_type' in format_data and isinstance(format_data['render_type'], str):
             format_data['render_type'] = RenderType(format_data['render_type'])
         if 'analog_scaling_mode' in format_data and isinstance(format_data['analog_scaling_mode'], str):

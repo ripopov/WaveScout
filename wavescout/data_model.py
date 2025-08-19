@@ -240,9 +240,6 @@ class Marker:
     label: str = ""
     color: str = "#FF0000"
 
-class SignalNameDisplayMode(Enum):
-    FULL_PATH = "full_path"           # Show full hierarchical path (e.g., "top.tb.axi_bfm.clk")
-    LAST_N_LEVELS = "last_n_levels"  # Show only last N levels (e.g., N=2: "axi_bfm.clk")
 
 @dataclass
 class AnalysisMode:
@@ -266,8 +263,6 @@ class WaveformSession:
     markers: List[Marker] = field(default_factory=list)
     cursor_time: Time = 0
     analysis_mode: AnalysisMode = field(default_factory=AnalysisMode)
-    signal_name_display_mode: SignalNameDisplayMode = SignalNameDisplayMode.LAST_N_LEVELS
-    signal_name_hierarchy_levels: int = 2  # For LAST_N_LEVELS mode
     selected_nodes: List[SignalNode] = field(default_factory=list)  # Currently selected nodes
     time_ruler_config: TimeRulerConfig = field(default_factory=TimeRulerConfig)  # Configuration for time ruler display
     timescale: Timescale = field(default_factory=lambda: Timescale(1, TimeUnit.PICOSECONDS))  # Timescale from the waveform file, default 1 ps if waveform not specifies timescale

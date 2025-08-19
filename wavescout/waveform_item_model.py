@@ -3,9 +3,10 @@
 from PySide6.QtCore import Qt, QModelIndex, QAbstractItemModel, QPersistentModelIndex, QObject, QMimeData, QByteArray
 from typing import overload, List, Optional, Union, Tuple, Any, Sequence, TYPE_CHECKING
 import json
-from .data_model import WaveformSession, SignalNode, SignalNameDisplayMode, RenderType
+from .data_model import WaveformSession, SignalNode, RenderType
 from .signal_sampling import parse_signal_value
 from .application.events import StructureChangedEvent, FormatChangedEvent
+from .settings_manager import SettingsManager
 
 if TYPE_CHECKING:
     from .waveform_controller import WaveformController
@@ -21,6 +22,15 @@ class WaveformItemModel(QAbstractItemModel):
         self._headers = ["Signal", "Value", "Waveform", "Analysis"]
         self._cleanup_done = False
         
+        # Get settings manager instance
+        self._settings_manager = SettingsManager()
+        
+        # Cache hierarchy levels for performance
+        self._cached_hierarchy_levels = self._settings_manager.get_hierarchy_levels()
+        
+        # Connect to hierarchy levels changed signal
+        self._settings_manager.hierarchy_levels_changed.connect(self._on_hierarchy_levels_changed)
+        
         # Subscribe to controller events
         self._controller.event_bus.subscribe(StructureChangedEvent, self._on_structure_changed)
         self._controller.event_bus.subscribe(FormatChangedEvent, self._on_format_changed)
@@ -33,6 +43,9 @@ class WaveformItemModel(QAbstractItemModel):
         if not self._cleanup_done:
             self._cleanup_done = True
             try:
+                # Disconnect settings manager signal
+                self._settings_manager.hierarchy_levels_changed.disconnect(self._on_hierarchy_levels_changed)
+                # Unsubscribe from controller events
                 self._controller.event_bus.unsubscribe(StructureChangedEvent, self._on_structure_changed)
                 self._controller.event_bus.unsubscribe(FormatChangedEvent, self._on_format_changed)
             except Exception:
@@ -160,17 +173,14 @@ class WaveformItemModel(QAbstractItemModel):
         if node.nickname:
             return node.nickname
         
-        mode = self._session.signal_name_display_mode
-        
-        if mode == SignalNameDisplayMode.FULL_PATH:
+        # Use cached hierarchy levels from settings (0 = show full path)
+        if self._cached_hierarchy_levels == 0:
             return node.name
-        elif mode == SignalNameDisplayMode.LAST_N_LEVELS:
+        else:
             # Split hierarchical name and take last N levels
             parts = node.name.split('.')
-            n = self._session.signal_name_hierarchy_levels
+            n = self._cached_hierarchy_levels
             return '.'.join(parts[-n:]) if len(parts) > n else node.name
-        
-        return node.name  # fallback
     
     def _value_at_cursor(self, node: SignalNode) -> str:
         # Query WaveformDB for signal value at cursor time and format it according to node.format.data_format
@@ -227,6 +237,48 @@ class WaveformItemModel(QAbstractItemModel):
                     if index.isValid():
                         # Emit dataChanged for all columns
                         self.dataChanged.emit(index, self.index(index.row(), 3, index.parent()))
+        except RuntimeError:
+            # Model already deleted, ignore
+            pass
+    
+    def _on_hierarchy_levels_changed(self, levels: int) -> None:
+        """Handle hierarchy levels setting change."""
+        # Check if model is still valid
+        if self._cleanup_done:
+            return
+        
+        # Update cached value
+        self._cached_hierarchy_levels = levels
+        
+        # Emit dataChanged for first column (signal names) of all nodes
+        try:
+            # Use layoutChanged to force complete refresh of names column
+            self.dataChanged.emit(
+                self.index(0, 0),
+                self.index(self.rowCount() - 1, 0)
+            )
+            
+            # Also update all child nodes recursively
+            def emit_for_children(parent_index: QModelIndex) -> None:
+                rows = self.rowCount(parent_index)
+                if rows > 0:
+                    # Emit for this level
+                    self.dataChanged.emit(
+                        self.index(0, 0, parent_index),
+                        self.index(rows - 1, 0, parent_index)
+                    )
+                    # Recurse for children
+                    for row in range(rows):
+                        child_index = self.index(row, 0, parent_index)
+                        if self.hasChildren(child_index):
+                            emit_for_children(child_index)
+            
+            # Start recursion from root
+            for row in range(self.rowCount()):
+                root_index = self.index(row, 0)
+                if self.hasChildren(root_index):
+                    emit_for_children(root_index)
+                    
         except RuntimeError:
             # Model already deleted, ignore
             pass

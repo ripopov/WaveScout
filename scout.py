@@ -8,7 +8,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional, List
 from PySide6.QtWidgets import (QApplication, QMainWindow, 
-                              QSplitter, QTreeView, QFileDialog,
+                              QSplitter, QTreeView, QFileDialog, QDialog,
                               QMessageBox, QProgressDialog, QAbstractItemView,
                               QToolBar, QStyle, QStyleFactory, QWidget, QHBoxLayout,
                               QVBoxLayout, QPushButton, QLabel, QFrame, QMenuBar,
@@ -583,6 +583,11 @@ class WaveScoutMainWindow(QMainWindow):
         self.highlight_selected_action.setChecked(highlight_selected_enabled)
         self.highlight_selected_action.triggered.connect(self._toggle_highlight_selected)
         
+        # Hierarchy levels action
+        self.hierarchy_levels_action = QAction("&Hier Name Levels...", self)
+        self.hierarchy_levels_action.setStatusTip("Configure hierarchical name display levels")
+        self.hierarchy_levels_action.triggered.connect(self._show_hierarchy_levels_dialog)
+        
         # Set icons for toolbar
         style = self.style()
         if style:
@@ -675,6 +680,8 @@ class WaveScoutMainWindow(QMainWindow):
         view_menu.addSeparator()
         view_menu.addAction(self.value_tooltip_action)
         view_menu.addAction(self.highlight_selected_action)
+        view_menu.addSeparator()
+        view_menu.addAction(self.hierarchy_levels_action)
         view_menu.addSeparator()
         
         # UI Scaling submenu
@@ -1462,6 +1469,22 @@ class WaveScoutMainWindow(QMainWindow):
         # Update status bar
         status = "enabled" if checked else "disabled"
         self.statusBar().showMessage(f"Highlight selected {status}", 2000)
+    
+    def _show_hierarchy_levels_dialog(self):
+        """Show the hierarchy levels configuration dialog."""
+        from wavescout.hierarchy_levels_dialog import HierarchyLevelsDialog
+        
+        dialog = HierarchyLevelsDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # The dialog handles saving the setting and emitting the signal
+            # Just show confirmation message
+            from wavescout.settings_manager import SettingsManager
+            settings_manager = SettingsManager()
+            levels = settings_manager.get_hierarchy_levels()
+            if levels == 0:
+                self.statusBar().showMessage("Showing full hierarchical names", 2000)
+            else:
+                self.statusBar().showMessage(f"Showing last {levels} hierarchy level(s)", 2000)
     
     def _on_theme_changed(self, color_scheme):
         """Handle theme change signal by repainting widgets."""

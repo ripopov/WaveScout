@@ -4,7 +4,7 @@ __version__ = "0.1.0"
 
 from .data_model import (
     SignalNode, SignalHandle, DisplayFormat, DataFormat, GroupRenderMode, RenderType,
-    Viewport, Marker, SignalNameDisplayMode, AnalysisMode,
+    Viewport, Marker, AnalysisMode,
     WaveformSession
 )
 from .waveform_item_model import WaveformItemModel
@@ -18,7 +18,7 @@ from .config import RENDERING, COLORS, UI, TIME_RULER
 
 __all__ = [
     'SignalNode', 'SignalHandle', 'DisplayFormat', 'DataFormat', 'GroupRenderMode', 'RenderType',
-    'Viewport', 'Marker', 'SignalNameDisplayMode', 'AnalysisMode',
+    'Viewport', 'Marker', 'AnalysisMode',
     'WaveformSession', 'WaveformItemModel', 'WaveScoutWidget', 'WaveformController',
     'WaveformDB', 'create_sample_session',
     'DesignTreeModel', 'save_session', 'load_session',

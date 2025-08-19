@@ -6,7 +6,7 @@ import pathlib
 from wavescout import save_session, load_session, create_sample_session
 from wavescout.data_model import (
     WaveformSession, SignalNode, DisplayFormat, DataFormat,
-    Viewport, Marker, SignalNameDisplayMode, AnalysisMode, GroupRenderMode
+    Viewport, Marker, AnalysisMode, GroupRenderMode
 )
 from .test_utils import get_test_input_path, TestFiles
 
