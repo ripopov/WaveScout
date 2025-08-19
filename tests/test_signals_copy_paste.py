@@ -18,6 +18,24 @@ from wavescout.signal_names_view import SignalNamesView
 from wavescout.persistence import save_session, load_session
 
 
+@pytest.fixture(autouse=True)
+def clear_clipboard():
+    """Clear clipboard before and after each test to prevent segfaults."""
+    # Clear before test
+    clipboard = QApplication.clipboard()
+    if clipboard:
+        clipboard.clear()
+    
+    yield
+    
+    # Clear after test
+    clipboard = QApplication.clipboard()
+    if clipboard:
+        clipboard.clear()
+        # Process events to ensure clipboard operations complete
+        QApplication.processEvents()
+
+
 def get_signals_from_hierarchy(window: WaveScoutMainWindow, count: int = 5) -> List[SignalNode]:
     """Helper to get signals from the design tree."""
     design_view = window.design_tree_view.unified_tree
@@ -349,15 +367,6 @@ if __name__ == "__main__":
         if tmp_dir.exists():
             shutil.rmtree(tmp_dir)
         
-        # Clear clipboard before exiting
-        clipboard = QApplication.clipboard()
-        if clipboard:
-            clipboard.clear()
-        
         # Process remaining events before quitting
         QTest.qWait(100)
         app.processEvents()
-        
-        # Exit cleanly
-        import sys
-        sys.exit(0)
