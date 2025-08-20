@@ -4,6 +4,8 @@
 import sys
 import argparse
 import os
+import subprocess
+import platform
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional, List
@@ -679,6 +681,14 @@ class WaveScoutMainWindow(QMainWindow):
         self.navigate_time_action.setEnabled(False)  # Disabled until a file is loaded
         self.navigate_time_action.triggered.connect(self.wave_widget._show_navigate_time_dialog)
         edit_menu.addAction(self.navigate_time_action)
+        
+        edit_menu.addSeparator()
+        
+        # Open Snippets in Files action
+        self.open_snippets_action = QAction("Open Snippets in &Files", self)
+        self.open_snippets_action.setStatusTip("Open snippets directory in file manager")
+        self.open_snippets_action.triggered.connect(self._open_snippets_directory)
+        edit_menu.addAction(self.open_snippets_action)
         
         # View menu
         view_menu = menubar.addMenu("&View")
@@ -1413,6 +1423,47 @@ class WaveScoutMainWindow(QMainWindow):
         if self.wave_widget.controller and self.wave_widget.session:
             dialog = MarkersWindow(self.wave_widget.controller, self)
             dialog.exec()
+    
+    def _open_snippets_directory(self):
+        """Open the snippets directory in the system file manager."""
+        from wavescout.snippet_manager import SnippetManager
+        
+        # Get the snippets directory from SnippetManager
+        snippet_manager = SnippetManager()
+        snippets_dir = snippet_manager._snippets_dir
+        
+        # Ensure the directory exists
+        snippets_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Open the directory in the system file manager
+        system = platform.system()
+        try:
+            if system == "Windows":
+                os.startfile(str(snippets_dir))
+            elif system == "Darwin":  # macOS
+                subprocess.run(["open", str(snippets_dir)], check=True)
+            else:  # Linux and other Unix-like systems
+                # Try different file managers
+                file_managers = ["xdg-open", "nautilus", "dolphin", "thunar", "pcmanfm"]
+                for fm in file_managers:
+                    try:
+                        subprocess.run([fm, str(snippets_dir)], check=True)
+                        break
+                    except (subprocess.CalledProcessError, FileNotFoundError):
+                        continue
+                else:
+                    # If no file manager worked, show error
+                    show_warning(
+                        self,
+                        "Could not open file manager",
+                        f"Unable to open file manager.\n\nSnippets directory:\n{snippets_dir}"
+                    )
+        except Exception as e:
+            show_warning(
+                self,
+                "Error opening snippets directory",
+                f"Failed to open snippets directory:\n{e}\n\nPath:\n{snippets_dir}"
+            )
     
     def _set_ui_scale(self, scale: float):
         """Set the UI scaling factor."""
