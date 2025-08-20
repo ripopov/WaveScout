@@ -31,6 +31,9 @@ class SnippetTableModel(QAbstractTableModel):
     def _refresh_snippets(self) -> None:
         """Refresh snippet list from manager."""
         self.beginResetModel()
+        # Force reload from disk to ensure we have the latest snippets
+        # This is important after a new snippet is saved
+        self.snippet_manager.load_snippets()
         self.snippets = self.snippet_manager.get_all_snippets()
         # Sort by creation date (newest first)
         self.snippets.sort(key=lambda s: s.created_at, reverse=True)
@@ -184,7 +187,9 @@ class SnippetBrowserWidget(QWidget):
     
     def _refresh_snippets(self) -> None:
         """Refresh snippet list from disk."""
+        # Force reload from disk to ensure we have latest snippets
         self.snippet_manager.load_snippets()
+        # Now refresh the model
         self.model._refresh_snippets()
     
     def _on_double_click(self, index: QModelIndex) -> None:
