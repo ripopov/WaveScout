@@ -21,7 +21,6 @@ class SettingsManager(QObject):
     highlight_selected_changed = Signal(bool)
     style_changed = Signal(str, str)  # style_name, style_type
     panel_state_changed = Signal()
-    design_tree_mode_changed = Signal(str)
     
     _instance: Optional['SettingsManager'] = None
     
@@ -213,18 +212,7 @@ class SettingsManager(QObject):
         """Check if panel settings have been saved."""
         return self._settings.contains("panels/left_visible")
     
-    # Design Tree View settings
-    def get_design_tree_mode(self) -> str:
-        """Get the design tree view mode ('unified' or 'split')."""
-        value: Any = self._settings.value("design_tree_view_mode", "unified", type=str)
-        return str(value) if value else "unified"
-    
-    def set_design_tree_mode(self, mode: str) -> None:
-        """Set the design tree view mode."""
-        if mode in ["unified", "split"]:
-            self._settings.setValue("design_tree_view_mode", mode)
-            self._settings.sync()
-            self.design_tree_mode_changed.emit(mode)
+    # Note: Design Tree View mode settings removed - split mode is now the only mode
     
     def get_settings(self) -> QSettings:
         """

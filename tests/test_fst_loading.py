@@ -116,7 +116,12 @@ class FSTTestHelper:
     @staticmethod
     def add_signals_from_scope(window, scope_idx: QModelIndex, max_signals: int = 10):
         """
-        Add signals from a scope to the waveform.
+        Add signals from a scope to the waveform in split mode.
+        
+        In split mode:
+        - Select a scope in the scope tree
+        - This populates the VarsView with variables
+        - Double-click variables in VarsView to add them
         
         Args:
             window: WaveScoutMainWindow instance
@@ -126,31 +131,34 @@ class FSTTestHelper:
         Returns:
             List of added signal names
         """
-        model = window.design_tree_view.design_tree_model
-        design_view = window.design_tree_view.unified_tree
+        scope_tree = window.design_tree_view.scope_tree
+        vars_view = window.design_tree_view.vars_view
         added_signals = []
         
-        # Iterate through children of the scope
-        for row in range(model.rowCount(scope_idx)):
-            if len(added_signals) >= max_signals:
-                break
-            
-            idx = model.index(row, 0, scope_idx)
-            name = model.data(idx, Qt.ItemDataRole.DisplayRole)
-            
-            # Check if this is a signal (not a scope)
-            if model.rowCount(idx) == 0:  # No children = signal
-                # Double-click to add signal
-                design_view.scrollTo(idx)
-                QTest.qWait(50)
-                
-                # Simulate double-click by calling the slot directly
-                window.design_tree_view._on_tree_double_click(idx)
-                
-                added_signals.append(name)
-                print(f"     - Added signal: {name}")
-                
-                QTest.qWait(50)  # Small delay between additions
+        # Select the scope to populate VarsView
+        scope_tree.setCurrentIndex(scope_idx)
+        QTest.qWait(100)  # Wait for VarsView to populate
+        
+        # Check if VarsView has variables
+        if vars_view and vars_view.vars_model.rowCount() > 0:
+            # Add variables from VarsView
+            for row in range(min(max_signals, vars_view.vars_model.rowCount())):
+                var_idx = vars_view.filter_proxy.index(row, 0)
+                if var_idx.isValid():
+                    # Get the variable name before adding
+                    var_data = vars_view.vars_model.variables[row]
+                    name = var_data.get('name', '')
+                    
+                    # Double-click to add variable
+                    vars_view._on_double_click(var_idx)
+                    
+                    added_signals.append(name)
+                    print(f"     - Added signal: {name}")
+                    
+                    QTest.qWait(50)  # Small delay between additions
+                    
+                    if len(added_signals) >= max_signals:
+                        break
         
         return added_signals
 
@@ -239,8 +247,8 @@ def test_fst_loading_with_backend(backend_preference):
         # Step 2: Navigate to top.des scope
         print("\n2. Navigating design tree to top.des scope...")
         
-        design_view = window.design_tree_view.unified_tree
-        model = window.design_tree_view.design_tree_model
+        design_view = window.design_tree_view.scope_tree
+        model = window.design_tree_view.scope_tree_model
         
         # Debug: print all root items
         print("   Root items in design tree:")
@@ -337,9 +345,14 @@ def test_fst_loading_with_backend(backend_preference):
             os.unlink(temp_session_path)
             print(f"\nCleaned up temporary file: {temp_session_path}")
         
-        # Close window
+        # Wait for thread pool to finish before closing window
         if 'window' in locals():
+            if hasattr(window, 'thread_pool'):
+                window.thread_pool.waitForDone(5000)  # Wait up to 5 seconds
+            QApplication.processEvents()  # Process any pending events
             window.close()
+            QTest.qWait(100)  # Wait a bit after close
+            QApplication.processEvents()  # Ensure close is processed
 
 
 # Backwards compatibility - keep the original test function that tests with pywellen

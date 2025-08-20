@@ -34,8 +34,8 @@ def main_window(qt_app):
 def main_window_with_signals(main_window):
     """Create main window with signals added to session."""
     # Add some signals to the session
-    design_view = main_window.design_tree_view.unified_tree
-    model = main_window.design_tree_view.design_tree_model
+    design_view = main_window.design_tree_view.scope_tree
+    model = main_window.design_tree_view.scope_tree_model
     
     if model:
         # Find and add first 3 signals

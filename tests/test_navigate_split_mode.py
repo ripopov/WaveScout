@@ -7,7 +7,6 @@ from PySide6.QtCore import QModelIndex, Qt, QTimer
 from PySide6.QtTest import QTest
 
 from scout import WaveScoutMainWindow
-from wavescout.design_tree_view import DesignTreeViewMode
 from wavescout.data_model import SignalNode, DisplayFormat
 from tests.test_utils import get_test_input_path, TestFiles
 
@@ -42,68 +41,12 @@ class TestNavigateSplitMode:
         # Cleanup
         window.close()
     
-    def test_navigate_in_unified_mode(self, main_window):
-        """Test that navigation works in unified mode."""
-        window = main_window
-        
-        # Ensure we're in unified mode
-        window.design_tree_view.set_mode(DesignTreeViewMode.UNIFIED)
-        QTest.qWait(100)
-        
-        assert window.design_tree_view.current_mode == DesignTreeViewMode.UNIFIED
-        
-        # Add a test signal to the session
-        signal_path = "apb_testbench.dut.paddr"
-        signal_node = SignalNode(
-            name=signal_path,
-            handle=0,
-            format=DisplayFormat(),
-            nickname='',
-            children=[],
-            parent=None,
-            is_group=False,
-            is_expanded=True,
-            height_scaling=1,
-            is_multi_bit=False
-        )
-        
-        window.wave_widget.session.root_nodes = [signal_node]
-        window.wave_widget.update()
-        QTest.qWait(100)
-        
-        # Navigate to the scope with variable selection
-        scope_path = "apb_testbench.dut"
-        result = window.design_tree_view.navigate_to_scope(scope_path, signal_path)
-        
-        assert result == True, "Navigation should succeed"
-        
-        QTest.qWait(200)
-        
-        # Check what's selected in unified tree
-        tree = window.design_tree_view.unified_tree
-        current = tree.currentIndex()
-        
-        if current.isValid():
-            node = current.internalPointer()
-            if node and hasattr(node, 'name'):
-                is_scope = hasattr(node, 'is_scope') and node.is_scope
-                print(f"Unified mode - Selected: {node.name} (is_scope: {is_scope})")
-                
-                # In unified mode, the variable should be selected
-                if node.name == "paddr" and not is_scope:
-                    print("✓ Variable correctly selected in unified mode")
-                elif node.name == "dut" and is_scope:
-                    print("ℹ Only scope selected (variable not found/expanded)")
-    
     def test_navigate_in_split_mode(self, main_window):
         """Test that navigation works in split mode and selects variable in bottom panel."""
         window = main_window
         
-        # Switch to split mode
-        window.design_tree_view.set_mode(DesignTreeViewMode.SPLIT)
+        # Split mode is now the default and only mode
         QTest.qWait(200)
-        
-        assert window.design_tree_view.current_mode == DesignTreeViewMode.SPLIT
         
         # Add a test signal to the session
         signal_path = "apb_testbench.dut.paddr"
@@ -187,7 +130,7 @@ class TestNavigateSplitMode:
         window = main_window
         
         # Switch to split mode
-        window.design_tree_view.set_mode(DesignTreeViewMode.SPLIT)
+        # Split mode is now the default and only mode
         QTest.qWait(200)
         
         # Add a test signal

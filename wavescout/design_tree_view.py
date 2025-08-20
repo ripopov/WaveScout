@@ -1,16 +1,14 @@
 """
 Design Tree View Widget
 
-A standalone widget providing two viewing modes for the design hierarchy:
-- Unified Mode: Shows scopes and variables in a single tree
-- Split Mode: Shows scopes in top panel and filtered variables in bottom panel
+A widget that shows the design hierarchy with scopes in the top panel 
+and filtered variables in the bottom panel.
 """
 
-from enum import Enum
 from typing import Optional, List, cast, Union
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeView, QPushButton,
-    QLabel, QStackedWidget, QSplitter, QLineEdit, QTableView,
+    QLabel, QSplitter, QLineEdit, QTableView,
     QHeaderView, QProgressDialog, QApplication, QAbstractItemView
 )
 from PySide6.QtCore import Qt, Signal, QModelIndex, QSortFilterProxyModel, QEvent, QObject
@@ -27,15 +25,9 @@ from .protocols import WaveformDBProtocol
 from .vars_view import VariableData
 
 
-class DesignTreeViewMode(Enum):
-    """Viewing modes for the design tree"""
-    UNIFIED = "unified"
-    SPLIT = "split"
-
-
 class DesignTreeView(QWidget):
     """
-    Main design tree widget supporting unified and split viewing modes
+    Design tree widget with split view showing scopes and variables
     """
     
     # Signals
@@ -46,27 +38,22 @@ class DesignTreeView(QWidget):
         super().__init__(parent)
         
         self.waveform_db: Optional['WaveformDBProtocol'] = None
-        self.design_tree_model: Optional[DesignTreeModel] = None
+        self.design_tree_model: Optional[DesignTreeModel] = None  # Keep for compatibility
         self.scope_tree_model: Optional[ScopeTreeModel] = None
         self.vars_view: Optional[VarsView] = None
-        self.current_mode = DesignTreeViewMode.UNIFIED
         
         # Settings manager
         self.settings_manager = SettingsManager()
         
         # Setup UI
         self._setup_ui()
-        
-        # Load saved mode
-        saved_mode = self.settings_manager.get_design_tree_mode()
-        self.set_mode(DesignTreeViewMode(saved_mode))
     
     def _setup_ui(self) -> None:
         """Create the UI structure"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # Header with mode toggle
+        # Header
         header_widget = QWidget()
         header_layout = QHBoxLayout(header_widget)
         header_layout.setContentsMargins(5, 5, 5, 5)
@@ -77,26 +64,9 @@ class DesignTreeView(QWidget):
         
         header_layout.addStretch()
         
-        self.mode_button = QPushButton("Split View")
-        self.mode_button.setToolTip("Toggle between Unified and Split view modes")
-        self.mode_button.setCheckable(True)
-        self.mode_button.toggled.connect(self._on_mode_toggled)
-        header_layout.addWidget(self.mode_button)
-        
         layout.addWidget(header_widget)
         
-        # Content area with stacked widget for different modes
-        self.content_stack = QStackedWidget()
-        layout.addWidget(self.content_stack)
-        
-        # Unified mode widget
-        self.unified_tree = QTreeView()
-        self.unified_tree.setAlternatingRowColors(True)
-        self.unified_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.unified_tree.doubleClicked.connect(self._on_tree_double_click)
-        self.content_stack.addWidget(self.unified_tree)
-        
-        # Split mode widget (placeholder for now)
+        # Split widget with scopes and variables
         self.split_widget = QSplitter(Qt.Orientation.Vertical)
         
         # Top panel: Scope tree
@@ -115,7 +85,10 @@ class DesignTreeView(QWidget):
         # Set initial splitter sizes (30% top, 70% bottom)
         self.split_widget.setSizes([300, 700])
         
-        self.content_stack.addWidget(self.split_widget)
+        layout.addWidget(self.split_widget)
+        
+        # For backwards compatibility, create unified_tree reference
+        self.unified_tree = self.scope_tree
     
     def set_waveform_db(self, waveform_db: Optional['WaveformDBProtocol']) -> None:
         """Set the waveform database and initialize models"""
@@ -123,68 +96,23 @@ class DesignTreeView(QWidget):
         
         if waveform_db is None:
             self.design_tree_model = None
-            self.unified_tree.setModel(None)
+            self.scope_tree_model = None
+            self.scope_tree.setModel(None)
+            if self.vars_view:
+                self.vars_view.set_variables([])
             return
         
-        # Create and set the design tree model
-        self.design_tree_model = DesignTreeModel(waveform_db)
-        self.unified_tree.setModel(self.design_tree_model)
+        # Create and set the models
+        self.design_tree_model = DesignTreeModel(waveform_db)  # Keep for compatibility
         
-        # Update split mode models if needed
-        if self.current_mode == DesignTreeViewMode.SPLIT:
-            self._update_split_mode_models()
-    
-    def set_mode(self, mode: DesignTreeViewMode) -> None:
-        """Switch between unified and split viewing modes"""
-        self.current_mode = mode
-        
-        if mode == DesignTreeViewMode.UNIFIED:
-            self.content_stack.setCurrentIndex(0)
-            self.mode_button.setText("Split View")
-            self.mode_button.setChecked(False)
-        else:
-            self.content_stack.setCurrentIndex(1)
-            self.mode_button.setText("Unified View")
-            self.mode_button.setChecked(True)
-            self._update_split_mode_models()
-        
-        # Save preference
-        self.settings_manager.set_design_tree_mode(mode.value)
-    
-    def _on_mode_toggled(self, checked: bool) -> None:
-        """Handle mode toggle button click"""
-        if checked:
-            self.set_mode(DesignTreeViewMode.SPLIT)
-        else:
-            self.set_mode(DesignTreeViewMode.UNIFIED)
-    
-    def _update_split_mode_models(self) -> None:
-        """Update models for split mode."""
-        if not self.waveform_db:
-            return
-        
-        # Create scope tree model if needed
-        if not self.scope_tree_model:
-            self.scope_tree_model = ScopeTreeModel(self.waveform_db)
-            self.scope_tree.setModel(self.scope_tree_model)
-            self.scope_tree.selectionModel().currentChanged.connect(self._on_scope_selection_changed)
-        else:
-            self.scope_tree_model.load_hierarchy(self.waveform_db)
+        # Create scope tree model
+        self.scope_tree_model = ScopeTreeModel(waveform_db)
+        self.scope_tree.setModel(self.scope_tree_model)
+        self.scope_tree.selectionModel().currentChanged.connect(self._on_scope_selection_changed)
         
         # Clear variables view
         if self.vars_view:
             self.vars_view.set_variables([])
-    
-    def _on_tree_double_click(self, index: QModelIndex) -> None:
-        """Handle double-click on tree item in unified mode"""
-        if not index.isValid() or not self.design_tree_model:
-            return
-        
-        node = index.internalPointer()
-        if node and not node.is_scope:
-            signal_node = self._create_signal_node(node)
-            if signal_node:
-                self.signals_selected.emit([signal_node])
     
     def _create_signal_node(self, node: DesignTreeNode) -> Optional[SignalNode]:
         """Create a SignalNode from a tree node"""
@@ -261,27 +189,13 @@ class DesignTreeView(QWidget):
         """Add currently selected signals to waveform (called by 'I' shortcut)"""
         signal_nodes: List[SignalNode] = []
         
-        if self.current_mode == DesignTreeViewMode.UNIFIED:
-            # Get selected items from unified tree
-            selection = self.unified_tree.selectionModel()
-            if not selection:
-                return
-            
-            for index in selection.selectedIndexes():
-                if index.column() == 0:  # Only process first column
-                    node = index.internalPointer()
-                    if node and not node.is_scope:
-                        signal_node = self._create_signal_node(node)
-                        if signal_node:
-                            signal_nodes.append(signal_node)
-        else:
-            # Handle split mode - get selected variables from VarsView
-            if self.vars_view:
-                selected_vars = self.vars_view.get_selected_variables()
-                for var_data in selected_vars:
-                    signal_node = self._create_signal_node_from_var(var_data)
-                    if signal_node:
-                        signal_nodes.append(signal_node)
+        # Get selected variables from VarsView
+        if self.vars_view:
+            selected_vars = self.vars_view.get_selected_variables()
+            for var_data in selected_vars:
+                signal_node = self._create_signal_node_from_var(var_data)
+                if signal_node:
+                    signal_nodes.append(signal_node)
         
         if signal_nodes:
             # Show progress dialog for batch operations
@@ -318,16 +232,9 @@ class DesignTreeView(QWidget):
             
         path_parts = scope_path.split('.')
         
-        # Determine which tree to use based on current mode
-        tree: QTreeView
-        model: Optional[Union[DesignTreeModel, ScopeTreeModel]]
-        
-        if self.current_mode == DesignTreeViewMode.UNIFIED:
-            tree = self.unified_tree
-            model = self.design_tree_model
-        else:
-            tree = self.scope_tree
-            model = self.scope_tree_model
+        # Use the scope tree in split mode
+        tree = self.scope_tree
+        model = self.scope_tree_model
             
         if not model:
             return False
@@ -349,31 +256,8 @@ class DesignTreeView(QWidget):
             # Remove any array indices for comparison (e.g., "signal[7:0]" -> "signal")
             var_name_base = var_name.split('[')[0] if '[' in var_name else var_name
             
-            # In unified mode, search in the tree
-            if self.current_mode == DesignTreeViewMode.UNIFIED:
-                # Search for the variable in the scope's children
-                for row in range(model.rowCount(index)):
-                    child_idx = model.index(row, 0, index)
-                    if not child_idx.isValid():
-                        continue
-                        
-                    child_node = child_idx.internalPointer()
-                    if child_node and hasattr(child_node, 'name'):
-                        # Compare base names (without array indices)
-                        child_name_base = child_node.name.split('[')[0] if '[' in child_node.name else child_node.name
-                        if child_name_base == var_name_base and not (hasattr(child_node, 'is_scope') and child_node.is_scope):
-                            # Found the variable, select it
-                            tree.setCurrentIndex(child_idx)
-                            tree.scrollTo(child_idx, QAbstractItemView.ScrollHint.PositionAtCenter)
-                            self.status_message.emit(f"Navigated to: {signal_name}")
-                            return True
-                
-                # Variable not found in unified mode
-                tree.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtCenter)
-                self.status_message.emit(f"Navigated to scope: {scope_path} (variable '{var_name}' not found)")
-            
-            # In split mode, select the variable in the VarsView
-            elif self.current_mode == DesignTreeViewMode.SPLIT and self.vars_view:
+            # Select the variable in the VarsView
+            if self.vars_view:
                 # The scope selection has already triggered loading variables in VarsView
                 # Now we need to select the matching variable in the table
                 
@@ -452,10 +336,8 @@ class DesignTreeView(QWidget):
                 # Otherwise, continue searching deeper if it's a scope
                 if hasattr(node, 'is_scope') and node.is_scope:
                     # Ensure the node is expanded in the view
-                    if self.current_mode == DesignTreeViewMode.UNIFIED:
-                        self.unified_tree.expand(index)
-                    else:
-                        self.scope_tree.expand(index)
+                    # Expand in scope tree
+                    self.scope_tree.expand(index)
                     
                     # Recursively search children
                     result = self._find_scope_by_path(remaining_parts, model, index)
@@ -470,7 +352,6 @@ class DesignTreeView(QWidget):
             key_event = cast(QKeyEvent, event)
             
             # Check if the event is from one of our monitored widgets
-            is_from_unified = obj == self.unified_tree
             is_from_scope = obj == self.scope_tree
             is_from_vars = self.vars_view and obj == self.vars_view.table_view
             
@@ -479,25 +360,25 @@ class DesignTreeView(QWidget):
                 # Accept both lowercase 'i' (no modifiers) and uppercase 'I' (with Shift)
                 if (key_event.modifiers() == Qt.KeyboardModifier.NoModifier or 
                     key_event.modifiers() == Qt.KeyboardModifier.ShiftModifier):
-                    # Only process if from a relevant widget
-                    if is_from_unified or is_from_vars:
+                    # Only process if from the vars view
+                    if is_from_vars:
                         self.add_selected_signals()
                         return True
             elif key_event.key() == Qt.Key.Key_Insert:
-                if is_from_unified or is_from_vars:
+                if is_from_vars:
                     self.add_selected_signals()
                     return True
             
-            # Ctrl+F - focus filter in split mode
+            # Ctrl+F - focus filter
             elif (key_event.key() == Qt.Key.Key_F and 
                   key_event.modifiers() == Qt.KeyboardModifier.ControlModifier):
-                if self.current_mode == DesignTreeViewMode.SPLIT and self.vars_view:
+                if self.vars_view:
                     self.vars_view.focus_filter()
                     return True
             
-            # Escape - clear filter in split mode
+            # Escape - clear filter
             elif key_event.key() == Qt.Key.Key_Escape:
-                if self.current_mode == DesignTreeViewMode.SPLIT and self.vars_view:
+                if self.vars_view:
                     self.vars_view.clear_filter()
                     return True
         
@@ -505,7 +386,6 @@ class DesignTreeView(QWidget):
     
     def install_event_filters(self) -> None:
         """Install event filters on tree views"""
-        self.unified_tree.installEventFilter(self)
         self.scope_tree.installEventFilter(self)
         if self.vars_view:
             self.vars_view.table_view.installEventFilter(self)

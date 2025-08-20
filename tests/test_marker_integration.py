@@ -209,8 +209,8 @@ def test_marker_integration():
         print("\n2. Adding one variable to waveform widget...")
         
         # Expand first scope to see signals
-        design_view = window.design_tree_view.unified_tree
-        model = window.design_tree_view.design_tree_model
+        design_view = window.design_tree_view.scope_tree
+        model = window.design_tree_view.scope_tree_model
         root = QModelIndex()
         
         # Expand first level
@@ -332,8 +332,15 @@ def test_marker_integration():
         print("ALL TESTS PASSED!")
         print("="*60)
         
+        # Wait for thread pool to finish before closing
+        if hasattr(window, 'thread_pool'):
+            window.thread_pool.waitForDone(5000)  # Wait up to 5 seconds
+        QApplication.processEvents()  # Process any pending events
+        
         # Close window
         window.close()
+        QTest.qWait(100)  # Wait a bit after close
+        QApplication.processEvents()  # Ensure close is processed
         
     except Exception as e:
         print(f"\n✗ TEST FAILED: {e}")

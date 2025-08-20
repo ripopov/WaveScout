@@ -92,11 +92,12 @@ def test_values_panel(wave_widget):
     # Check that the view has the model
     assert values_view.model() == model
     
-    # Check second column is visible
-    assert not values_view.isColumnHidden(1)
+    # Check that columns 1 and 2 are visible (Value and Format)
+    assert not values_view.isColumnHidden(1)  # Value column
+    assert not values_view.isColumnHidden(2)  # Format column
     
     # Check other columns are hidden
-    for col in [0, 2, 3]:
+    for col in [0, 3, 4]:  # Signal, Waveform, Analysis columns should be hidden
         assert values_view.isColumnHidden(col)
     
     # Get some values
@@ -104,10 +105,11 @@ def test_values_panel(wave_widget):
     for i in range(min(model.rowCount(), 5)):
         index = model.index(i, 1)
         value = model.data(index, Qt.DisplayRole)
-        if value:
+        if value is not None:  # Changed from if value: to handle 0 or empty string values
             values.append(value)
     
     print(f"\nValues at cursor: {values}")
+    # Values may be empty depending on the cursor position and data, that's OK
 
 
 
@@ -259,11 +261,12 @@ def test_headers_visible(wave_widget):
     # Get header text
     model = wave_widget.model
     headers = []
-    for col in range(4):
+    # The model has 5 columns: Signal, Value, Format, Waveform, Analysis
+    for col in range(5):
         header = model.headerData(col, Qt.Horizontal, Qt.DisplayRole)
         headers.append(header)
     
-    assert headers == ["Signal", "Value", "Waveform", "Analysis"]
+    assert headers == ["Signal", "Value", "Format", "Waveform", "Analysis"]
     print(f"\nHeaders: {headers}")
 
 
