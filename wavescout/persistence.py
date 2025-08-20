@@ -142,6 +142,162 @@ def _deserialize_node(data: Dict[str, Any], parent: Optional[SignalNode] = None)
     return node
 
 
+def serialize_snippet_nodes(nodes: List[SignalNode], parent_scope: str) -> List[Dict[str, Any]]:
+    """
+    Serialize nodes for snippet storage, stripping absolute paths and setting handles to -1.
+    
+    Args:
+        nodes: List of SignalNode objects to serialize
+        parent_scope: Common parent scope to strip from signal names
+    
+    Returns:
+        List of serialized node dictionaries with relative names and invalid handles
+    """
+    serialized_nodes = []
+    
+    def serialize_for_snippet(node: SignalNode) -> Dict[str, Any]:
+        """Serialize a single node for snippet storage."""
+        format_dict = None
+        if node.format:
+            format_dict = asdict(node.format)
+            # Convert enum values to strings
+            if 'data_format' in format_dict and isinstance(format_dict['data_format'], Enum):
+                format_dict['data_format'] = format_dict['data_format'].value
+            if 'render_type' in format_dict and isinstance(format_dict['render_type'], Enum):
+                format_dict['render_type'] = format_dict['render_type'].value
+            if 'analog_scaling_mode' in format_dict and isinstance(format_dict['analog_scaling_mode'], Enum):
+                format_dict['analog_scaling_mode'] = format_dict['analog_scaling_mode'].value
+        
+        # Store relative name for non-group nodes
+        name = node.name
+        if not node.is_group and parent_scope:
+            # Remove parent scope from name to make it relative
+            if name.startswith(parent_scope + "."):
+                name = name[len(parent_scope) + 1:]
+        
+        data: Dict[str, Any] = {
+            'name': name,
+            'handle': -1,  # Always -1 for snippets (waveform-agnostic)
+            'format': format_dict,
+            'nickname': node.nickname,
+            'is_group': node.is_group,
+            'group_render_mode': node.group_render_mode.value if node.group_render_mode else None,
+            'is_expanded': node.is_expanded,
+            'height_scaling': node.height_scaling,
+            'is_multi_bit': node.is_multi_bit,
+            # Don't include instance_id in snippets
+        }
+        
+        # Recursively serialize children
+        if node.children:
+            data['children'] = [serialize_for_snippet(child) for child in node.children]
+        
+        return data
+    
+    for node in nodes:
+        serialized_nodes.append(serialize_for_snippet(node))
+    
+    return serialized_nodes
+
+
+def deserialize_snippet_nodes(
+    data: List[Dict[str, Any]], 
+    parent_scope: str,
+    waveform_db: Optional[WaveformDBProtocol]
+) -> Optional[List[SignalNode]]:
+    """
+    Deserialize snippet nodes with scope remapping and handle resolution.
+    
+    Args:
+        data: List of serialized node dictionaries
+        parent_scope: New parent scope to prepend to signal names
+        waveform_db: WaveformDB instance to resolve handles from
+    
+    Returns:
+        List of SignalNode objects with remapped names and resolved handles,
+        or None if any signal cannot be found in the waveform
+    """
+    if not waveform_db:
+        return None
+    
+    def deserialize_snippet_node(
+        node_data: Dict[str, Any], 
+        parent: Optional[SignalNode] = None
+    ) -> Optional[SignalNode]:
+        """Deserialize a single snippet node with remapping."""
+        # Create display format if present
+        format_data = node_data.get('format')
+        display_format = None
+        if format_data:
+            # Convert string enum values back to enums
+            if 'data_format' in format_data and isinstance(format_data['data_format'], str):
+                format_data['data_format'] = DataFormat(format_data['data_format'])
+            if 'render_type' in format_data and isinstance(format_data['render_type'], str):
+                format_data['render_type'] = RenderType(format_data['render_type'])
+            if 'analog_scaling_mode' in format_data and isinstance(format_data['analog_scaling_mode'], str):
+                from .data_model import AnalogScalingMode
+                format_data['analog_scaling_mode'] = AnalogScalingMode(format_data['analog_scaling_mode'])
+            display_format = DisplayFormat(**format_data)
+        
+        # Convert group_render_mode string back to enum
+        group_render_mode = None
+        if node_data.get('group_render_mode'):
+            group_render_mode = GroupRenderMode(node_data['group_render_mode'])
+        
+        # Remap name and resolve handle for non-group nodes
+        name = node_data['name']
+        handle: Optional[int] = -1
+        
+        if not node_data.get('is_group', False):
+            # Build full name with new parent scope
+            if parent_scope:
+                name = f"{parent_scope}.{name}"
+            
+            # Resolve handle from waveform database
+            resolved_handle = waveform_db.find_handle_by_path(name)
+            if resolved_handle is None:
+                # Signal not found in waveform
+                return None
+            handle = resolved_handle
+        
+        # Create node with new instance ID
+        node = SignalNode(
+            name=name,
+            handle=handle,
+            format=display_format if display_format is not None else DisplayFormat(),
+            nickname=node_data.get('nickname', ''),
+            children=[],  # Will be filled below
+            parent=parent,
+            is_group=node_data.get('is_group', False),
+            group_render_mode=group_render_mode,
+            is_expanded=node_data.get('is_expanded', True),
+            height_scaling=node_data.get('height_scaling', 1),
+            is_multi_bit=node_data.get('is_multi_bit', False),
+            instance_id=SignalNode._generate_id()  # Generate new ID for instantiated snippet
+        )
+        
+        # Recursively deserialize children
+        children_data = node_data.get('children', [])
+        for child_data in children_data:
+            child = deserialize_snippet_node(child_data, parent=node)
+            if child is None:
+                # Child signal not found
+                return None
+            node.children.append(child)
+        
+        return node
+    
+    # Deserialize all root nodes
+    result_nodes = []
+    for node_data in data:
+        node = deserialize_snippet_node(node_data)
+        if node is None:
+            return None  # At least one signal not found
+        result_nodes.append(node)
+    
+    return result_nodes
+
+
 def save_session(session: WaveformSession, path: pathlib.Path) -> None:
     """
     Serialize session to JSON, excluding waveform_db pointer

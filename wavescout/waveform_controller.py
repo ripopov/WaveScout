@@ -723,6 +723,40 @@ class WaveformController:
         ))
         self._emit("session_changed")
     
+    def instantiate_snippet(
+        self, 
+        snippet_nodes: List[SignalNode], 
+        after_id: Optional[SignalNodeID] = None
+    ) -> bool:
+        """
+        Instantiate snippet nodes in the current session.
+        
+        Args:
+            snippet_nodes: List of remapped SignalNode objects from snippet
+            after_id: ID of node to insert after. If None, append to end
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.session or not snippet_nodes:
+            return False
+        
+        try:
+            # Ensure all nodes have valid handles and unique instance IDs
+            for node in snippet_nodes:
+                if not node.is_group and node.handle == -1:
+                    print(f"Warning: Signal {node.name} has invalid handle")
+                    return False
+            
+            # Insert the nodes
+            self.insert_nodes(snippet_nodes, after_id)
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error instantiating snippet: {e}")
+            return False
+    
     def ungroup_nodes(self, group_ids: Iterable[SignalNodeID]) -> None:
         """Ungroup the specified groups, moving their children to parent level."""
         if not self.session:

@@ -452,12 +452,10 @@ class WaveScoutMainWindow(QMainWindow):
         self.wave_widget = WaveScoutWidget()
         self.horizontal_splitter.addWidget(self.wave_widget)
         
-        # Create right sidebar (placeholder for now)
-        self.right_panel = QFrame()
-        self.right_panel.setFrameShape(QFrame.NoFrame)
-        self.right_panel.setStyleSheet("background-color: #252526;")
-        self.right_panel_layout = QVBoxLayout(self.right_panel)
-        self.right_panel_layout.addWidget(QLabel("Right Sidebar Content", styleSheet="color: #CCCCCC"))
+        # Create right sidebar with snippet browser
+        from wavescout.snippet_browser_widget import SnippetBrowserWidget
+        self.right_panel = SnippetBrowserWidget()
+        self.right_panel.snippet_instantiate.connect(self._on_snippet_instantiate)
         self.horizontal_splitter.addWidget(self.right_panel)
         
         # Create bottom panel (placeholder for now)
@@ -1609,6 +1607,57 @@ class WaveScoutMainWindow(QMainWindow):
             self.pan_left_action.setIcon(new_style.standardIcon(QStyle.StandardPixmap.SP_ArrowLeft))
             self.pan_right_action.setIcon(new_style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight))
             self.zoom_fit_action.setIcon(new_style.standardIcon(QStyle.StandardPixmap.SP_DialogResetButton))
+    
+    def _on_snippet_instantiate(self, snippet):
+        """Handle snippet instantiation request from browser."""
+        from wavescout.snippet_dialogs import InstantiateSnippetDialog
+        from wavescout.data_model import SignalNode
+        
+        # Get current waveform database
+        waveform_db = None
+        if self.wave_widget.session:
+            waveform_db = self.wave_widget.session.waveform_db
+        
+        # Show instantiation dialog
+        dialog = InstantiateSnippetDialog(snippet, waveform_db, self)
+        
+        if dialog.exec() == InstantiateSnippetDialog.DialogCode.Accepted:
+            remapped_nodes = dialog.get_remapped_nodes()
+            group_name = dialog.get_group_name()  # Get custom group name
+            if remapped_nodes and self.wave_widget.controller:
+                # Get currently selected node to insert after
+                after_id = None
+                if self.wave_widget.session and self.wave_widget.session.selected_nodes:
+                    after_id = self.wave_widget.session.selected_nodes[-1].instance_id
+                
+                # Wrap the snippet nodes in a group with custom name
+                group_node = SignalNode(
+                    name=group_name,  # Use custom group name from dialog
+                    is_group=True,
+                    children=remapped_nodes,
+                    is_expanded=True
+                )
+                
+                # Set parent references for children
+                for child in remapped_nodes:
+                    child.parent = group_node
+                
+                # Instantiate the snippet as a single group
+                success = self.wave_widget.controller.instantiate_snippet(
+                    [group_node],  # Pass as single-element list containing the group
+                    after_id
+                )
+                
+                if success:
+                    QMessageBox.information(
+                        self, "Success",
+                        f"Snippet instantiated successfully."
+                    )
+                else:
+                    QMessageBox.critical(
+                        self, "Error",
+                        "Failed to instantiate snippet."
+                    )
     
     def _connect_panel_toggles(self):
         """Connect panel toggle buttons to their respective methods."""

@@ -1,6 +1,6 @@
 """Signal names tree view for the WaveScout widget."""
 
-from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate, QWidget, QStyleOptionViewItem, QInputDialog, QColorDialog, QApplication
+from PySide6.QtWidgets import QTreeView, QAbstractItemView, QMenu, QStyledItemDelegate, QWidget, QStyleOptionViewItem, QInputDialog, QColorDialog, QApplication, QMessageBox
 from PySide6.QtCore import Qt, Signal, QModelIndex, QAbstractItemModel, QPoint, QSize, QMimeData
 from PySide6.QtGui import QAction, QActionGroup, QKeyEvent, QColor, QKeySequence, QClipboard
 from typing import List, Optional, Callable, Union, TYPE_CHECKING, Dict, Any
@@ -10,6 +10,8 @@ from .data_model import SignalNode, RenderType, AnalogScalingMode, DataFormat, G
 from .config import RENDERING, UI
 from .clock_utils import is_valid_clock_signal
 from .persistence import _serialize_node, _deserialize_node
+from .snippet_manager import SnippetManager
+from .snippet_dialogs import SaveSnippetDialog
 
 if TYPE_CHECKING:
     from .waveform_controller import WaveformController
@@ -156,11 +158,18 @@ class SignalNamesView(BaseColumnView):
             menu.addAction(create_group_action)
             menu.addSeparator()
         
-        # For groups, only show rename action
+        # For groups, show rename and save as snippet actions
         if node.is_group:
             rename_action = QAction("Rename", self)
             rename_action.triggered.connect(self._rename_selected_signal)
             menu.addAction(rename_action)
+            
+            menu.addSeparator()
+            
+            # Add "Save as Snippet" action
+            save_snippet_action = QAction("Save as Snippet", self)
+            save_snippet_action.triggered.connect(lambda: self._save_as_snippet(node))
+            menu.addAction(save_snippet_action)
             
             # Show the menu at the cursor position
             menu.exec(self.viewport().mapToGlobal(position))
@@ -509,6 +518,21 @@ class SignalNamesView(BaseColumnView):
             group_name if group_name else None,
             GroupRenderMode.SEPARATE_ROWS
         )
+    
+    def _save_as_snippet(self, group_node: SignalNode) -> None:
+        """Save a group as a reusable snippet."""
+        if not group_node.is_group:
+            QMessageBox.warning(self, "Invalid Selection", "Only groups can be saved as snippets.")
+            return
+        
+        # Find common parent scope
+        snippet_manager = SnippetManager()
+        parent_scope = snippet_manager.find_common_parent(group_node)
+        
+        # Show save dialog
+        dialog = SaveSnippetDialog(group_node, parent_scope, self)
+        if dialog.exec() == SaveSnippetDialog.DialogCode.Accepted:
+            QMessageBox.information(self, "Snippet Saved", f"Snippet saved successfully.")
     
     def keyPressEvent(self, event: QKeyEvent) -> None:
         """Handle key press events."""
