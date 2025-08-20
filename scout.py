@@ -256,16 +256,12 @@ class CustomTitleBar(QWidget):
         if not hasattr(wh, 'startSystemMove'):
             return False
         try:
-            # Try common signatures across PySide6/PyQt versions
+            # Try Qt6 method with globalPosition
             try:
                 return bool(wh.startSystemMove(event.globalPosition().toPoint()))
-            except (TypeError, AttributeError):
-                try:
-                    # Older APIs might accept QPoint from globalPos
-                    return bool(wh.startSystemMove(event.globalPos()))
-                except Exception:
-                    # Some versions take no args
-                    return bool(wh.startSystemMove())
+            except TypeError:
+                # Some versions take no args
+                return bool(wh.startSystemMove())
         except Exception:
             return False
     

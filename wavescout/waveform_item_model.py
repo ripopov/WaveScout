@@ -19,7 +19,7 @@ class WaveformItemModel(QAbstractItemModel):
         super().__init__(parent)
         self._session = session
         self._controller = controller
-        self._headers = ["Signal", "Value", "Waveform", "Analysis"]
+        self._headers = ["Signal", "Value", "Format", "Waveform", "Analysis"]
         self._cleanup_done = False
         
         # Get settings manager instance
@@ -53,7 +53,7 @@ class WaveformItemModel(QAbstractItemModel):
 
     # -- overriding row/column API --
     def columnCount(self, _parent: Union[QModelIndex, QPersistentModelIndex] = QModelIndex()) -> int:
-        return 4  # One column for each panel: Signal, Value, Waveform, Analysis
+        return 5  # One column for each panel: Signal, Value, Format, Waveform, Analysis
 
     def rowCount(self, parent: Union[QModelIndex, QPersistentModelIndex] = QModelIndex()) -> int:
         # Return number of children for given parent (or root nodes)
@@ -132,8 +132,11 @@ class WaveformItemModel(QAbstractItemModel):
                 # Value at cursor position
                 return self._value_at_cursor(node)
             elif col == 2:
-                return ""  # Waveform painted by canvas
+                # Format column - show data format
+                return self._format_at_cursor(node)
             elif col == 3:
+                return ""  # Waveform painted by canvas
+            elif col == 4:
                 return self._analysis_value(node)
         elif role == Qt.ItemDataRole.ForegroundRole:
             return node.format.color
@@ -204,6 +207,14 @@ class WaveformItemModel(QAbstractItemModel):
             return value_str or ""
         except Exception:
             return ""
+    
+    def _format_at_cursor(self, node: SignalNode) -> str:
+        # Return the data format for the signal
+        if node.is_group or node.handle is None:
+            return ""
+        
+        # Return the format as a string
+        return node.format.data_format.value
     
     def _on_structure_changed(self, event: StructureChangedEvent) -> None:
         """Handle structure change events from controller."""

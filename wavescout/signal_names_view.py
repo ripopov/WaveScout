@@ -47,6 +47,7 @@ class BaseColumnView(QTreeView):
     def __init__(self, visible_column: int, allow_expansion: bool = True, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._visible_column = visible_column
+        self._show_multiple_columns = False  # Can be overridden by subclasses
         self.setRootIsDecorated(True)
         self.setAlternatingRowColors(UI.TREE_ALTERNATING_ROWS)
         self.setUniformRowHeights(UI.TREE_UNIFORM_ROW_HEIGHTS)  # Changed to False to allow variable row heights
@@ -63,11 +64,16 @@ class BaseColumnView(QTreeView):
         
     def setModel(self, model: Optional[QAbstractItemModel]) -> None:
         super().setModel(model)
-        # Hide all columns except the specified one
+        # Hide columns based on configuration
         if model:
             for col in range(model.columnCount()):
-                if col != self._visible_column:
-                    self.setColumnHidden(col, True)
+                if hasattr(self, '_show_multiple_columns') and self._show_multiple_columns:
+                    # For SignalValuesView, show columns 1 and 2
+                    should_hide = col not in [1, 2]
+                else:
+                    # For other views, show only the specified column
+                    should_hide = col != self._visible_column
+                self.setColumnHidden(col, should_hide)
                     
     def expandAll(self) -> None:
         # Override in subclasses that don't allow expansion

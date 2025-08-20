@@ -17,10 +17,12 @@ from .config import RENDERING, UI
 
 
 class SignalValuesView(BaseColumnView):
-    """Tree view for signal values at cursor (column 1)."""
+    """Tree view for signal values and formats at cursor (columns 1-2)."""
     
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(visible_column=1, allow_expansion=False, parent=parent)
+        # Override to show both columns 1 and 2
+        self._show_multiple_columns = True
 
 
 class WaveScoutWidget(QWidget):
@@ -75,12 +77,12 @@ class WaveScoutWidget(QWidget):
         self._info_bar.setMaximumHeight(UI.INFO_BAR_HEIGHT)
         layout.addWidget(self._info_bar)
         
-        # Create splitter for the three panels
+        # Create splitter for the panels
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         
-        # Create the three views
+        # Create the views
         self._names_view = SignalNamesView(controller=self.controller)
-        self._values_view = SignalValuesView()
+        self._values_view = SignalValuesView()  # Now shows both Value and Format columns
         self._canvas = WaveformCanvas(None)
         
         # Install event filter on child views to handle keyboard shortcuts
