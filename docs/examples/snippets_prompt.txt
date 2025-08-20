@@ -1,0 +1,68 @@
+Feature: SignalNode tree snippets.
+
+In HW design we often instantiate the same module many times (imagine multiple CPU cores for example).
+When we work in WaveScout it's not convenient and time-consuming to find the same set of wires and registers
+in every module instance in design tree to add them into WaveScoutWidget. And then apply same set of formatting and color
+preferences to SignalNodes from different module instances.
+
+Instead, we want to add signals from single module, apply formatting, group them together, and save this group of signals
+as a reusable snippet. And then instantiate this snippet for all required module instances.
+More so, we want our library of snippets to be persistent, so next time we are debugging same design we can quickly pick snippet from the list.
+
+Snippet creation:
+
+1. First we need to create a group ( SignalNode.is_group = true ) inside our WaveformSession tree.
+
+For example:
+
+IMEM
+  TOP.tb_top.imem.awvalid
+  TOP.tb_top.imem.awsize
+  TOP.tb_top.imem.awready
+  TOP.tb_top.imem.aclk
+
+2. Then we right-click on group in SignalNamesView , and in context menu select new option "Save as snippet".
+
+Dialog window should appear with option to set snippet name. It should be initialized to the current group name.
+In our example it is "IMEM". Dialog window will have "Save" and "Cancel" buttons.
+
+When user clicks "Save" or just hits Enter, wavescout should find a common parent name for all signals in group,
+in our example it is "TOP.tb_top.imem"
+And then snippet will be saved to snippet library as JSON file.
+JSON file will store a parent name for snippet, and a SignalNode tree in same format as used in WaveScount session save files (persistence.py).
+
+{
+  "parent_name": "TOP.tb_top.imem",
+  "num_nodes": 4,
+  "nodes": [
+    {
+      "name": "awvalid",
+      "handle": -1,
+      "format":  ....
+    },
+    {
+      "name": "awsize",
+      ...
+    },
+    ...
+    ]
+}
+
+Snippets should support trees of any depth (i.e. nested groups are supported), we need to scan all nodes recursively to find
+common parent name.
+
+3. JSON files will be stored in QStandardPaths.AppDataLocation / snippets directory
+
+Snippet instantiation:
+
+1. All Snippets from Library should be displayed in Right Sidebar in scout.py. Sidebar already exists, currently it's empty.
+
+2. Snippets will be displayed as table, with the following columns : "Snippet Name" , "Parent Name", "Number of Nodes"
+
+3. Double click on selected snippet in side bar should instantiate it:
+Dialog window will pop up with text edit to modify parent_name, "Ok" and "Cancel" button.
+When user clicks "Ok" or Enter following validation steps should be executed:
+1) Validate parent_name is a valid scope in current waveform_db
+2) Validate all nodes (parent_name.name) exist in current waveform_db
+If validation passes, snippet is inserted after currently selected node in SignalNamesView. If validation fails,
+popup error dialog is shown, and then user can fix parent name and try again or Cancel.
