@@ -3,7 +3,7 @@
 This document provides an overview of the WaveformScout project and concrete guidelines for 
 CLAUDE, Junie, and other coding agents when making changes.
 
-WE ARE CURRENTLY DEVELOPING ON WINDOWS. USE POWERSHELL FOR ALL COMMANDS. DON"T TRY TO USE BASH.
+IF DEVELOPING ON WINDOWS, USE POWERSHELL FOR ALL COMMANDS. DON'T TRY TO USE BASH.
 
 ## Overview
 - WaveformScout is a PySide6 (Qt6) digital/mixed-signal waveform viewer with a Rust-accelerated backend (Wellen via pywellen) for fast waveform processing.
