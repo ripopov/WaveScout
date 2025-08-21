@@ -1270,6 +1270,15 @@ class WaveScoutMainWindow(QMainWindow):
                 # Load CLI snippets after design tree is ready
                 if self._loading_state.cli_snippets:
                     QTimer.singleShot(100, lambda: self._load_cli_snippets(self._loading_state.cli_snippets))
+                else:
+                    # Check if we should exit after loading (when no snippets to load)
+                    if getattr(self, 'exit_after_load', False):
+                        def exit_after_load():
+                            import sys
+                            print("Successfully loaded waveform: " + str(self.current_wave_file))
+                            sys.stdout.flush()
+                            QApplication.instance().quit()
+                        QTimer.singleShot(200, exit_after_load)
             
             QTimer.singleShot(10, update_design_tree)
     

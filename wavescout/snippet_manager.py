@@ -47,22 +47,8 @@ class Snippet:
         
         for node_data in data["nodes"]:
             node = _deserialize_node(node_data, None)
-            # Reconstruct full signal names by prepending parent scope if needed
-            if parent_name and not node.is_group:
-                # Only prepend if the name doesn't already contain the parent scope
-                if not node.name.startswith(parent_name + "."):
-                    node.name = f"{parent_name}.{node.name}"
-            # Recursively fix children names
-            def fix_child_names(child_node: SignalNode, parent_scope: str) -> None:
-                if not child_node.is_group and parent_scope:
-                    if not child_node.name.startswith(parent_scope + "."):
-                        child_node.name = f"{parent_scope}.{child_node.name}"
-                for child in child_node.children:
-                    fix_child_names(child, parent_scope)
-            
-            for child in node.children:
-                fix_child_names(child, parent_name)
-            
+            # Keep names as they are in the JSON - they should be relative names
+            # Full path reconstruction happens during instantiation, not loading
             nodes.append(node)
         
         return cls(
