@@ -58,10 +58,11 @@ def test_copy_paste_signals(qtbot, tmp_path):
     assert window.wave_widget.session is not None, "Session should be loaded"
     assert window.wave_widget.session.waveform_db is not None, "WaveformDB should be loaded"
     
-    # Step 1: Add 5 signals to WaveScoutWidget using split mode
-    signals_added = add_signals_from_split_mode(window, 5)
+    # Step 1: Add signals to WaveScoutWidget using split mode
+    # Request more to ensure we get enough (apb_sim.vcd has 16 unique signals)
+    signals_added = add_signals_from_split_mode(window, 10)
     
-    # If we couldn't get exactly 5, that's ok - work with what we have
+    # We need at least 3 signals for the test to work properly
     assert len(signals_added) >= 3, f"Should find at least 3 signals, found {len(signals_added)}"
     
     session = window.wave_widget.session
@@ -242,8 +243,8 @@ def test_copy_paste_with_groups(qtbot, tmp_path):
     
     assert window.wave_widget.session is not None, "Session should be loaded"
     
-    # Add some signals using split mode
-    signals_added = add_signals_from_split_mode(window, 4)
+    # Add signals using split mode - request more to ensure we get enough
+    signals_added = add_signals_from_split_mode(window, 8)
     assert len(signals_added) >= 2, f"Need at least 2 signals, got {len(signals_added)}"
     
     QTest.qWait(100)
@@ -494,8 +495,10 @@ def test_copy_paste_mixed_selection(qtbot, tmp_path):
     
     assert window.wave_widget.session is not None, "Session should be loaded"
     
-    # Add 5 signals using split mode
-    signals_added = add_signals_from_split_mode(window, 5)
+    # Add more signals - apb_sim.vcd has 16 unique signals, so we should be able to get at least 5
+    signals_added = add_signals_from_split_mode(window, 10)  # Request more to ensure we get enough
+    
+    # We need at least 3 signals for the test logic to work
     assert len(signals_added) >= 3, f"Need at least 3 signals, got {len(signals_added)}"
     
     QTest.qWait(100)
