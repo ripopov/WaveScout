@@ -1738,10 +1738,15 @@ class WaveScoutMainWindow(QMainWindow):
                 sys.exit(1)
                 return  # This return is for testing - sys.exit will normally terminate
             
-            # Validate and resolve handles using extracted static method
+            # Build full paths by concatenating parent with relative names
+            full_path_nodes = []
+            for node in snippet.nodes:
+                full_path_nodes.append(InstantiateSnippetDialog.build_full_paths(node, snippet.parent_name))
+            
+            # Validate and resolve handles
             try:
                 validated_nodes = InstantiateSnippetDialog.validate_and_resolve_nodes(
-                    snippet.nodes, waveform_db
+                    full_path_nodes, waveform_db
                 )
             except ValueError as e:
                 # Enhance error message to include snippet name

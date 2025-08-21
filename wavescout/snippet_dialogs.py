@@ -307,50 +307,36 @@ class InstantiateSnippetDialog(QDialog):
             self.ok_button.setEnabled(False)
             self.remapped_nodes = None
     
-    def _remap_node_names(self, node: SignalNode, old_parent: str, new_parent: str) -> SignalNode:
-        """Just remap names without validation."""
+    @staticmethod
+    def build_full_paths(node: SignalNode, parent_scope: str) -> SignalNode:
+        """Build full paths by concatenating parent scope with relative names."""
         new_node = node.deep_copy()
         
         if not node.is_group:
-            # Calculate relative name
-            if old_parent and node.name.startswith(old_parent + "."):
-                relative_name = node.name[len(old_parent) + 1:]
-            elif not old_parent:
-                relative_name = node.name
-            else:
-                # Handle case where node name doesn't start with parent
-                relative_name = node.name.split('.')[-1]
-            
-            # Build new name
-            if new_parent:
-                new_name = f"{new_parent}.{relative_name}"
-            else:
-                new_name = relative_name
-            
-            new_node.name = new_name
-            # Don't resolve handle here - leave that to validation
+            # Names in snippets are relative, concatenate with parent scope
+            if parent_scope:
+                new_node.name = f"{parent_scope}.{node.name}"
+            # else keep as-is (no parent scope)
         
-        # Recursively remap children
-        new_node.children = [self._remap_node_names(child, old_parent, new_parent) for child in node.children]
+        # Recursively process children
+        new_node.children = [InstantiateSnippetDialog.build_full_paths(child, parent_scope) for child in node.children]
         for child in new_node.children:
             child.parent = new_node
         
         return new_node
     
     def _remap_and_validate(self, new_parent_scope: str) -> list[SignalNode]:
-        """Remap snippet nodes to new scope and validate they exist."""
+        """Build full paths from relative names and validate they exist."""
         if not self.waveform_db:
             raise ValueError("No waveform database available")
         
-        old_parent = self.snippet.parent_name
-        
-        # First remap the names
-        remapped_nodes = []
+        # Build full paths by concatenating parent scope with relative names
+        full_path_nodes = []
         for node in self.snippet.nodes:
-            remapped_nodes.append(self._remap_node_names(node, old_parent, new_parent_scope))
+            full_path_nodes.append(self.build_full_paths(node, new_parent_scope))
         
-        # Then validate and resolve handles using the extracted method
-        return self.validate_and_resolve_nodes(remapped_nodes, self.waveform_db)
+        # Then validate and resolve handles
+        return self.validate_and_resolve_nodes(full_path_nodes, self.waveform_db)
     
     def _get_all_signals(self, nodes: list[SignalNode]) -> list[SignalNode]:
         """Get all non-group signals from node list."""
