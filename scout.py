@@ -64,6 +64,7 @@ class LoadingState:
     pending_session: Optional[WaveformSession] = None
     pending_loaded_session: Optional[WaveformSession] = None
     pending_signal_nodes: List[SignalNode] = field(default_factory=list)
+    cli_snippets: List[str] = field(default_factory=list)
     
     def clear(self) -> None:
         """Clear all loading state."""
@@ -78,6 +79,7 @@ class LoadingState:
         self.pending_session = None
         self.pending_loaded_session = None
         self.pending_signal_nodes = []
+        self.cli_snippets = []
 
 
 class CustomTitleBar(QWidget):
@@ -514,8 +516,15 @@ class WaveScoutMainWindow(QMainWindow):
             # Load the provided session file
             QTimer.singleShot(100, lambda: self.load_session_file(session_file))
         elif wave_file:
+            # Handle wave_file with optional snippets
+            if isinstance(wave_file, list):
+                actual_wave_file = wave_file[0]
+                self._loading_state.cli_snippets = wave_file[1:]
+            else:
+                actual_wave_file = wave_file
+                self._loading_state.cli_snippets = []
             # Load the provided waveform file (vcd/fst)
-            QTimer.singleShot(100, lambda: self.load_file(wave_file))
+            QTimer.singleShot(100, lambda: self.load_file(actual_wave_file))
         else:
             # No file specified, start with empty application
             # Ensure waveform-related actions are disabled until a file is loaded
@@ -1227,14 +1236,6 @@ class WaveScoutMainWindow(QMainWindow):
             return
             
         session = self._loading_state.pending_session
-        
-        # In test mode, exit immediately after loading
-        if getattr(self, 'exit_after_load', False):
-            import sys
-            print("Successfully loaded waveform: " + str(self.current_wave_file))
-            sys.stdout.flush()
-            QApplication.instance().quit()
-            return
         self._loading_state.pending_session = None
         
         # Close progress dialog
@@ -1265,6 +1266,10 @@ class WaveScoutMainWindow(QMainWindow):
                 """Update design tree with loaded waveform."""
                 if session.waveform_db and self.design_tree_view:
                     self.design_tree_view.set_waveform_db(session.waveform_db)
+                
+                # Load CLI snippets after design tree is ready
+                if self._loading_state.cli_snippets:
+                    QTimer.singleShot(100, lambda: self._load_cli_snippets(self._loading_state.cli_snippets))
             
             QTimer.singleShot(10, update_design_tree)
     
@@ -1706,6 +1711,58 @@ class WaveScoutMainWindow(QMainWindow):
                         "Failed to instantiate snippet."
                     )
     
+    def _load_cli_snippets(self, snippet_names: list[str]) -> None:
+        """Load and instantiate CLI snippets using exact signal names from JSON."""
+        import sys
+        from wavescout.snippet_dialogs import InstantiateSnippetDialog
+        from wavescout.snippet_manager import SnippetManager
+        from wavescout.data_model import SignalNode
+        
+        manager = SnippetManager()
+        waveform_db = self.wave_widget.session.waveform_db
+        
+        for name in snippet_names:
+            # Load snippet from file (reuse existing loading)
+            snippet = manager.load_snippet_file(name)
+            if not snippet:
+                print(f"Error: Snippet file not found: {name}", file=sys.stderr)
+                sys.exit(1)
+                return  # This return is for testing - sys.exit will normally terminate
+            
+            # Validate and resolve handles using extracted static method
+            try:
+                validated_nodes = InstantiateSnippetDialog.validate_and_resolve_nodes(
+                    snippet.nodes, waveform_db
+                )
+            except ValueError as e:
+                # Enhance error message to include snippet name
+                print(f"Error in snippet '{name}': {e}", file=sys.stderr)
+                sys.exit(1)
+            
+            # Create group to wrap snippet (reuse logic from _on_snippet_instantiate)
+            group_node = SignalNode(
+                name=snippet.name,
+                is_group=True,
+                children=validated_nodes,
+                is_expanded=True
+            )
+            for child in validated_nodes:
+                child.parent = group_node
+            
+            # Instantiate using existing controller method
+            if not self.wave_widget.controller.instantiate_snippet([group_node]):
+                print(f"Error: Failed to instantiate snippet: {name}", file=sys.stderr)
+                sys.exit(1)
+            
+            print(f"Successfully loaded snippet: {name}")
+        
+        # Check if we should exit after loading
+        if getattr(self, 'exit_after_load', False):
+            import sys
+            print("Successfully loaded waveform: " + str(self.current_wave_file))
+            sys.stdout.flush()
+            QApplication.instance().quit()
+    
     def _connect_panel_toggles(self):
         """Connect panel toggle buttons to their respective methods."""
         self.title_bar.left_button.clicked.connect(self.toggle_left_sidebar)
@@ -1915,7 +1972,8 @@ def main():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="WaveScout Waveform Viewer Demo")
     parser.add_argument("--load_session", type=str, help="Load a session file on startup")
-    parser.add_argument("--load_wave", type=str, help="Load a waveform file (.vcd or .fst) on startup")
+    parser.add_argument("--load_wave", nargs='+', metavar=('WAVE_FILE', 'SNIPPET'), 
+                       help="Load waveform file followed by optional snippet files")
     parser.add_argument("--exit_after_load", action="store_true", help="Exit the application after loading completes (for automation/testing)")
     args = parser.parse_args()
     
@@ -1932,6 +1990,8 @@ def main():
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     
     app = QApplication(sys.argv)
+    app.setOrganizationName("WaveScout")
+    app.setApplicationName("Scout")
     
     # Apply saved UI style if available
     style_type = settings_manager.get_style_type()
@@ -1971,7 +2031,10 @@ def main():
     if args.load_session:
         print(f"- Loading session from: {args.load_session}")
     elif args.load_wave:
-        print(f"- Loading waveform from: {args.load_wave}")
+        wave_file = args.load_wave[0] if isinstance(args.load_wave, list) else args.load_wave
+        print(f"- Loading waveform from: {wave_file}")
+        if isinstance(args.load_wave, list) and len(args.load_wave) > 1:
+            print(f"- With snippets: {', '.join(args.load_wave[1:])}")
     else:
         print("- No waveform file specified")
         print("- Use File -> Open to load a VCD or FST file")

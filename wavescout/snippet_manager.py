@@ -42,11 +42,32 @@ class Snippet:
         """Create snippet from dictionary."""
         from wavescout.persistence import _deserialize_node
         
-        nodes = [_deserialize_node(node_data, None) for node_data in data["nodes"]]
+        parent_name = data["parent_name"]
+        nodes = []
+        
+        for node_data in data["nodes"]:
+            node = _deserialize_node(node_data, None)
+            # Reconstruct full signal names by prepending parent scope if needed
+            if parent_name and not node.is_group:
+                # Only prepend if the name doesn't already contain the parent scope
+                if not node.name.startswith(parent_name + "."):
+                    node.name = f"{parent_name}.{node.name}"
+            # Recursively fix children names
+            def fix_child_names(child_node: SignalNode, parent_scope: str) -> None:
+                if not child_node.is_group and parent_scope:
+                    if not child_node.name.startswith(parent_scope + "."):
+                        child_node.name = f"{parent_scope}.{child_node.name}"
+                for child in child_node.children:
+                    fix_child_names(child, parent_scope)
+            
+            for child in node.children:
+                fix_child_names(child, parent_name)
+            
+            nodes.append(node)
         
         return cls(
             name=data["name"],
-            parent_name=data["parent_name"],
+            parent_name=parent_name,
             num_nodes=data["num_nodes"],
             description=data.get("description", ""),
             created_at=datetime.fromisoformat(data.get("created_at", datetime.now().isoformat())),
@@ -100,6 +121,19 @@ class SnippetManager(QObject):
                     self._snippets[snippet.name] = snippet
             except Exception as e:
                 print(f"Error loading snippet {json_file}: {e}")
+    
+    def load_snippet_file(self, filename: str) -> Optional[Snippet]:
+        """Load a specific snippet file from the snippets directory."""
+        json_file = self._snippets_dir / filename
+        if not json_file.exists():
+            return None
+        try:
+            with open(json_file, 'r') as f:
+                data = json.load(f)
+                return Snippet.from_dict(data)
+        except Exception as e:
+            print(f"Error loading snippet {json_file}: {e}")
+            return None
     
     def save_snippet(self, snippet: Snippet) -> bool:
         """Save snippet to disk."""

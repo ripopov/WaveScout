@@ -131,6 +131,33 @@ class SaveSnippetDialog(QDialog):
 class InstantiateSnippetDialog(QDialog):
     """Dialog for instantiating a snippet with scope remapping."""
     
+    @staticmethod
+    def validate_and_resolve_nodes(nodes: list[SignalNode], 
+                                   waveform_db: WaveformDB) -> list[SignalNode]:
+        """Validate signal nodes exist and resolve their handles.
+        
+        This extracts the validation logic from _remap_and_validate's inner function.
+        No remapping - uses exact signal names.
+        """
+        def validate_node(node: SignalNode) -> SignalNode:
+            new_node = node.deep_copy()
+            
+            if not node.is_group:
+                # Resolve handle from waveform database
+                handle = waveform_db.find_handle_by_path(node.name)
+                if handle is None:
+                    raise ValueError(f"Signal '{node.name}' not found in waveform")
+                new_node.handle = handle
+            
+            # Recursively validate children
+            new_node.children = [validate_node(child) for child in node.children]
+            for child in new_node.children:
+                child.parent = new_node
+            
+            return new_node
+        
+        return [validate_node(node) for node in nodes]
+    
     def __init__(self, snippet: Snippet, waveform_db: Optional[WaveformDB], parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.snippet = snippet
@@ -280,55 +307,50 @@ class InstantiateSnippetDialog(QDialog):
             self.ok_button.setEnabled(False)
             self.remapped_nodes = None
     
+    def _remap_node_names(self, node: SignalNode, old_parent: str, new_parent: str) -> SignalNode:
+        """Just remap names without validation."""
+        new_node = node.deep_copy()
+        
+        if not node.is_group:
+            # Calculate relative name
+            if old_parent and node.name.startswith(old_parent + "."):
+                relative_name = node.name[len(old_parent) + 1:]
+            elif not old_parent:
+                relative_name = node.name
+            else:
+                # Handle case where node name doesn't start with parent
+                relative_name = node.name.split('.')[-1]
+            
+            # Build new name
+            if new_parent:
+                new_name = f"{new_parent}.{relative_name}"
+            else:
+                new_name = relative_name
+            
+            new_node.name = new_name
+            # Don't resolve handle here - leave that to validation
+        
+        # Recursively remap children
+        new_node.children = [self._remap_node_names(child, old_parent, new_parent) for child in node.children]
+        for child in new_node.children:
+            child.parent = new_node
+        
+        return new_node
+    
     def _remap_and_validate(self, new_parent_scope: str) -> list[SignalNode]:
         """Remap snippet nodes to new scope and validate they exist."""
         if not self.waveform_db:
             raise ValueError("No waveform database available")
         
         old_parent = self.snippet.parent_name
-        remapped_nodes: list[SignalNode] = []
         
-        def remap_node(node: SignalNode) -> SignalNode:
-            new_node = node.deep_copy()
-            
-            if not node.is_group:
-                # Calculate relative name
-                if old_parent and node.name.startswith(old_parent + "."):
-                    relative_name = node.name[len(old_parent) + 1:]
-                elif not old_parent:
-                    relative_name = node.name
-                else:
-                    # Handle case where node name doesn't start with parent
-                    relative_name = node.name.split('.')[-1]
-                
-                # Build new name
-                if new_parent_scope:
-                    new_name = f"{new_parent_scope}.{relative_name}"
-                else:
-                    new_name = relative_name
-                
-                # Resolve handle from waveform database
-                if self.waveform_db:
-                    handle = self.waveform_db.find_handle_by_path(new_name)
-                    if handle is None:
-                        raise ValueError(f"Signal '{new_name}' not found in waveform")
-                else:
-                    raise ValueError("No waveform database available")
-                
-                new_node.name = new_name
-                new_node.handle = handle
-            
-            # Recursively remap children
-            new_node.children = [remap_node(child) for child in node.children]
-            for child in new_node.children:
-                child.parent = new_node
-            
-            return new_node
-        
+        # First remap the names
+        remapped_nodes = []
         for node in self.snippet.nodes:
-            remapped_nodes.append(remap_node(node))
+            remapped_nodes.append(self._remap_node_names(node, old_parent, new_parent_scope))
         
-        return remapped_nodes
+        # Then validate and resolve handles using the extracted method
+        return self.validate_and_resolve_nodes(remapped_nodes, self.waveform_db)
     
     def _get_all_signals(self, nodes: list[SignalNode]) -> list[SignalNode]:
         """Get all non-group signals from node list."""
