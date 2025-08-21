@@ -778,3 +778,296 @@ class TestSnippetRoundTrip:
         assert all(child.is_group for child in loaded.nodes[0].children)
         assert len(loaded.nodes[0].children[0].children) == 2
         assert len(loaded.nodes[0].children[1].children) == 2
+
+
+class TestSnippetBugRegressions:
+    """Test cases to prevent regressions on recently fixed bugs."""
+    
+    def test_save_snippet_does_not_modify_session(self, snippet_manager):
+        """Test that saving a snippet doesn't modify the original session nodes.
+        
+        This was a bug where save_snippet modified handles in-place, causing
+        signals to disappear from the canvas.
+        """
+        # Create signal nodes with specific handles (simulating loaded signals)
+        signal1 = SignalNode(name="TOP.module.sig1", handle=42)
+        signal2 = SignalNode(name="TOP.module.sig2", handle=84)
+        signal3 = SignalNode(name="TOP.module.sig3", handle=126)
+        
+        # Create a group as would be in a session
+        group = SignalNode(
+            name="Session Group",
+            is_group=True,
+            children=[signal1, signal2, signal3]
+        )
+        
+        # Store original handles
+        original_handles = [signal1.handle, signal2.handle, signal3.handle]
+        assert all(h != -1 for h in original_handles), "Test setup: handles should not be -1"
+        
+        # Create snippet from the group (as SaveSnippetDialog does)
+        snippet = Snippet(
+            name="test_no_modify",
+            parent_name="TOP.module",
+            num_nodes=3,
+            nodes=group.children,  # Pass the actual children from session
+            description="Test that save doesn't modify"
+        )
+        
+        # Save the snippet
+        success = snippet_manager.save_snippet(snippet)
+        assert success, "Failed to save snippet"
+        
+        # CRITICAL: Verify original nodes still have their handles
+        assert signal1.handle == 42, f"Handle modified! Was 42, now {signal1.handle}"
+        assert signal2.handle == 84, f"Handle modified! Was 84, now {signal2.handle}"
+        assert signal3.handle == 126, f"Handle modified! Was 126, now {signal3.handle}"
+        
+        # Verify the saved file has handles set to -1
+        snippet_file = snippet_manager._snippets_dir / "test_no_modify.json"
+        with open(snippet_file, 'r') as f:
+            data = json.load(f)
+        
+        for node_data in data["nodes"]:
+            assert node_data["handle"] == -1, "Saved snippet should have handle=-1"
+        
+        # Clean up
+        snippet_manager.delete_snippet("test_no_modify")
+    
+    def test_cli_snippet_loading_with_relative_paths(self, waveform_db, snippet_manager, tmp_path):
+        """Test CLI snippet loading with relative signal names.
+        
+        This was a bug where CLI loading failed because it wasn't properly
+        concatenating parent_name with relative signal names.
+        """
+        # Create a snippet file with relative names (as saved by GUI)
+        snippet_data = {
+            "name": "cli_test",
+            "parent_name": "TOP.tb_top.rvtop",
+            "num_nodes": 2,
+            "description": "Test CLI loading",
+            "created_at": "2024-01-01T00:00:00",
+            "nodes": [
+                {
+                    "name": "swerv.dec.active_clk",  # Relative path
+                    "handle": -1,
+                    "format": {
+                        "data_format": "hex",
+                        "render_type": "bool"
+                    },
+                    "is_group": False,
+                    "is_expanded": True,
+                    "height_scaling": 1.0,
+                    "is_multi_bit": False
+                },
+                {
+                    "name": "mem.rst_l",  # Another relative path
+                    "handle": -1,
+                    "format": {
+                        "data_format": "bin",
+                        "render_type": "bool"
+                    },
+                    "is_group": False,
+                    "is_expanded": True,
+                    "height_scaling": 1.0,
+                    "is_multi_bit": False
+                }
+            ]
+        }
+        
+        # Save snippet file
+        snippet_file = snippet_manager._snippets_dir / "cli_test.json"
+        with open(snippet_file, 'w') as f:
+            json.dump(snippet_data, f)
+        
+        # Load the snippet
+        loaded_snippet = snippet_manager.load_snippet_file("cli_test.json")
+        assert loaded_snippet is not None
+        assert loaded_snippet.parent_name == "TOP.tb_top.rvtop"
+        assert len(loaded_snippet.nodes) == 2
+        
+        # Test the path building logic (as used by CLI)
+        from wavescout.snippet_dialogs import InstantiateSnippetDialog
+        
+        # Build full paths by concatenating parent with relative names
+        full_path_nodes = []
+        for node in loaded_snippet.nodes:
+            full_node = InstantiateSnippetDialog.build_full_paths(
+                node, loaded_snippet.parent_name
+            )
+            full_path_nodes.append(full_node)
+        
+        # Verify full paths are built correctly
+        assert full_path_nodes[0].name == "TOP.tb_top.rvtop.swerv.dec.active_clk"
+        assert full_path_nodes[1].name == "TOP.tb_top.rvtop.mem.rst_l"
+        
+        # For swerv1.vcd, these specific signals won't exist, but we can verify
+        # the path building worked correctly
+        print(f"Full path 1: {full_path_nodes[0].name}")
+        print(f"Full path 2: {full_path_nodes[1].name}")
+    
+    def test_snippet_path_concatenation_logic(self):
+        """Test the static build_full_paths method for proper concatenation.
+        
+        This tests the simplified logic that just concatenates parent + "." + relative_name
+        without complex remapping.
+        """
+        from wavescout.snippet_dialogs import InstantiateSnippetDialog
+        
+        # Test case 1: Simple signal
+        signal = SignalNode(name="signal1", handle=-1)
+        result = InstantiateSnippetDialog.build_full_paths(signal, "TOP.module")
+        assert result.name == "TOP.module.signal1"
+        
+        # Test case 2: Nested path
+        signal = SignalNode(name="sub.module.signal", handle=-1)
+        result = InstantiateSnippetDialog.build_full_paths(signal, "TOP.parent")
+        assert result.name == "TOP.parent.sub.module.signal"
+        
+        # Test case 3: Empty parent scope
+        signal = SignalNode(name="signal", handle=-1)
+        result = InstantiateSnippetDialog.build_full_paths(signal, "")
+        assert result.name == "signal"  # Should keep as-is
+        
+        # Test case 4: Group with children
+        child1 = SignalNode(name="sig1", handle=-1)
+        child2 = SignalNode(name="sig2", handle=-1)
+        group = SignalNode(
+            name="MyGroup",
+            is_group=True,
+            children=[child1, child2]
+        )
+        
+        result = InstantiateSnippetDialog.build_full_paths(group, "TOP.scope")
+        
+        # Group name should not be modified
+        assert result.name == "MyGroup"
+        assert result.is_group == True
+        
+        # Children should have full paths
+        assert len(result.children) == 2
+        assert result.children[0].name == "TOP.scope.sig1"
+        assert result.children[1].name == "TOP.scope.sig2"
+        
+        # Parent references should be set
+        assert result.children[0].parent == result
+        assert result.children[1].parent == result
+    
+    def test_snippet_with_nested_groups_preserves_structure(self, snippet_manager):
+        """Test that nested groups in snippets maintain their structure.
+        
+        This verifies the complex nested group handling works correctly.
+        """
+        # Create a complex nested structure
+        leaf1 = SignalNode(name="signal1", handle=10)
+        leaf2 = SignalNode(name="signal2", handle=20)
+        leaf3 = SignalNode(name="signal3", handle=30)
+        leaf4 = SignalNode(name="signal4", handle=40)
+        
+        inner_group1 = SignalNode(
+            name="Inner1",
+            is_group=True,
+            is_expanded=False,
+            children=[leaf1, leaf2]
+        )
+        
+        inner_group2 = SignalNode(
+            name="Inner2", 
+            is_group=True,
+            is_expanded=True,
+            children=[leaf3, leaf4]
+        )
+        
+        outer_group = SignalNode(
+            name="Outer",
+            is_group=True,
+            is_expanded=True,
+            children=[inner_group1, inner_group2]
+        )
+        
+        # Create snippet
+        snippet = Snippet(
+            name="nested_preserve",
+            parent_name="TOP",
+            num_nodes=4,
+            nodes=[outer_group]
+        )
+        
+        # Save (this should not modify the original nodes)
+        assert snippet_manager.save_snippet(snippet)
+        
+        # Verify original structure unchanged
+        assert outer_group.children[0].is_expanded == False
+        assert outer_group.children[1].is_expanded == True
+        assert leaf1.handle == 10  # Handle should not be modified
+        
+        # Load and verify saved structure
+        snippet_manager._snippets.clear()
+        snippet_manager.load_snippets()
+        loaded = snippet_manager.get_snippet("nested_preserve")
+        
+        assert loaded is not None
+        loaded_outer = loaded.nodes[0]
+        assert loaded_outer.name == "Outer"
+        assert loaded_outer.is_expanded == True
+        assert len(loaded_outer.children) == 2
+        
+        # Check inner groups
+        assert loaded_outer.children[0].name == "Inner1"
+        assert loaded_outer.children[0].is_expanded == False
+        assert loaded_outer.children[1].name == "Inner2"
+        assert loaded_outer.children[1].is_expanded == True
+        
+        # Check leaf nodes exist
+        assert len(loaded_outer.children[0].children) == 2
+        assert len(loaded_outer.children[1].children) == 2
+    
+    def test_instantiate_dialog_validate_and_resolve(self, waveform_db):
+        """Test the static validate_and_resolve_nodes method.
+        
+        This method is used by CLI loading to validate signals exist and resolve handles.
+        """
+        from wavescout.snippet_dialogs import InstantiateSnippetDialog
+        
+        # Find a real signal from the waveform
+        test_signals = find_test_signals(waveform_db, "TOP", count=1)
+        if not test_signals:
+            pytest.skip("No test signals found")
+        
+        real_signal_path, _ = test_signals[0]
+        
+        # Test case 1: Valid signal
+        valid_node = SignalNode(name=real_signal_path, handle=-1)
+        
+        validated = InstantiateSnippetDialog.validate_and_resolve_nodes(
+            [valid_node], waveform_db
+        )
+        
+        assert len(validated) == 1
+        assert validated[0].name == real_signal_path
+        assert validated[0].handle != -1  # Handle should be resolved
+        
+        # Test case 2: Invalid signal should raise ValueError
+        invalid_node = SignalNode(name="TOP.does.not.exist", handle=-1)
+        
+        with pytest.raises(ValueError) as exc_info:
+            InstantiateSnippetDialog.validate_and_resolve_nodes(
+                [invalid_node], waveform_db
+            )
+        assert "not found in waveform" in str(exc_info.value)
+        
+        # Test case 3: Group with valid child
+        group_node = SignalNode(
+            name="TestGroup",
+            is_group=True,
+            children=[SignalNode(name=real_signal_path, handle=-1)]
+        )
+        
+        validated = InstantiateSnippetDialog.validate_and_resolve_nodes(
+            [group_node], waveform_db
+        )
+        
+        assert len(validated) == 1
+        assert validated[0].is_group == True
+        assert len(validated[0].children) == 1
+        assert validated[0].children[0].handle != -1

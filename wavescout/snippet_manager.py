@@ -126,13 +126,26 @@ class SnippetManager(QObject):
         try:
             file_path = self._snippets_dir / f"{snippet.name}.json"
             
+            # Deep copy the nodes before modifying to avoid affecting the current session
+            nodes_copy = [node.deep_copy() for node in snippet.nodes]
+            
             # Set all handles to -1 before saving (snippets are waveform-agnostic)
-            for node in self._walk_nodes(snippet.nodes):
+            for node in self._walk_nodes(nodes_copy):
                 if not node.is_group:
                     node.handle = -1
             
+            # Create a new snippet with the copied nodes for saving
+            snippet_to_save = Snippet(
+                name=snippet.name,
+                parent_name=snippet.parent_name,
+                num_nodes=snippet.num_nodes,
+                nodes=nodes_copy,
+                description=snippet.description,
+                created_at=snippet.created_at
+            )
+            
             with open(file_path, 'w') as f:
-                json.dump(snippet.to_dict(), f, indent=2)
+                json.dump(snippet_to_save.to_dict(), f, indent=2)
             
             self._snippets[snippet.name] = snippet
             self.snippets_changed.emit()
