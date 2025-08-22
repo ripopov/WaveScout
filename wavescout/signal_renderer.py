@@ -134,6 +134,37 @@ def calculate_valid_pixel_range(start_time: Time, end_time: Time, width: int,
     return min_valid_pixel, max_valid_pixel
 
 
+def draw_special_value_region(painter: QPainter, value_kind: ValueKind, x_start: float, x_end: float,
+                             y_top: int, height: int) -> None:
+    """Draw a colored rectangle for UNDEFINED or HIGH_IMPEDANCE regions.
+    
+    Args:
+        painter: Active QPainter
+        value_kind: Type of special value (UNDEFINED or HIGH_IMPEDANCE)
+        x_start: Start x position
+        x_end: End x position  
+        y_top: Top y position
+        height: Height of the region
+    """
+    old_pen = painter.pen()
+    old_brush = painter.brush()
+    
+    if value_kind == ValueKind.UNDEFINED:
+        # Use red color for undefined
+        r, g, b, a = config.COLORS.ANALOG_UNDEFINED_FILL
+        fill_color = QColor(r, g, b, a)
+    elif value_kind == ValueKind.HIGH_IMPEDANCE:
+        # Use yellow color for high impedance
+        r, g, b, a = config.COLORS.ANALOG_HIGHZ_FILL
+        fill_color = QColor(r, g, b, a)
+    else:
+        return  # Nothing to draw for normal values
+    
+    painter.fillRect(int(x_start), y_top, int(x_end - x_start), height, fill_color)
+    painter.setPen(old_pen)
+    painter.setBrush(old_brush)
+
+
 def draw_digital_signal(painter: QPainter, node_info: NodeInfo, drawing_data: SignalDrawingData, 
                        y: int, row_height: int, params: RenderParams) -> None:
     """Render a boolean waveform as step lines.
@@ -189,20 +220,31 @@ def draw_digital_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Si
         # Clip next_x to valid range
         next_x = min(next_x, max_valid_pixel)
         
-        # Get y position based on value
-        value_str = current_sample.value_str or ""
-        if value_str == "1" or current_sample.value_bool == True:
-            current_y = y_high
-        elif value_str == "0" or current_sample.value_bool == False:
-            current_y = y_low
+        # Check for special values (UNDEFINED or HIGH_IMPEDANCE)
+        if current_sample.value_kind in (ValueKind.UNDEFINED, ValueKind.HIGH_IMPEDANCE):
+            # Draw colored rectangle for special values
+            draw_start_x = max(current_x, min_valid_pixel) if min_valid_pixel > 0 else current_x
+            draw_end_x = min(next_x, max_valid_pixel)
+            if draw_start_x < draw_end_x:
+                signal_height = y_low - y_high
+                draw_special_value_region(painter, current_sample.value_kind, 
+                                        draw_start_x, draw_end_x, y_high, signal_height)
+            current_y = y_middle  # For transition drawing
         else:
-            current_y = y_middle
-        
-        # Draw horizontal line for the current value
-        draw_start_x = max(current_x, min_valid_pixel) if min_valid_pixel > 0 else current_x
-        draw_end_x = min(next_x, max_valid_pixel)
-        if draw_start_x < draw_end_x:
-            painter.drawLine(int(draw_start_x), current_y, int(draw_end_x), current_y)
+            # Normal values - get y position based on value
+            value_str = current_sample.value_str or ""
+            if value_str == "1" or current_sample.value_bool == True:
+                current_y = y_high
+            elif value_str == "0" or current_sample.value_bool == False:
+                current_y = y_low
+            else:
+                current_y = y_middle
+            
+            # Draw horizontal line for the current value
+            draw_start_x = max(current_x, min_valid_pixel) if min_valid_pixel > 0 else current_x
+            draw_end_x = min(next_x, max_valid_pixel)
+            if draw_start_x < draw_end_x:
+                painter.drawLine(int(draw_start_x), current_y, int(draw_end_x), current_y)
         
         # Draw transition from previous value if needed
         if i > 0:
@@ -215,10 +257,18 @@ def draw_digital_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Si
                     break
             
             if prev_sample:
-                prev_value_str = prev_sample.value_str or ""
-                prev_y = y_high if prev_value_str == "1" or prev_sample.value_bool == True else y_low if prev_value_str == "0" or prev_sample.value_bool == False else y_middle
-                # Only draw transition if it's within the valid range
-                if prev_y != current_y and current_x >= min_valid_pixel and current_x <= max_valid_pixel:
+                # Determine previous y position
+                if prev_sample.value_kind in (ValueKind.UNDEFINED, ValueKind.HIGH_IMPEDANCE):
+                    prev_y = y_middle
+                else:
+                    prev_value_str = prev_sample.value_str or ""
+                    prev_y = y_high if prev_value_str == "1" or prev_sample.value_bool == True else y_low if prev_value_str == "0" or prev_sample.value_bool == False else y_middle
+                
+                # Only draw transition if it's within the valid range and not between special regions
+                # Skip transitions for special value regions as they're drawn as filled rectangles
+                if (prev_y != current_y and current_x >= min_valid_pixel and current_x <= max_valid_pixel
+                    and not (prev_sample.value_kind in (ValueKind.UNDEFINED, ValueKind.HIGH_IMPEDANCE))
+                    and not (current_sample.value_kind in (ValueKind.UNDEFINED, ValueKind.HIGH_IMPEDANCE))):
                     painter.drawLine(int(current_x), prev_y, int(current_x), current_y)
         
         # If this region has multiple transitions, draw additional vertical lines
@@ -290,6 +340,25 @@ def draw_bus_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Signal
     # Unified rendering loop - handles all density levels
     for i in range(num_regions):
         current_x, current_sample = drawing_data.samples[i]
+        
+        # Check value kind and use appropriate color
+        if current_sample.value_kind == ValueKind.UNDEFINED:
+            # Use red color for undefined values
+            special_color = QColor(config.COLORS.BUS_UNDEFINED)
+            pen = QPen(special_color)
+            pen.setWidth(0)
+            painter.setPen(pen)
+        elif current_sample.value_kind == ValueKind.HIGH_IMPEDANCE:
+            # Use yellow color for high impedance values
+            special_color = QColor(config.COLORS.BUS_HIGH_IMPEDANCE)
+            pen = QPen(special_color)
+            pen.setWidth(0)
+            painter.setPen(pen)
+        else:
+            # Use normal color for defined values
+            pen = QPen(color)
+            pen.setWidth(0)
+            painter.setPen(pen)
         
         if current_x < min_valid_pixel:
             continue
@@ -696,8 +765,8 @@ def draw_analog_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sig
             aliasing_regions.append(x)
         
         # Handle different value kinds
-        if sample.value_kind == ValueKind.UNDEFINED:
-            # Draw UNDEFINED region as red rectangle
+        if sample.value_kind in (ValueKind.UNDEFINED, ValueKind.HIGH_IMPEDANCE):
+            # Draw special value region using common helper
             # Determine the width of this region
             if i + 1 < len(drawing_data.samples):
                 next_x, _ = drawing_data.samples[i + 1]
@@ -705,32 +774,8 @@ def draw_analog_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sig
             else:
                 region_end = min(params['width'], max_valid_pixel)
             
-            # Save current pen and set theme color for undefined
-            old_pen = painter.pen()
-            r, g, b, a = config.COLORS.ANALOG_UNDEFINED_FILL
-            undefined_color = QColor(r, g, b, a)
-            painter.fillRect(int(x), y_top, int(region_end - x), signal_height, undefined_color)
-            painter.setPen(old_pen)
-            
-            # Reset the staircase
-            prev_x = None
-            prev_y = None
-            
-        elif sample.value_kind == ValueKind.HIGH_IMPEDANCE:
-            # Draw HIGH_IMPEDANCE region as yellow rectangle
-            # Determine the width of this region
-            if i + 1 < len(drawing_data.samples):
-                next_x, _ = drawing_data.samples[i + 1]
-                region_end = min(next_x, max_valid_pixel)
-            else:
-                region_end = min(params['width'], max_valid_pixel)
-            
-            # Save current pen and set theme color for high impedance
-            old_pen = painter.pen()
-            r, g, b, a = config.COLORS.ANALOG_HIGHZ_FILL
-            highz_color = QColor(r, g, b, a)
-            painter.fillRect(int(x), y_top, int(region_end - x), signal_height, highz_color)
-            painter.setPen(old_pen)
+            # Draw colored rectangle for special values
+            draw_special_value_region(painter, sample.value_kind, x, region_end, y_top, signal_height)
             
             # Reset the staircase
             prev_x = None

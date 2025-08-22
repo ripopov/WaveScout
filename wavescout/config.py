@@ -88,6 +88,8 @@ class ColorScheme:
     TEXT: str = "#cccccc"
     TEXT_MUTED: str = "#808080"
     BUS_TEXT: str = "#ffffff"  # Text color for values inside bus signals
+    BUS_UNDEFINED: str = "#ff4444"  # Color for undefined bus value regions (red)
+    BUS_HIGH_IMPEDANCE: str = "#ffff44"  # Color for high impedance bus value regions (yellow)
     
     # Selections and highlights
     SELECTION: str = "#094771"

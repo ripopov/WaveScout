@@ -41,9 +41,10 @@ class SignalDrawingData:
 
 def determine_value_kind(value: str) -> ValueKind:
     """Determine the value kind from the string value."""
-    if value.upper() == 'X' or 'X' in value.upper():
+    value_upper = value.upper()
+    if value_upper == 'UNDEFINED' or value_upper == 'X' or 'X' in value_upper:
         return ValueKind.UNDEFINED
-    elif value.upper() == 'Z' or 'Z' in value.upper():
+    elif value_upper == 'Z' or 'Z' in value_upper:
         return ValueKind.HIGH_IMPEDANCE
     return ValueKind.NORMAL
 
@@ -98,10 +99,10 @@ def parse_signal_value(value: Any, data_format: DataFormat = DataFormat.UNSIGNED
             value_float = float(signed_value)
             
         elif data_format == DataFormat.HEX:
-            # Hexadecimal
+            # Hexadecimal (without 0x prefix)
             # Calculate appropriate width for hex display
             hex_width = (bit_width + 3) // 4  # Round up to nearest nibble
-            value_str = f"0x{value:0{hex_width}X}"
+            value_str = f"{value:0{hex_width}X}"
             value_float = float(value)  # Use unsigned interpretation
             
         elif data_format == DataFormat.BIN:
