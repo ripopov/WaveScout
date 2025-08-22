@@ -88,6 +88,7 @@ $var tri0 1 F TRI0_var $end
 $var tri1 1 G TRI1_var $end
 $var wand 1 M WAND_var $end
 $var wire 1 N WIRE_var $end
+$var wire 16 WW WIRE16_var $end
 $var wor 1 O WOR_var $end
 $var port 2 3 PORT_var[1:0] $end
 $var real 1 7 REALTIME_var $end
@@ -144,10 +145,12 @@ b11 3
 1?
 1>
 #20
+bz WW
 b10 &
 sat\040null =
 1'
 #30
+b10zx1110x11100 WW
 1'
 #40
 $dumpoff
@@ -157,3 +160,6 @@ $end
 $dumpon
 $end
 #60
+b11 WW
+#70
+b1111111111111111 WW
