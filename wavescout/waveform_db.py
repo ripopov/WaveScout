@@ -360,8 +360,12 @@ class WaveformDB:
             handles: List of signal handles to preload
             multithreaded: Whether to use multiple threads for loading (default: False)
         """
+        import time
+        
         if not self._backend:
             return
+        
+        start_time = time.perf_counter()
         
         # Deduplicate handles first to avoid loading the same signal multiple times
         # This is important when the same handle appears multiple times in the input
@@ -380,7 +384,10 @@ class WaveformDB:
         ]
         
         if not handles_to_load:
-            return  # All signals already cached
+            # All signals already cached
+            elapsed = time.perf_counter() - start_time
+            print(f"preload_signals: {len(unique_handles)} signals already cached (took {elapsed:.3f}s)")
+            return
             
         # Convert handles to Var objects
         vars_to_load : List[WVar] = []
@@ -393,19 +400,39 @@ class WaveformDB:
                 handle_to_var_map[id(var)] = handle
         
         if not vars_to_load:
+            elapsed = time.perf_counter() - start_time
+            print(f"preload_signals: No valid signals to load (took {elapsed:.3f}s)")
             return
             
         # Batch load signals using backend API
         try:
+            load_start = time.perf_counter()
             loaded_signals = self._backend.load_signals(vars_to_load, multithreaded)
+            load_time = time.perf_counter() - load_start
             
             # Cache the loaded signals
+            cache_start = time.perf_counter()
+            cached_count = 0
             for var, signal in zip(vars_to_load, loaded_signals):
                 handle_or_none = handle_to_var_map.get(id(var))
                 if handle_or_none is not None and signal is not None:
                     self._signal_cache[handle_or_none] = signal
+                    cached_count += 1
+            cache_time = time.perf_counter() - cache_start
+            
+            total_time = time.perf_counter() - start_time
+            already_cached = len(unique_handles) - len(handles_to_load)
+            
+            print(f"preload_signals: Loaded {cached_count} new signals, {already_cached} already cached")
+            print(f"  - Backend loading: {load_time:.3f}s")
+            print(f"  - Cache storage: {cache_time:.3f}s")
+            print(f"  - Total time: {total_time:.3f}s")
+            if multithreaded:
+                print(f"  - Mode: multithreaded")
                     
         except Exception as e:
+            elapsed = time.perf_counter() - start_time
+            print(f"preload_signals: Failed after {elapsed:.3f}s - {str(e)}")
             # Re-raise the exception to be handled by the caller
             raise RuntimeError(f"Failed to load signals: {str(e)}")
     
