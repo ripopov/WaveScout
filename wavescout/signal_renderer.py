@@ -279,7 +279,7 @@ def draw_bus_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Signal
                           density * RENDERING.BUS_TRANSITION_SLOPE_FACTOR)
     
     # Set up font for text rendering
-    font = QFont(RENDERING.FONT_FAMILY, RENDERING.FONT_SIZE_SMALL)
+    font = QFont(RENDERING.FONT_FAMILY, RENDERING.FONT_SIZE_NORMAL)
     painter.setFont(font)
     fm = painter.fontMetrics()
     
@@ -402,7 +402,7 @@ def draw_bus_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Signal
                     
                     text_x_start = int(current_x + actual_trans_width + 5)
                     text_width_available = int(interior_width - 10)
-                    painter.drawText(text_x_start, y_top, 
+                    painter.drawText(text_x_start, y_top + 1, 
                                    text_width_available, height,
                                    Qt.AlignmentFlag.AlignCenter, text)
                     
@@ -792,15 +792,15 @@ def draw_event_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sign
     """Render timestamped events as thin upward arrows.
     
     Logic overview
-    - For each (x_px, sample) event, draw a 1px vertical shaft and a 3px-wide arrow head
-      near the top of the row. Clip to valid pixel range like other renderers.
+    - For each (x_px, sample) event, draw a 1px vertical shaft using full row height
+      and a filled polygon arrow head at the top. Clip to valid pixel range like other renderers.
     
     Args:
         painter: Active QPainter.
         node_info: Dict with format.color.
         drawing_data: Event positions along X (values are not displayed).
         y: Row top Y in pixels.
-        row_height: Row height in pixels.
+        row_height: Row height in pixels (21 pixels).
         params: Dict with width, start_time, end_time, optional waveform_max_time.
     """
     # Use dedicated event arrow color from theme
@@ -811,12 +811,9 @@ def draw_event_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sign
     pen.setWidth(0)  # cosmetic 1 device-pixel
     painter.setPen(pen)
     
-    # Calculate signal bounds
-    y_top, y_bottom, y_middle = calculate_signal_bounds(y, row_height)
-    
-    # Arrow dimensions
-    arrow_height = (y_bottom - y_top) * 0.95  # 95% of available height
-    arrow_head_height = 3  # Height of arrow head in pixels
+    # Use full row height (21 pixels)
+    y_top = y
+    y_bottom = y + row_height - 1  # 21 pixels total height
     
     # Get valid pixel range for clipping
     waveform_max_time = params.get('waveform_max_time')
@@ -832,22 +829,46 @@ def draw_event_signal(painter: QPainter, node_info: NodeInfo, drawing_data: Sign
             
         x_pos = int(x)
         
-        # Draw vertical line (arrow shaft) - 1 pixel wide
-        arrow_tip_y = int(y_bottom - arrow_height)
-        painter.drawLine(x_pos, y_bottom, x_pos, arrow_tip_y + arrow_head_height)
+        # Draw vertical line (arrow shaft) - 1 pixel wide, full height minus arrow head
+        arrow_tip_y = y_top
+        painter.drawLine(x_pos, y_bottom, x_pos, arrow_tip_y + 6)
         
-        # Draw arrow head (like Unicode ↑)
-        # The arrow head is 3 pixels wide at base, tapering to 1 pixel at tip
-        # Line 1: tip (1 pixel)
+        # Draw arrow head pixel by pixel for exact control
+        # Pattern:
+        #   .      (tip row 1 - 1 pixel)
+        #   .      (tip row 2 - 1 pixel)
+        #  ...     (middle row 1 - 3 pixels)
+        #  ...     (middle row 2 - 3 pixels)
+        # .....    (base row 1 - 5 pixels)
+        # .....    (base row 2 - 5 pixels)
+        
+        # Tip row 1 (1 pixel)
         painter.drawPoint(x_pos, arrow_tip_y)
         
-        # Line 2: middle of arrow head (3 pixels)
-        painter.drawPoint(x_pos - 1, arrow_tip_y + 1)
+        # Tip row 2 (1 pixel)
         painter.drawPoint(x_pos, arrow_tip_y + 1)
-        painter.drawPoint(x_pos + 1, arrow_tip_y + 1)
         
-        # Line 3: base of arrow head (3 pixels) 
+        # Middle row 1 (3 pixels)
         painter.drawPoint(x_pos - 1, arrow_tip_y + 2)
         painter.drawPoint(x_pos, arrow_tip_y + 2)
         painter.drawPoint(x_pos + 1, arrow_tip_y + 2)
+        
+        # Middle row 2 (3 pixels)
+        painter.drawPoint(x_pos - 1, arrow_tip_y + 3)
+        painter.drawPoint(x_pos, arrow_tip_y + 3)
+        painter.drawPoint(x_pos + 1, arrow_tip_y + 3)
+        
+        # Base row 1 (5 pixels)
+        painter.drawPoint(x_pos - 2, arrow_tip_y + 4)
+        painter.drawPoint(x_pos - 1, arrow_tip_y + 4)
+        painter.drawPoint(x_pos, arrow_tip_y + 4)
+        painter.drawPoint(x_pos + 1, arrow_tip_y + 4)
+        painter.drawPoint(x_pos + 2, arrow_tip_y + 4)
+        
+        # Base row 2 (5 pixels)
+        painter.drawPoint(x_pos - 2, arrow_tip_y + 5)
+        painter.drawPoint(x_pos - 1, arrow_tip_y + 5)
+        painter.drawPoint(x_pos, arrow_tip_y + 5)
+        painter.drawPoint(x_pos + 1, arrow_tip_y + 5)
+        painter.drawPoint(x_pos + 2, arrow_tip_y + 5)
 
