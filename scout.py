@@ -26,6 +26,44 @@ from wavescout.data_model import WaveformSession, SignalNode
 from wavescout.settings_manager import SettingsManager
 import qdarkstyle
 
+# Platform detection
+IS_WIN = sys.platform.startswith("win")
+
+# Win32 API declarations for Windows native frame support
+if IS_WIN:
+    import ctypes
+    from ctypes import wintypes
+    
+    user32 = ctypes.windll.user32
+    SetWindowLongPtrW = user32.SetWindowLongPtrW
+    GetWindowLongPtrW = user32.GetWindowLongPtrW
+    SetWindowPos = user32.SetWindowPos
+    
+    GWL_STYLE = -16
+    SWP_NOSIZE = 0x0001
+    SWP_NOMOVE = 0x0002
+    SWP_NOZORDER = 0x0004
+    SWP_FRAMECHANGED = 0x0020
+    
+    # Window styles
+    WS_CAPTION = 0x00C00000  # WS_BORDER|WS_DLGFRAME
+    WS_SYSMENU = 0x00080000
+    WS_MINIMIZEBOX = 0x00020000
+    WS_MAXIMIZEBOX = 0x00010000
+    WS_THICKFRAME = 0x00040000  # resizing border (keeps snap/resize native)
+    
+    def remove_win_caption(hwnd: int) -> None:
+        """Remove only WS_CAPTION, keep thickframe + sys menu + buttons (native frame preserved)."""
+        style = GetWindowLongPtrW(hwnd, GWL_STYLE)
+        new_style = style & ~WS_CAPTION
+        # Ensure we still have the bits that keep native behaviors
+        new_style |= (WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)
+        if new_style != style:
+            SetWindowLongPtrW(hwnd, GWL_STYLE, new_style)
+            # Tell DWM/WM to recompute non-client metrics
+            SetWindowPos(hwnd, 0, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED)
+
 
 class LoaderSignals(QObject):
     """Signals for loader runnable."""
@@ -80,6 +118,405 @@ class LoadingState:
         self.pending_loaded_session = None
         self.pending_signal_nodes = []
         self.cli_snippets = []
+
+
+class NativeTitleBar(QWidget):
+    """Title bar for Windows with native frame and custom caption buttons.
+    
+    This version includes window control buttons that match Windows 11 design,
+    since we remove the native caption and need to provide our own controls.
+    """
+    
+    def __init__(self, parent: 'WaveScoutMainWindow'):
+        super().__init__(parent)
+        self.parent = parent
+        self.setFixedHeight(35)
+        
+        # Make background transparent to use system theme
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAutoFillBackground(False)
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Create menu bar with transparent background
+        self.menu_bar = QMenuBar(self)
+        self.menu_bar.setStyleSheet("""
+            QMenuBar {
+                background-color: transparent;
+                color: palette(windowText);
+            }
+            QMenuBar::item {
+                background-color: transparent;
+                padding: 5px 10px;
+            }
+            QMenuBar::item:selected {
+                background-color: rgba(255, 255, 255, 0.1);
+            }
+            QMenu {
+                background-color: palette(window);
+                color: palette(windowText);
+                border: 1px solid palette(mid);
+            }
+            QMenu::item:selected {
+                background-color: palette(highlight);
+            }
+        """)
+        layout.addWidget(self.menu_bar)
+        
+        layout.addStretch()
+        
+        # Title label
+        self.title = QLabel("WaveScout - Waveform Viewer", self)
+        self.title.setStyleSheet("color: palette(windowText);")
+        layout.addWidget(self.title)
+        
+        layout.addStretch()
+        
+        # Toggle left sidebar button
+        self.left_button = QPushButton()
+        self.left_button.setCheckable(True)
+        self.left_button.setChecked(True)
+        self.left_button.setIcon(self.create_sidebar_icon(Qt.LeftArrow))
+        self.left_button.setFixedSize(30, 30)
+        self.left_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; } "
+            "QPushButton:hover { background-color: rgba(255, 255, 255, 0.1); } "
+            "QPushButton:checked { background-color: rgba(255, 255, 255, 0.2); }")
+        layout.addWidget(self.left_button)
+        
+        # Toggle right sidebar button
+        self.right_button = QPushButton()
+        self.right_button.setCheckable(True)
+        self.right_button.setChecked(True)
+        self.right_button.setIcon(self.create_sidebar_icon(Qt.RightArrow))
+        self.right_button.setFixedSize(30, 30)
+        self.right_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; } "
+            "QPushButton:hover { background-color: rgba(255, 255, 255, 0.1); } "
+            "QPushButton:checked { background-color: rgba(255, 255, 255, 0.2); }")
+        layout.addWidget(self.right_button)
+        
+        # Toggle bottom panel button  
+        self.bottom_button = QPushButton()
+        self.bottom_button.setCheckable(True)
+        self.bottom_button.setChecked(True)
+        self.bottom_button.setIcon(self.create_bottom_panel_icon())
+        self.bottom_button.setFixedSize(30, 30)
+        self.bottom_button.setStyleSheet(
+            "QPushButton { background-color: transparent; border: none; } "
+            "QPushButton:hover { background-color: rgba(255, 255, 255, 0.1); } "
+            "QPushButton:checked { background-color: rgba(255, 255, 255, 0.2); }")
+        layout.addWidget(self.bottom_button)
+        
+        # Windows 11 style caption buttons (minimize, maximize/restore, close)
+        # Each button is 46px wide x 32px tall per Windows 11 specs
+        # Using Segoe Fluent Icons font that comes with Windows
+        
+        # Common button style for caption buttons
+        caption_button_style = """
+            QPushButton { 
+                background-color: transparent; 
+                border: none; 
+                border-radius: 0px;
+                color: #FFFFFF;
+                font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets';
+                font-size: 10px;
+                padding: 0px;
+            }
+            QPushButton:hover { 
+                background-color: rgba(255, 255, 255, 0.1); 
+            }
+            QPushButton:pressed { 
+                background-color: rgba(255, 255, 255, 0.05); 
+            }
+        """
+        
+        close_button_style = """
+            QPushButton { 
+                background-color: transparent; 
+                border: none; 
+                border-radius: 0px;
+                color: #FFFFFF;
+                font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets';
+                font-size: 10px;
+                padding: 0px;
+            }
+            QPushButton:hover { 
+                background-color: #C42B1C;
+                color: #FFFFFF;
+            }
+            QPushButton:pressed { 
+                background-color: rgba(196, 43, 28, 0.9);
+                color: #FFFFFF;
+            }
+        """
+        
+        # Minimize button - ChromeMinimize (E921)
+        self.minimize_button = QPushButton("\uE921")
+        self.minimize_button.setFixedSize(46, 32)
+        self.minimize_button.setStyleSheet(caption_button_style)
+        self.minimize_button.clicked.connect(self.parent.showMinimized)
+        layout.addWidget(self.minimize_button)
+        
+        # Maximize button - ChromeMaximize (E922) / ChromeRestore (E923)
+        self.maximize_button = QPushButton("\uE922")  # Start with maximize icon
+        self.maximize_button.setFixedSize(46, 32)
+        self.maximize_button.setStyleSheet(caption_button_style)
+        self.maximize_button.clicked.connect(self.toggle_maximize)
+        layout.addWidget(self.maximize_button)
+        
+        # Close button - ChromeClose (E8BB)
+        self.close_button = QPushButton("\uE8BB")
+        self.close_button.setFixedSize(46, 32)
+        self.close_button.setStyleSheet(close_button_style)
+        self.close_button.clicked.connect(self.parent.close)
+        layout.addWidget(self.close_button)
+        
+        # Install event filter to track window state changes
+        self.parent.installEventFilter(self)
+        
+        # For window dragging
+        self.old_pos: Optional[QPoint] = None
+        self._system_move_active = False
+        
+        # Install event filter on menu bar to pass through clicks in empty space
+        self.menu_bar.installEventFilter(self)
+        
+        # Initialize drag tracking variables
+        self.drag_start_pos = None
+        self.drag_local_pos = None
+        self._ready_to_unmaximize = False
+    
+    def _start_system_move(self, event: QEvent) -> bool:
+        """Try to use native system move."""
+        wh = self.parent.windowHandle() if self.parent.windowHandle() else None
+        if wh is None:
+            return False
+        if not hasattr(wh, 'startSystemMove'):
+            return False
+        try:
+            # Try Qt6 method with globalPosition
+            try:
+                return bool(wh.startSystemMove(event.globalPosition().toPoint()))
+            except (TypeError, AttributeError):
+                # Some versions take no args or don't have globalPosition
+                try:
+                    return bool(wh.startSystemMove())
+                except:
+                    return False
+        except Exception:
+            return False
+    
+    def mousePressEvent(self, event):
+        """Handle mouse press for window dragging."""
+        if event.button() == Qt.LeftButton:
+            # Check if click is in draggable area (not on buttons)
+            click_pos = event.position().toPoint()
+            
+            # Check if click is on any button
+            for button in [self.left_button, self.right_button, self.bottom_button,
+                          self.minimize_button, self.maximize_button, self.close_button]:
+                if button.geometry().contains(click_pos):
+                    return
+            
+            # Check if click is on menu bar (will be handled by eventFilter)
+            if self.menu_bar.geometry().contains(click_pos):
+                return
+            
+            # Store the initial cursor position for potential drag
+            self.drag_start_pos = event.globalPosition().toPoint()
+            self.drag_local_pos = event.position().toPoint()
+            
+            if self.parent.isMaximized():
+                # For maximized windows, prepare to unmaximize on drag
+                self._ready_to_unmaximize = True
+                self.old_pos = None
+                self._system_move_active = False
+            else:
+                # For normal windows, start drag immediately
+                if self._start_system_move(event):
+                    self._system_move_active = True
+                    self.old_pos = None
+                else:
+                    self._system_move_active = False
+                    self.old_pos = event.globalPosition().toPoint()
+    
+    def mouseMoveEvent(self, event):
+        """Handle mouse move for window dragging."""
+        if self._system_move_active:
+            # System move is handled by the window system
+            return
+            
+        # Check if we should unmaximize the window
+        if self._ready_to_unmaximize:
+            # Calculate drag distance
+            current_pos = event.globalPosition().toPoint()
+            drag_distance = (current_pos - self.drag_start_pos).manhattanLength()
+            
+            # If dragged more than threshold, unmaximize and start dragging
+            if drag_distance > 5:  # 5 pixel threshold to avoid accidental unmaximize
+                self._ready_to_unmaximize = False
+                
+                # Get the current maximized window geometry
+                max_geom = self.parent.geometry()
+                
+                # Restore the window
+                self.parent.showNormal()
+                
+                # Calculate position to keep cursor relative position in title bar
+                # The window should follow the cursor naturally
+                normal_width = self.parent.width()
+                cursor_x_ratio = self.drag_local_pos.x() / max_geom.width()
+                new_window_x = current_pos.x() - int(normal_width * cursor_x_ratio)
+                new_window_y = current_pos.y() - self.drag_local_pos.y()
+                
+                # Move window to follow cursor
+                self.parent.move(new_window_x, new_window_y)
+                
+                # Update button icon
+                self.update_maximize_button()
+                
+                # Start dragging the restored window
+                if self._start_system_move(event):
+                    self._system_move_active = True
+                    self.old_pos = None
+                else:
+                    self.old_pos = current_pos
+        elif self.old_pos:
+            # Continue normal dragging
+            delta = QPoint(event.globalPosition().toPoint() - self.old_pos)
+            self.parent.move(self.parent.x() + delta.x(), self.parent.y() + delta.y())
+            self.old_pos = event.globalPosition().toPoint()
+    
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release to stop dragging."""
+        self._system_move_active = False
+        self.old_pos = None
+        self._ready_to_unmaximize = False
+    
+    def mouseDoubleClickEvent(self, event):
+        """Toggle maximize on double-click in title area."""
+        click_pos = event.position().toPoint()
+        
+        # Don't toggle if clicking on buttons
+        for button in [self.left_button, self.right_button, self.bottom_button,
+                      self.minimize_button, self.maximize_button, self.close_button]:
+            if button.geometry().contains(click_pos):
+                return
+        
+        # Don't toggle if clicking on menu bar
+        if self.menu_bar.geometry().contains(click_pos):
+            return
+        
+        self.toggle_maximize()
+    
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """Filter events to update maximize button icon on window state change and handle menu bar dragging."""
+        if obj == self.parent and event.type() == QEvent.WindowStateChange:
+            self.update_maximize_button()
+        elif obj == self.menu_bar:
+            if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+                # Check if click is in empty space after menu items
+                click_x = event.position().x()
+                
+                # Get the actual width used by menu items
+                last_action = None
+                for action in self.menu_bar.actions():
+                    if action.isVisible():
+                        last_action = action
+                
+                if last_action:
+                    # Get the geometry of the last menu item
+                    action_geom = self.menu_bar.actionGeometry(last_action)
+                    menu_items_width = action_geom.right()
+                    
+                    # If click is beyond the menu items, start dragging
+                    if click_x > menu_items_width + 10:  # Add small margin
+                        if not self.parent.isMaximized():
+                            # Start window drag
+                            if self._start_system_move(event):
+                                self._system_move_active = True
+                                self.old_pos = None
+                            else:
+                                self._system_move_active = False
+                                self.old_pos = event.globalPosition().toPoint()
+                            return True  # Consume the event
+            
+            elif event.type() == QEvent.MouseMove:
+                if self.old_pos is not None:
+                    # Continue dragging
+                    delta = event.globalPosition().toPoint() - self.old_pos
+                    self.parent.move(self.parent.x() + delta.x(), self.parent.y() + delta.y())
+                    self.old_pos = event.globalPosition().toPoint()
+                    return True
+                    
+            elif event.type() == QEvent.MouseButtonRelease:
+                if self.old_pos is not None:
+                    self._system_move_active = False
+                    self.old_pos = None
+                    return True
+                    
+        return super().eventFilter(obj, event)
+    
+    def create_sidebar_icon(self, arrow_direction) -> QIcon:
+        """Create icon for sidebar toggle buttons."""
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        # Use current palette's text color for adaptive theming
+        pen = QPen(self.palette().windowText().color())
+        pen.setWidth(2)
+        painter.setPen(pen)
+        
+        if arrow_direction == Qt.LeftArrow:
+            # Left sidebar icon - bar on left with arrow
+            painter.drawRect(1, 1, 6, 14)
+            painter.drawLine(10, 4, 14, 8)
+            painter.drawLine(10, 12, 14, 8)
+        else:
+            # Right sidebar icon - bar on right with arrow
+            painter.drawRect(9, 1, 6, 14)
+            painter.drawLine(6, 4, 2, 8)
+            painter.drawLine(6, 12, 2, 8)
+        
+        painter.end()
+        return QIcon(pixmap)
+    
+    def create_bottom_panel_icon(self) -> QIcon:
+        """Create icon for bottom panel toggle button."""
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        # Use current palette's text color for adaptive theming
+        pen = QPen(self.palette().windowText().color())
+        pen.setWidth(2)
+        painter.setPen(pen)
+        
+        # Bottom panel icon - horizontal bar with down arrow
+        painter.drawRect(1, 9, 14, 6)
+        painter.drawLine(4, 6, 8, 2)
+        painter.drawLine(12, 6, 8, 2)
+        
+        painter.end()
+        return QIcon(pixmap)
+    
+    def toggle_maximize(self):
+        """Toggle window maximize state and update icon."""
+        if self.parent.isMaximized():
+            self.parent.showNormal()
+            self.maximize_button.setText("\uE922")  # ChromeMaximize
+        else:
+            self.parent.showMaximized()
+            self.maximize_button.setText("\uE923")  # ChromeRestore
+    
+    def update_maximize_button(self):
+        """Update maximize button icon based on window state."""
+        if self.parent.isMaximized():
+            self.maximize_button.setText("\uE923")  # ChromeRestore
+        else:
+            self.maximize_button.setText("\uE922")  # ChromeMaximize
 
 
 class CustomTitleBar(QWidget):
@@ -143,8 +580,8 @@ class CustomTitleBar(QWidget):
         self.left_button.setFixedSize(30, 30)
         self.left_button.setStyleSheet(
             "QPushButton { background-color: transparent; border: none; } "
-            "QPushButton:hover { background-color: #3E3E42; } "
-            "QPushButton:checked { background-color: #007ACC; }")
+            "QPushButton:hover { background-color: rgba(255, 255, 255, 0.1); } "
+            "QPushButton:checked { background-color: rgba(255, 255, 255, 0.2); }")
         layout.addWidget(self.left_button)
         
         # Toggle right sidebar button
@@ -155,8 +592,8 @@ class CustomTitleBar(QWidget):
         self.right_button.setFixedSize(30, 30)
         self.right_button.setStyleSheet(
             "QPushButton { background-color: transparent; border: none; } "
-            "QPushButton:hover { background-color: #3E3E42; } "
-            "QPushButton:checked { background-color: #007ACC; }")
+            "QPushButton:hover { background-color: rgba(255, 255, 255, 0.1); } "
+            "QPushButton:checked { background-color: rgba(255, 255, 255, 0.2); }")
         layout.addWidget(self.right_button)
         
         # Toggle bottom panel button  
@@ -167,8 +604,8 @@ class CustomTitleBar(QWidget):
         self.bottom_button.setFixedSize(30, 30)
         self.bottom_button.setStyleSheet(
             "QPushButton { background-color: transparent; border: none; } "
-            "QPushButton:hover { background-color: #3E3E42; } "
-            "QPushButton:checked { background-color: #007ACC; }")
+            "QPushButton:hover { background-color: rgba(255, 255, 255, 0.1); } "
+            "QPushButton:checked { background-color: rgba(255, 255, 255, 0.2); }")
         layout.addWidget(self.bottom_button)
         
         # Window control buttons
@@ -363,7 +800,22 @@ class WaveScoutMainWindow(QMainWindow):
     def __init__(self, session_file=None, wave_file: str | None = None, exit_after_load: bool = False):
         super().__init__()
         self.setWindowTitle("WaveScout - Waveform Viewer")
-        self.setWindowFlags(Qt.FramelessWindowHint)
+        
+        # Platform-specific window flags
+        if IS_WIN:
+            # Windows: Keep native frame with system buttons, remove caption later
+            self.setWindowFlags(
+                Qt.Window
+                | Qt.CustomizeWindowHint
+                | Qt.WindowSystemMenuHint
+                | Qt.WindowMinimizeButtonHint
+                | Qt.WindowMaximizeButtonHint
+                | Qt.WindowCloseButtonHint
+            )
+        else:
+            # Linux/macOS: Use frameless window
+            self.setWindowFlags(Qt.FramelessWindowHint)
+        
         self.resize(1400, 800)
         
         # Initialize thread pool and progress dialog
@@ -408,8 +860,11 @@ class WaveScoutMainWindow(QMainWindow):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
         
-        # Create and add custom title bar
-        self.title_bar = CustomTitleBar(self)
+        # Create and add platform-specific title bar
+        if IS_WIN:
+            self.title_bar = NativeTitleBar(self)
+        else:
+            self.title_bar = CustomTitleBar(self)
         self.main_layout.addWidget(self.title_bar)
         
         # Create vertical splitter for main area and bottom panel
@@ -1971,6 +2426,15 @@ class WaveScoutMainWindow(QMainWindow):
         self.title_bar.left_button.setChecked(left_visible)
         self.title_bar.right_button.setChecked(right_visible)
         self.title_bar.bottom_button.setChecked(bottom_visible)
+    
+    def showEvent(self, event):
+        """Handle show event to remove caption on Windows."""
+        super().showEvent(event)
+        # On Windows, remove caption after the window is shown
+        if IS_WIN and not hasattr(self, '_caption_removed'):
+            hwnd = int(self.winId())  # Get HWND
+            remove_win_caption(hwnd)
+            self._caption_removed = True
     
     def closeEvent(self, event):
         """Handle window close event."""
