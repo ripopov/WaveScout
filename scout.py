@@ -33,6 +33,7 @@ IS_WIN = sys.platform.startswith("win")
 if IS_WIN:
     import ctypes
     from ctypes import wintypes
+    import winreg
     
     user32 = ctypes.windll.user32
     SetWindowLongPtrW = user32.SetWindowLongPtrW
@@ -63,6 +64,22 @@ if IS_WIN:
             # Tell DWM/WM to recompute non-client metrics
             SetWindowPos(hwnd, 0, 0, 0, 0, 0,
                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED)
+    
+    def is_windows_light_theme() -> bool:
+        """Check if Windows is using light theme."""
+        try:
+            # Open the registry key for theme settings
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+            )
+            # Read the AppsUseLightTheme value (0 = dark, 1 = light)
+            value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+            winreg.CloseKey(key)
+            return value == 1
+        except (OSError, FileNotFoundError):
+            # Default to dark theme if we can't read the registry
+            return False
 
 
 class LoaderSignals(QObject):
@@ -214,43 +231,58 @@ class NativeTitleBar(QWidget):
         # Each button is 46px wide x 32px tall per Windows 11 specs
         # Using Segoe Fluent Icons font that comes with Windows
         
+        # Detect Windows theme
+        is_light_theme = is_windows_light_theme()
+        
+        # Button colors based on theme
+        if is_light_theme:
+            # Light theme: black icons, subtle dark hover backgrounds
+            icon_color = "#000000"
+            hover_bg = "rgba(0, 0, 0, 0.06)"
+            pressed_bg = "rgba(0, 0, 0, 0.09)"
+        else:
+            # Dark theme: white icons, subtle light hover backgrounds
+            icon_color = "#FFFFFF"
+            hover_bg = "rgba(255, 255, 255, 0.06)"
+            pressed_bg = "rgba(255, 255, 255, 0.09)"
+        
         # Common button style for caption buttons
-        caption_button_style = """
-            QPushButton { 
+        caption_button_style = f"""
+            QPushButton {{ 
                 background-color: transparent; 
                 border: none; 
                 border-radius: 0px;
-                color: #FFFFFF;
+                color: {icon_color};
                 font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets';
                 font-size: 10px;
                 padding: 0px;
-            }
-            QPushButton:hover { 
-                background-color: rgba(255, 255, 255, 0.1); 
-            }
-            QPushButton:pressed { 
-                background-color: rgba(255, 255, 255, 0.05); 
-            }
+            }}
+            QPushButton:hover {{ 
+                background-color: {hover_bg}; 
+            }}
+            QPushButton:pressed {{ 
+                background-color: {pressed_bg}; 
+            }}
         """
         
-        close_button_style = """
-            QPushButton { 
+        close_button_style = f"""
+            QPushButton {{ 
                 background-color: transparent; 
                 border: none; 
                 border-radius: 0px;
-                color: #FFFFFF;
+                color: {icon_color};
                 font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets';
                 font-size: 10px;
                 padding: 0px;
-            }
-            QPushButton:hover { 
+            }}
+            QPushButton:hover {{ 
                 background-color: #C42B1C;
                 color: #FFFFFF;
-            }
-            QPushButton:pressed { 
+            }}
+            QPushButton:pressed {{ 
                 background-color: rgba(196, 43, 28, 0.9);
                 color: #FFFFFF;
-            }
+            }}
         """
         
         # Minimize button - ChromeMinimize (E921)
@@ -414,8 +446,12 @@ class NativeTitleBar(QWidget):
     
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         """Filter events to update maximize button icon on window state change and handle menu bar dragging."""
-        if obj == self.parent and event.type() == QEvent.WindowStateChange:
-            self.update_maximize_button()
+        if obj == self.parent:
+            if event.type() == QEvent.WindowStateChange:
+                self.update_maximize_button()
+            elif event.type() == QEvent.ApplicationStateChange or event.type() == QEvent.WindowActivate:
+                # Check for theme changes when window becomes active
+                self.update_theme_colors()
         elif obj == self.menu_bar:
             if event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
                 # Check if click is in empty space after menu items
@@ -517,6 +553,66 @@ class NativeTitleBar(QWidget):
             self.maximize_button.setText("\uE923")  # ChromeRestore
         else:
             self.maximize_button.setText("\uE922")  # ChromeMaximize
+    
+    def update_theme_colors(self):
+        """Update button colors based on current Windows theme."""
+        # Detect Windows theme
+        is_light_theme = is_windows_light_theme()
+        
+        # Button colors based on theme
+        if is_light_theme:
+            # Light theme: black icons, subtle dark hover backgrounds
+            icon_color = "#000000"
+            hover_bg = "rgba(0, 0, 0, 0.06)"
+            pressed_bg = "rgba(0, 0, 0, 0.09)"
+        else:
+            # Dark theme: white icons, subtle light hover backgrounds
+            icon_color = "#FFFFFF"
+            hover_bg = "rgba(255, 255, 255, 0.06)"
+            pressed_bg = "rgba(255, 255, 255, 0.09)"
+        
+        # Update button styles
+        caption_button_style = f"""
+            QPushButton {{ 
+                background-color: transparent; 
+                border: none; 
+                border-radius: 0px;
+                color: {icon_color};
+                font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets';
+                font-size: 10px;
+                padding: 0px;
+            }}
+            QPushButton:hover {{ 
+                background-color: {hover_bg}; 
+            }}
+            QPushButton:pressed {{ 
+                background-color: {pressed_bg}; 
+            }}
+        """
+        
+        close_button_style = f"""
+            QPushButton {{ 
+                background-color: transparent; 
+                border: none; 
+                border-radius: 0px;
+                color: {icon_color};
+                font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets';
+                font-size: 10px;
+                padding: 0px;
+            }}
+            QPushButton:hover {{ 
+                background-color: #C42B1C;
+                color: #FFFFFF;
+            }}
+            QPushButton:pressed {{ 
+                background-color: rgba(196, 43, 28, 0.9);
+                color: #FFFFFF;
+            }}
+        """
+        
+        self.minimize_button.setStyleSheet(caption_button_style)
+        self.maximize_button.setStyleSheet(caption_button_style)
+        self.close_button.setStyleSheet(close_button_style)
 
 
 class CustomTitleBar(QWidget):
